@@ -1,1031 +1,696 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  StyleSheet,
   ActivityIndicator,
-  StatusBar,
   ScrollView,
-  Image,
-  Animated,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { AuthStackParamList } from '../../../App';
+import { StackNavigationProp } from '@react-navigation/stack';
+import AuthService from '../../services/AuthService';
+import { 
+  SellerRegistrationData, 
+  OTPRequest, 
+  ApiError 
+} from '../../types/api';
 
-// ✅ Import your centralized API configuration
-import { getApiConfig, getBaseURL } from '../../config/api';
-
-// Modern Color Palette (matching your login screen)
-const COLORS = {
-  primary: '#4A7C4F',
-  primaryLight: '#6B9B6F', 
-  background: '#FAFCFA',
-  surface: '#FFFFFF',
-  textPrimary: '#1A1F1A',
-  textSecondary: '#5F6B5F',
-  textTertiary: '#9CA59C',
-  inputBorder: 'rgba(74, 124, 79, 0.15)',
-  shadow: 'rgba(26, 31, 26, 0.08)',
-  success: '#4A7C4F',
-  warning: '#D4941E',
-  error: '#D84315',
+type RegisterScreenProps = {
+  navigation: StackNavigationProp<any>;
 };
 
-// ✅ Replace hardcoded URL with centralized config
-const API_BASE_URL = getBaseURL(); // Gets current environment's baseURL
+interface ValidationErrors {
+  name?: string;
+  shop_name?: string;
+  phone?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+}
 
-type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
-type RegistrationStep = 'form' | 'otp' | 'success';
+const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
-// Enhanced Custom Loading Component
-const CustomRegistrationLoader = () => {
-  const spinValue = useRef(new Animated.Value(0)).current;
-  const scaleValue = useRef(new Animated.Value(1)).current;
-  const pulseValue = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const spinAnimation = Animated.loop(
-      Animated.timing(spinValue, {
-        toValue: 1,
-        duration: 1500,
-        useNativeDriver: true,
-      })
-    );
-
-    const scaleAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleValue, {
-          toValue: 1.2,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleValue, {
-          toValue: 1,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseValue, {
-          toValue: 1,
-          duration: 900,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseValue, {
-          toValue: 0,
-          duration: 900,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    spinAnimation.start();
-    scaleAnimation.start();
-    pulseAnimation.start();
-
-    return () => {
-      spinAnimation.stop();
-      scaleAnimation.stop();
-      pulseAnimation.stop();
-    };
-  }, []);
-
-  const spin = spinValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  const pulseOpacity = pulseValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 1],
-  });
-
-  return (
-    <View style={styles.customLoaderContainer}>
-      <Animated.View
-        style={[
-          styles.loaderOuterRing,
-          {
-            transform: [{ rotate: spin }, { scale: scaleValue }],
-            opacity: pulseOpacity,
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.loaderInnerRing,
-          {
-            transform: [{ rotate: spin }],
-          },
-        ]}
-      />
-      <View style={styles.loaderCore}>
-        <Text style={styles.loaderIcon}>📝</Text>
-      </View>
-    </View>
-  );
-};
-
-export default function RegisterScreen({ navigation }: Props) {
-  const [step, setStep] = useState<RegistrationStep>('form');
-  const [loading, setLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  
-  // Logo and form animations
-  const logoFadeAnim = useRef(new Animated.Value(0)).current;
-  const formSlideAnim = useRef(new Animated.Value(50)).current;
-  
-  // Simplified form data
-  const [formData, setFormData] = useState({
-    phone: '',
+  const [formData, setFormData] = useState<SellerRegistrationData & { otp: string }>({
     name: '',
-    shopName: '',
+    shop_name: '',
+    phone: '',
     email: '',
     password: '',
     confirmPassword: '',
     otp: '',
   });
 
-  useEffect(() => {
-    // Staggered entrance animations
-    Animated.parallel([
-      Animated.timing(logoFadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(formSlideAnim, {
-        toValue: 0,
-        duration: 600,
-        delay: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // ✅ Log current API configuration on screen load
-    const config = getApiConfig();
-    console.log('🔧 Register Screen API Configuration:', {
-      baseURL: config.baseURL,
-      timeout: config.timeout,
-      debug: config.debug,
-    });
-  }, []);
-
-  const updateField = (field: keyof typeof formData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const formatPhoneNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length <= 10) {
-      updateField('phone', cleaned);
-    }
-  };
-
-  const validateForm = (): string | null => {
-    const { phone, name, shopName, email, password, confirmPassword } = formData;
-
-    if (!phone.trim() || !name.trim() || !shopName.trim() || !email.trim() || !password.trim()) {
-      return 'Please fill in all required fields';
-    }
-
-    const phoneClean = phone.replace(/\D/g, '');
-    if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
-      return 'Please enter a valid 10-digit phone number starting with 6-9';
-    }
-
+  // Validation functions - exact match to web
+  const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return 'Please enter a valid email address';
-    }
-
-    if (password.length < 8) {
-      return 'Password must be at least 8 characters long';
-    }
-
-    if (password !== confirmPassword) {
-      return 'Passwords do not match';
-    }
-
-    return null;
+    return emailRegex.test(email);
   };
 
-  const sendOTP = async () => {
-    const phoneClean = formData.phone.replace(/\D/g, '');
-    
-    if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
-      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number');
-      return;
-    }
-
-    setLoading(true);
-    
-    try {
-      console.log('📱 Sending OTP:', {
-        phone: phoneClean,
-        endpoint: `${API_BASE_URL}/user/send-otp/`,
-        environment: getApiConfig().debug ? 'Development' : 'Production'
-      });
-
-      // ✅ Create AbortController for timeout handling
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), getApiConfig().timeout);
-
-      const response = await fetch(`${API_BASE_URL}/user/send-otp/`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: phoneClean,
-        }),
-        signal: controller.signal, // Add timeout signal
-      });
-
-      clearTimeout(timeoutId); // Clear timeout if request completes
-
-      const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error('Invalid server response');
-      }
-
-      if (response.ok) {
-        setOtpSent(true);
-        setStep('otp');
-        Alert.alert('OTP Sent! 📱', `6-digit OTP sent to +91${phoneClean}`);
-        console.log('✅ OTP sent successfully');
-      } else {
-        throw new Error(data.error || data.detail || 'Failed to send OTP');
-      }
-    } catch (error: any) {
-      console.error('❌ OTP Error:', error);
-      
-      let errorMessage = 'Failed to send OTP. Please try again.';
-      if (error.name === 'AbortError') {
-        errorMessage = `Connection timeout after ${getApiConfig().timeout}ms. Please try again.`;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      Alert.alert('OTP Error', errorMessage);
-    } finally {
-      setLoading(false);
-    }
+  const validatePhone = (phone: string): boolean => {
+    const phoneRegex = /^[6-9]\d{9}$/;
+    return phoneRegex.test(phone);
   };
 
-  const handleRegister = async () => {
-    const validationError = validateForm();
-    if (validationError) {
-      Alert.alert('Validation Error', validationError);
+  const validatePassword = (password: string): boolean => {
+    return password.length >= 8;
+  };
+
+  const validateForm = (): boolean => {
+    const errors: ValidationErrors = {};
+    
+    if (!formData.name.trim()) {
+      errors.name = 'Full name is required';
+    } else if (formData.name.trim().length < 2) {
+      errors.name = 'Name must be at least 2 characters';
+    }
+    
+    if (!formData.shop_name.trim()) {
+      errors.shop_name = 'Shop name is required';
+    } else if (formData.shop_name.trim().length < 2) {
+      errors.shop_name = 'Shop name must be at least 2 characters';
+    }
+    
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    if (!formData.phone.trim()) {
+      errors.phone = 'Phone number is required';
+    } else if (!validatePhone(formData.phone)) {
+      errors.phone = 'Please enter a valid 10-digit phone number';
+    }
+    
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (!validatePassword(formData.password)) {
+      errors.password = 'Password must be at least 8 characters';
+    }
+    
+    if (!formData.confirmPassword) {
+      errors.confirmPassword = 'Please confirm your password';
+    } else if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleChange = (name: keyof typeof formData, value: string): void => {
+    // Format phone number to remove non-digits
+    if (name === 'phone') {
+      const formattedValue = value.replace(/\D/g, '').slice(0, 10);
+      setFormData({ ...formData, [name]: formattedValue });
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
+    
+    // Clear validation error for this field
+    if (validationErrors[name as keyof ValidationErrors]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [name]: undefined
+      }));
+    }
+    
+    // Clear general error
+    if (error) setError('');
+  };
+
+  const handleSendOtp = async (): Promise<void> => {
+    setError('');
+    
+    if (!validateForm()) {
+      setError('Please fix the errors above');
       return;
     }
-
-    if (!otpSent) {
-      await sendOTP();
-      return;
-    }
-
-    if (!formData.otp.trim() || formData.otp.length !== 6) {
-      Alert.alert('Invalid OTP', 'Please enter a valid 6-digit OTP');
-      return;
-    }
-
-    setLoading(true);
+    
+    setIsLoading(true);
     
     try {
-      const phoneClean = formData.phone.replace(/\D/g, '');
-      
-      const requestBody = {
-        phone: phoneClean,
+      const otpData: OTPRequest = {
+        phone: formData.phone.trim(),
         name: formData.name.trim(),
-        shop_name: formData.shopName.trim(),
-        email: formData.email.toLowerCase().trim(),
-        password: formData.password.trim(),
-        confirmPassword: formData.confirmPassword.trim(),
-        otp: formData.otp.trim(),
+        shop_name: formData.shop_name.trim(),
+        email: formData.email.trim()
       };
-
-      console.log('🔄 Seller Registration Request:', {
-        phone: phoneClean,
-        name: formData.name,
-        shopName: formData.shopName,
-        endpoint: `${API_BASE_URL}/user/register/`,
-        environment: getApiConfig().debug ? 'Development' : 'Production'
-      });
       
-      // ✅ Create AbortController for timeout handling
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), getApiConfig().timeout);
-      
-      const response = await fetch(`${API_BASE_URL}/user/register/`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal, // Add timeout signal
-      });
-
-      clearTimeout(timeoutId); // Clear timeout if request completes
-
-      const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error('Server returned invalid response');
-      }
-
-      if (response.ok) {
-        setStep('success');
-        console.log('✅ Registration Successful:', {
-          sellerId: data.seller?.id,
-          sellerName: data.seller?.name,
-          shopName: data.seller?.shop_name,
-        });
-        
-        Alert.alert(
-          'Registration Successful! 🎉',
-          `Welcome ${data.seller?.name || formData.name}!\n\nYou can now login with your credentials.`,
-          [{ text: 'Login Now', onPress: () => navigation.navigate('Login') }]
-        );
-      } else {
-        let errorMessage = 'Registration failed';
-        if (data.phone) errorMessage = 'Phone number may already be registered';
-        else if (data.email) errorMessage = 'Email already registered';
-        else if (data.otp) errorMessage = 'Invalid or expired OTP';
-        else if (data.error || data.detail) errorMessage = data.error || data.detail;
-        
-        throw new Error(errorMessage);
-      }
-    } catch (error: any) {
-      console.error('❌ Registration Error:', error);
-      
-      let errorMessage = 'Registration failed. Please try again.';
-      if (error.name === 'AbortError') {
-        errorMessage = `Connection timeout after ${getApiConfig().timeout}ms. Please try again.`;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      Alert.alert('Registration Error', errorMessage);
+      await AuthService.sendOTP(otpData);
+      setStep(2);
+    } catch (err: any) {
+      console.error('OTP send error:', err);
+      const apiError = err.response?.data as ApiError;
+      const errorMessage = apiError?.error || 
+                         apiError?.message ||
+                         apiError?.phone?.[0] ||
+                         'Failed to send OTP. Please try again.';
+      setError(errorMessage);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const renderFormStep = () => (
-    <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-      {/* Header with Logo Image */}
-      <Animated.View 
-        style={[styles.header, { opacity: logoFadeAnim }]}
-      >
-        <View style={styles.logoContainer}>
-          <View style={styles.logoWrapper}>
-            <Image 
-              source={require('../../../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-              onError={() => console.log('Logo failed to load')}
-            />
-            <LinearGradient
-              colors={['transparent', 'rgba(74, 124, 79, 0.1)']}
-              style={styles.logoOverlay}
-            />
-          </View>
-        </View>
-        <Text style={styles.title}>Join Kerala Sellers</Text>
-        <Text style={styles.subtitle}>Register your shop</Text>
-      </Animated.View>
-
-      {/* Animated Form Container */}
-      <Animated.View 
-        style={[
-          styles.formContainer,
-          { transform: [{ translateY: formSlideAnim }] }
-        ]}
-      >
-        <Text style={styles.formTitle}>Create Account</Text>
-        
-        {/* ✅ Show current API URL for debugging (only in development) */}
-        {getApiConfig().debug && (
-          <Text style={styles.apiInfo}>
-            API: {API_BASE_URL} ({getApiConfig().debug ? 'Dev' : 'Prod'})
-          </Text>
-        )}
-        
-        {/* Phone & Name Row */}
-        <View style={styles.rowContainer}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Phone *</Text>
-            <View style={styles.inputContainer}>
-              <Text style={styles.countryCode}>🇮🇳 +91</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="9876543210"
-                placeholderTextColor={COLORS.textTertiary}
-                value={formData.phone}
-                onChangeText={formatPhoneNumber}
-                keyboardType="numeric"
-                maxLength={10}
-                editable={!loading}
-              />
-            </View>
-          </View>
-          
-          <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>Name *</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Full name"
-                placeholderTextColor={COLORS.textTertiary}
-                value={formData.name}
-                onChangeText={(text) => updateField('name', text)}
-                autoCapitalize="words"
-                editable={!loading}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Shop Name */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Shop Name *</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your shop/business name"
-              placeholderTextColor={COLORS.textTertiary}
-              value={formData.shopName}
-              onChangeText={(text) => updateField('shopName', text)}
-              autoCapitalize="words"
-              editable={!loading}
-            />
-          </View>
-        </View>
-
-        {/* Email */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email *</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="your@email.com"
-              placeholderTextColor={COLORS.textTertiary}
-              value={formData.email}
-              onChangeText={(text) => updateField('email', text)}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!loading}
-            />
-          </View>
-        </View>
-
-        {/* Password Row */}
-        <View style={styles.rowContainer}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Password *</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.inputPassword}
-                placeholder="Min 8 chars"
-                placeholderTextColor={COLORS.textTertiary}
-                value={formData.password}
-                onChangeText={(text) => updateField('password', text)}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                editable={!loading}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeButton}
-              >
-                <Text>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>Confirm *</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Re-enter"
-                placeholderTextColor={COLORS.textTertiary}
-                value={formData.confirmPassword}
-                onChangeText={(text) => updateField('confirmPassword', text)}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                editable={!loading}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Enhanced Register Button */}
-        <TouchableOpacity 
-          style={[styles.registerButton, loading && styles.buttonDisabled]}
-          onPress={handleRegister}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={loading ? [COLORS.textTertiary, COLORS.textTertiary] : [COLORS.primary, COLORS.primaryLight]}
-            style={styles.buttonGradient}
-          >
-            {loading ? (
-              <View style={styles.loadingRow}>
-                <CustomRegistrationLoader />
-                <Text style={styles.buttonText}>Processing...</Text>
-              </View>
-            ) : (
-              <Text style={styles.buttonText}>{otpSent ? 'Verify & Register' : 'Send OTP & Register'}</Text>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* Quick Fill & Login Link */}
-        <View style={styles.bottomActions}>
-          <TouchableOpacity 
-            onPress={() => {
-              updateField('phone', '9876543210');
-              updateField('name', 'Test Seller');
-              updateField('shopName', 'Test Shop');
-              updateField('email', 'test@example.com');
-              updateField('password', 'testpass123');
-              updateField('confirmPassword', 'testpass123');
-            }}
-            style={styles.quickFillButton}
-          >
-            <Text style={styles.quickFillText}>⚡ Use Sample Data</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            onPress={() => navigation.navigate('Login')} 
-            disabled={loading}
-          >
-            <Text style={styles.loginText}>
-              Already registered? <Text style={styles.loginLink}>Sign In →</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    </ScrollView>
-  );
-
-  const renderOTPStep = () => (
-    <View style={styles.otpContainer}>
-      <View style={styles.otpHeader}>
-        <Text style={styles.otpIcon}>📱</Text>
-        <Text style={styles.otpTitle}>Verify Phone</Text>
-        <Text style={styles.otpSubtitle}>
-          Enter 6-digit code sent to +91{formData.phone}
-        </Text>
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>6-Digit OTP</Text>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={[styles.input, styles.otpInput]}
-            placeholder="123456"
-            placeholderTextColor={COLORS.textTertiary}
-            value={formData.otp}
-            onChangeText={(text) => updateField('otp', text.replace(/\D/g, '').slice(0, 6))}
-            keyboardType="numeric"
-            maxLength={6}
-            editable={!loading}
-          />
-        </View>
-      </View>
-
-      <TouchableOpacity 
-        style={[styles.registerButton, loading && styles.buttonDisabled]}
-        onPress={handleRegister}
-        disabled={loading}
-        activeOpacity={0.8}
-      >
-        <LinearGradient
-          colors={loading ? [COLORS.textTertiary, COLORS.textTertiary] : [COLORS.success, '#5A8B63']}
-          style={styles.buttonGradient}
-        >
-          {loading ? (
-            <View style={styles.loadingRow}>
-              <CustomRegistrationLoader />
-              <Text style={styles.buttonText}>Verifying...</Text>
-            </View>
-          ) : (
-            <Text style={styles.buttonText}>Verify & Complete</Text>
-          )}
-        </LinearGradient>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        onPress={() => {
-          setStep('form');
-          setOtpSent(false);
-          updateField('otp', '');
-        }} 
-        disabled={loading}
-      >
-        <Text style={styles.backText}>← Back to Form</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderSuccessStep = () => (
-    <View style={styles.successContainer}>
-      <Text style={styles.successIcon}>🎉</Text>
-      <Text style={styles.successTitle}>Welcome to Kerala Sellers!</Text>
-      <Text style={styles.successSubtitle}>
-        Your shop is registered and ready to start selling.
-      </Text>
+  const handleCompleteRegistration = async (): Promise<void> => {
+    setError('');
+    
+    if (!formData.otp || formData.otp.length !== 6) {
+      setError('Please enter a valid 6-digit OTP');
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      await AuthService.register({
+        name: formData.name.trim(),
+        shop_name: formData.shop_name.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        otp: formData.otp.trim(),
+      });
       
-      <TouchableOpacity 
-        style={styles.registerButton}
-        onPress={() => navigation.navigate('Login')}
-        activeOpacity={0.8}
-      >
-        <LinearGradient
-          colors={[COLORS.primary, COLORS.primaryLight]}
-          style={styles.buttonGradient}
-        >
-          <Text style={styles.buttonText}>Continue to Login</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    </View>
-  );
+      Alert.alert(
+        'Success!', 
+        'Registration successful! Please log in.',
+        [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
+      );
+      
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      console.error('Error response:', err.response?.data);
+      
+      const errorData = err.response?.data as ApiError;
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      if (errorData?.phone?.[0]) {
+        errorMessage = errorData.phone[0];
+      } else if (errorData?.confirmPassword?.[0]) {
+        errorMessage = errorData.confirmPassword[0];
+      } else if (errorData?.otp?.[0]) {
+        errorMessage = errorData.otp[0];
+      } else if (errorData?.email?.[0]) {
+        errorMessage = errorData.email[0];
+      } else if (errorData?.error) {
+        errorMessage = errorData.error;
+      } else if (errorData?.message) {
+        errorMessage = errorData.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOtp = async (): Promise<void> => {
+    setError('');
+    setIsLoading(true);
+    
+    try {
+      const otpData: OTPRequest = {
+        phone: formData.phone.trim(),
+        name: formData.name.trim(),
+        shop_name: formData.shop_name.trim(),
+        email: formData.email.trim()
+      };
+      
+      await AuthService.sendOTP(otpData);
+      setError('OTP has been resent to your phone');
+    } catch (err) {
+      setError('Failed to resend OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBackToStep1 = (): void => {
+    setStep(1);
+    setFormData(prev => ({ ...prev, otp: '' }));
+    setError('');
+  };
 
   return (
-    <>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      <KeyboardAvoidingView 
-        style={styles.container} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <LinearGradient
-          colors={[COLORS.background, COLORS.surface]}
-          style={styles.backgroundGradient}
-        />
-
-        {step === 'form' && renderFormStep()}
-        {step === 'otp' && renderOTPStep()}
-        {step === 'success' && renderSuccessStep()}
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>keralasellers.in</Text>
-          {/* ✅ Show environment in footer (development only) */}
-          {getApiConfig().debug && (
-            <Text style={styles.footerSubtext}>
-              Environment: {getApiConfig().debug ? 'Development' : 'Production'}
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.card}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Create Seller Account</Text>
+            <Text style={styles.subtitle}>
+              {step === 1 
+                ? "Join Kerala Sellers and start selling your products online" 
+                : "We've sent a verification code to your phone"}
             </Text>
-          )}
-        </View>
-      </KeyboardAvoidingView>
-    </>
-  );
-}
+          </View>
 
-// ✅ OPTIMIZED STYLESHEET - Removed duplicate definitions [web:392]
+          {/* Progress Indicator */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill,
+                  { width: step === 1 ? '50%' : '100%' }
+                ]}
+              />
+            </View>
+            <Text style={styles.stepIndicator}>Step {step} of 2</Text>
+          </View>
+
+          {step === 1 ? (
+            /* Step 1: Business Details */
+            <View style={styles.form}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Your Full Name</Text>
+                <TextInput
+                  value={formData.name}
+                  onChangeText={(value) => handleChange('name', value)}
+                  placeholder="Enter your full name"
+                  style={[
+                    styles.input,
+                    validationErrors.name && styles.inputError
+                  ]}
+                  editable={!isLoading}
+                />
+                {validationErrors.name && (
+                  <Text style={styles.errorText}>{validationErrors.name}</Text>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Shop Name</Text>
+                <TextInput
+                  value={formData.shop_name}
+                  onChangeText={(value) => handleChange('shop_name', value)}
+                  placeholder="Enter your shop/business name"
+                  style={[
+                    styles.input,
+                    validationErrors.shop_name && styles.inputError
+                  ]}
+                  editable={!isLoading}
+                />
+                {validationErrors.shop_name && (
+                  <Text style={styles.errorText}>{validationErrors.shop_name}</Text>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email Address</Text>
+                <TextInput
+                  value={formData.email}
+                  onChangeText={(value) => handleChange('email', value)}
+                  placeholder="Enter your email address"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  style={[
+                    styles.input,
+                    validationErrors.email && styles.inputError
+                  ]}
+                  editable={!isLoading}
+                />
+                {validationErrors.email && (
+                  <Text style={styles.errorText}>{validationErrors.email}</Text>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Phone Number</Text>
+                <TextInput
+                  value={formData.phone}
+                  onChangeText={(value) => handleChange('phone', value)}
+                  placeholder="Enter 10-digit phone number"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  style={[
+                    styles.input,
+                    validationErrors.phone && styles.inputError
+                  ]}
+                  editable={!isLoading}
+                />
+                {validationErrors.phone && (
+                  <Text style={styles.errorText}>{validationErrors.phone}</Text>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    value={formData.password}
+                    onChangeText={(value) => handleChange('password', value)}
+                    placeholder="Create a strong password (min 8 characters)"
+                    secureTextEntry={!showPassword}
+                    style={[
+                      styles.passwordInput,
+                      validationErrors.password && styles.inputError
+                    ]}
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.eyeButtonText}>
+                      {showPassword ? '👁️' : '👁️‍🗨️'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {validationErrors.password && (
+                  <Text style={styles.errorText}>{validationErrors.password}</Text>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Confirm Password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    value={formData.confirmPassword}
+                    onChangeText={(value) => handleChange('confirmPassword', value)}
+                    placeholder="Confirm your password"
+                    secureTextEntry={!showConfirmPassword}
+                    style={[
+                      styles.passwordInput,
+                      validationErrors.confirmPassword && styles.inputError
+                    ]}
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.eyeButtonText}>
+                      {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {validationErrors.confirmPassword && (
+                  <Text style={styles.errorText}>{validationErrors.confirmPassword}</Text>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.button, isLoading && styles.buttonDisabled]}
+                onPress={handleSendOtp}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <ActivityIndicator color="white" size="small" />
+                    <Text style={styles.buttonText}>Sending OTP...</Text>
+                  </>
+                ) : (
+                  <Text style={styles.buttonText}>Send Verification OTP</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* Step 2: OTP Verification */
+            <View style={styles.form}>
+              <View style={styles.otpInfo}>
+                <Text style={styles.otpText}>
+                  Verification code sent to: +91 {formData.phone}
+                </Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Verification Code</Text>
+                <TextInput
+                  value={formData.otp}
+                  onChangeText={(value) => 
+                    setFormData(prev => ({
+                      ...prev,
+                      otp: value.replace(/\D/g, '').slice(0, 6)
+                    }))
+                  }
+                  placeholder="Enter 6-digit OTP"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  style={[styles.input, styles.otpInput]}
+                  editable={!isLoading}
+                />
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={handleResendOtp}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.resendButtonText}>Resend OTP</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.button, isLoading && styles.buttonDisabled]}
+                onPress={handleCompleteRegistration}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <ActivityIndicator color="white" size="small" />
+                    <Text style={styles.buttonText}>Creating Account...</Text>
+                  </>
+                ) : (
+                  <Text style={styles.buttonText}>Create Seller Account</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={handleBackToStep1}
+                disabled={isLoading}
+              >
+                <Text style={styles.backButtonText}>← Back to Details</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorMessage}>⚠️ {error}</Text>
+            </View>
+          )}
+
+          {/* Footer Links */}
+          <View style={styles.footerLinks}>
+            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+              <Text style={styles.linkText}>
+                Already have an account? Login
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
 const styles = StyleSheet.create({
-  // Layout Styles
   container: {
     flex: 1,
+    backgroundColor: '#f8fafc',
   },
-  backgroundGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-
-  // Header Styles
-  header: {
-    alignItems: 'center',
-    paddingTop: 50,
-    paddingBottom: 16,
-  },
-  logoContainer: {
-    marginBottom: 12,
-  },
-  logoWrapper: {
-    position: 'relative',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  logoImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.surface,
-  },
-  logoOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-
-  // Form Styles
-  formContainer: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    marginHorizontal: 16,
-    borderRadius: 20,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
     padding: 20,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 4 },
+  },
+  card: {
+    backgroundColor: 'white',
+    padding: 32,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  rowContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-
-  // Input Styles
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 6,
-    marginLeft: 4,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: COLORS.inputBorder,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  countryCode: {
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    fontWeight: '600',
-    marginRight: 6,
-    paddingRight: 6,
-    borderRightWidth: 1,
-    borderRightColor: COLORS.inputBorder,
-  },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    paddingVertical: 10,
-    fontWeight: '500',
-  },
-  inputPassword: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    paddingVertical: 10,
-    fontWeight: '500',
-  },
-  eyeButton: {
-    padding: 6,
-  },
-
-  // Button Styles
-  registerButton: {
-    marginTop: 12,
-    marginBottom: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: COLORS.surface,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-
-  // Action Styles
-  bottomActions: {
-    alignItems: 'center',
-    gap: 12,
-  },
-  quickFillButton: {
-    backgroundColor: 'rgba(74, 124, 79, 0.1)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  quickFillText: {
-    color: COLORS.primary,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  loginText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-  loginLink: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-
-  // OTP Styles
-  otpContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-  },
-  otpHeader: {
+  header: {
     alignItems: 'center',
     marginBottom: 32,
   },
-  otpIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  otpTitle: {
-    fontSize: 20,
+  title: {
+    fontSize: 24,
     fontWeight: '700',
-    color: COLORS.textPrimary,
+    color: '#1f2937',
     marginBottom: 8,
   },
-  otpSubtitle: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
+  subtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  progressContainer: {
+    marginBottom: 24,
+  },
+  progressBar: {
+    width: '100%',
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+    borderRadius: 2,
+  },
+  stepIndicator: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  form: {
+    gap: 20,
+  },
+  inputGroup: {
+    marginBottom: 4,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  input: {
+    width: '100%',
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    fontSize: 16,
+    backgroundColor: '#ffffff',
+  },
+  passwordContainer: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 16,
+    paddingRight: 50,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    fontSize: 16,
+    backgroundColor: '#ffffff',
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    padding: 4,
+  },
+  eyeButtonText: {
+    fontSize: 18,
+  },
+  inputError: {
+    borderColor: '#ef4444',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+    marginTop: 6,
+  },
+  otpInfo: {
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  otpText: {
+    fontSize: 16,
+    color: '#6b7280',
     textAlign: 'center',
   },
   otpInput: {
     textAlign: 'center',
+    letterSpacing: 8,
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  resendButton: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    padding: 4,
+  },
+  resendButtonText: {
+    color: '#3b82f6',
+    fontSize: 14,
+    textDecorationLine: 'underline',
+  },
+  button: {
+    width: '100%',
+    padding: 16,
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 52,
+  },
+  buttonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  buttonText: {
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
-    letterSpacing: 2,
   },
-  backText: {
-    fontSize: 13,
-    color: COLORS.primary,
-    fontWeight: '600',
-    textAlign: 'center',
+  backButton: {
+    alignItems: 'center',
+    padding: 12,
+    marginTop: 8,
+  },
+  backButtonText: {
+    color: '#6b7280',
+    fontSize: 16,
+  },
+  errorContainer: {
+    padding: 12,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 8,
     marginTop: 16,
   },
-
-  // Success Styles
-  successContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  successIcon: {
-    fontSize: 60,
-    marginBottom: 20,
-  },
-  successTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  successSubtitle: {
+  errorMessage: {
+    color: '#991b1b',
     fontSize: 14,
-    color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 32,
   },
-
-  // Footer Styles
-  footer: {
+  footerLinks: {
+    marginTop: 24,
     alignItems: 'center',
-    paddingVertical: 12,
   },
-  footerText: {
-    fontSize: 11,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  footerSubtext: {
-    fontSize: 10,
-    color: COLORS.textTertiary,
-    marginTop: 2,
-  },
-
-  // Debug Styles (Development only)
-  apiInfo: {
-    fontSize: 9,
-    color: COLORS.textTertiary,
-    textAlign: 'center',
-    marginBottom: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-
-  // Enhanced Custom Loader Styles
-  customLoaderContainer: {
-    position: 'relative',
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loaderOuterRing: {
-    position: 'absolute',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: COLORS.surface,
-    borderTopColor: 'transparent',
-    borderRightColor: 'transparent',
-  },
-  loaderInnerRing: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    borderTopColor: COLORS.surface,
-    borderLeftColor: COLORS.surface,
-  },
-  loaderCore: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loaderIcon: {
-    fontSize: 8,
-    opacity: 0.9,
+  linkText: {
+    color: '#3b82f6',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
+
+export default RegisterScreen;

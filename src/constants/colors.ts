@@ -62,7 +62,7 @@ export const COLORS = {
     tinted: 'rgba(74, 124, 79, 0.08)',
   },
   
-  // Gradient Collections
+  // Gradient Collections  
   gradients: {
     primary: ['#4A7C4F', '#6B9B6F'],
     secondary: ['#8B7355', '#A68B6A'],
@@ -73,6 +73,10 @@ export const COLORS = {
       'rgba(255, 255, 255, 0.3)'
     ],
     accent: ['#E8F5E9', '#FAFBFA'],
+    // ✅ ADDED: Instagram-style gradients for modern look
+    instagram: ['#405DE6', '#5851DB', '#833AB4', '#C13584', '#E1306C', '#FD1D1D'],
+    facebook: ['#1877F2', '#42A5F5'],
+    kerala: ['#4A7C4F', '#8B7355'], // Your logo colors combined
   },
   
   // Modern Accent Colors
@@ -82,4 +86,73 @@ export const COLORS = {
     cream: '#F5F2EE',     // Warm cream
     gold: '#E6D19C',      // Soft gold accent
   },
+  
+  // ✅ ADDED: Additional modern colors for social media style
+  facebook: '#1877F2',
+  facebookLight: '#E7F3FF',
+  instagram: '#E4405F',
+  instagramLight: '#FCE4EC',
+  linkedin: '#0A66C2',
+  linkedinLight: '#E3F2FD',
+  
+  // ✅ ADDED: Borders and dividers
+  border: 'rgba(74, 124, 79, 0.12)',
+  borderLight: 'rgba(74, 124, 79, 0.06)',
+  divider: 'rgba(74, 124, 79, 0.08)',
+  
+  // ✅ ADDED: Overlay colors for modals/sidebars
+  overlay: 'rgba(0, 0, 0, 0.5)',
+  overlayLight: 'rgba(0, 0, 0, 0.3)',
+  overlayDark: 'rgba(0, 0, 0, 0.7)',
 } as const;
+
+// ✅ ADDED: Type for better TypeScript support
+export type ColorKey = keyof typeof COLORS;
+export type GradientKey = keyof typeof COLORS.gradients;
+export type AccentKey = keyof typeof COLORS.accent;
+export type GlassKey = keyof typeof COLORS.glass;
+
+// ✅ ADDED: Helper function to get colors with fallback
+export const getColor = (key: string, fallback: string = COLORS.textPrimary): string => {
+  const keys = key.split('.');
+  let current: any = COLORS;
+  
+  for (const k of keys) {
+    if (current && typeof current === 'object' && k in current) {
+      current = current[k];
+    } else {
+      return fallback;
+    }
+  }
+  
+  return typeof current === 'string' ? current : fallback;
+};
+
+// ✅ ADDED: Helper functions for common operations
+export const colorHelpers = {
+  // Get gradient array
+  getGradient: (name: GradientKey): string[] => {
+    return COLORS.gradients[name] || COLORS.gradients.primary;
+  },
+  
+  // Get accent color
+  getAccent: (name: AccentKey): string => {
+    return COLORS.accent[name] || COLORS.accent.mint;
+  },
+  
+  // Get glass effect color
+  getGlass: (opacity: GlassKey): string => {
+    return COLORS.glass[opacity] || COLORS.glass.light;
+  },
+  
+  // Add alpha to any color
+  addAlpha: (color: string, alpha: number): string => {
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  },
+};
+
+export default COLORS;
