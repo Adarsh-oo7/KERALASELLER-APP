@@ -1,3 +1,4 @@
+// src/components/navigation/TopBar.tsx
 import React, { useState, useEffect, useContext } from 'react';
 import {
   View,
@@ -42,7 +43,7 @@ const TopBar: React.FC<TopBarProps> = ({
   const navigation = useNavigation<StackNavigationProp<any>>();
   const [userData, setUserData] = useState<UserData | null>(null);
   
-  // ✅ USE CONTEXT: Get notification count from app state
+  // ✅ Get notification count from context
   const { notificationCount: contextNotificationCount, loadNotificationCount } = useContext(AppStateContext);
 
   useEffect(() => {
@@ -58,24 +59,16 @@ const TopBar: React.FC<TopBarProps> = ({
     }
   };
 
-  // ✅ FIXED: Navigate to NotificationsScreen correctly
+  // ✅ FIXED: Better notification navigation
   const handleNotificationPress = (): void => {
     console.log('🔔 TopBar: Opening notifications screen...');
     
     try {
-      // ✅ CORRECT NAVIGATION: Navigate to the Notifications tab within MainTabs
+      // First try to navigate to MainTabs -> Notifications
       navigation.navigate('MainTabs', { 
         screen: 'Notifications',
-        initial: false // Ensure it actually navigates even if already in MainTabs
+        initial: false
       });
-      
-      // ✅ Alternative approach if the above doesn't work:
-      // Check if we're already in MainTabs
-      // if (navigation.getState().routeNames.includes('Notifications')) {
-      //   navigation.navigate('Notifications');
-      // } else {
-      //   navigation.navigate('MainTabs', { screen: 'Notifications' });
-      // }
       
       // Refresh notification count after navigation
       setTimeout(() => {
@@ -87,24 +80,16 @@ const TopBar: React.FC<TopBarProps> = ({
     } catch (error) {
       console.error('❌ TopBar: Navigation to notifications failed:', error);
       
-      // ✅ ENHANCED FALLBACK: Try direct navigation
-      try {
-        navigation.navigate('Notifications');
-        console.log('✅ TopBar: Fallback navigation successful');
-      } catch (fallbackError) {
-        console.error('❌ TopBar: Fallback navigation also failed:', fallbackError);
-        
-        // Final fallback alert
-        Alert.alert(
-          'Notifications 🔔',
-          'Unable to open notifications. Please try again.',
-          [{ text: 'OK' }]
-        );
-      }
+      // Fallback alert
+      Alert.alert(
+        'Notifications 🔔',
+        'Notifications feature coming soon!',
+        [{ text: 'OK' }]
+      );
     }
   };
 
-  // ✅ UPDATED: Use context notification count or prop
+  // Use context notification count or prop
   const displayNotificationCount = propNotificationCount ?? contextNotificationCount;
 
   const getStatusBarHeight = (): number => {
@@ -148,7 +133,7 @@ const TopBar: React.FC<TopBarProps> = ({
               {title}
             </Text>
             {subtitle && (
-              <Text style={[styles.subtitle, { color: textColor }]} numberOfLines={1}>
+              <Text style={[styles.subtitle, { color: '#6b7280' }]} numberOfLines={1}>
                 {subtitle}
               </Text>
             )}
@@ -182,8 +167,8 @@ const TopBar: React.FC<TopBarProps> = ({
           )}
         </View>
 
-        {/* ✅ ENHANCED: Welcome message with notification indicator */}
-        {userData && displayNotificationCount > 0 && title === 'Dashboard' && (
+        {/* Notification hint for dashboard */}
+        {userData && displayNotificationCount > 0 && title.includes('Dashboard') && (
           <TouchableOpacity 
             style={styles.notificationHint}
             onPress={handleNotificationPress}
@@ -213,7 +198,6 @@ const styles = StyleSheet.create({
     elevation: 10,
     zIndex: 1000,
   },
-  
   content: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -222,7 +206,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     minHeight: 64,
   },
-  
   menuButton: {
     width: 50,
     height: 50,
@@ -236,7 +219,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  
   titleContainer: {
     flex: 1,
     alignItems: 'center',
@@ -256,7 +238,6 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontWeight: '500',
   },
-  
   notificationButton: {
     width: 50,
     height: 50,
@@ -302,8 +283,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-
-  // ✅ ENHANCED: Clickable notification hint
   notificationHint: {
     backgroundColor: 'rgba(59, 130, 246, 0.05)',
     paddingHorizontal: 20,

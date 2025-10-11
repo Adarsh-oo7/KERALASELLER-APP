@@ -10,11 +10,11 @@ import { useAuth } from '../context/AuthContext';
 // Import your main navigator
 import BottomTabNavigator from './BottomTabNavigator';
 import FixedTopNav from '../components/navigation/FixedTopNav';
-import FixedBottomNavGlobal from '../components/navigation/FixedBottomNavGlobal'; // ✅ NEW
+import FixedBottomNavGlobal from '../components/navigation/FixedBottomNavGlobal';
 
 // Import additional screens
 import BillingScreen from '../screens/billing/BillingScreen';
-import StockScreen from '../screens/stock/StockScreen';
+import StockManagementScreen from '../screens/stock/StockManagementScreen'; // ✅ FIXED: Correct import
 import HistoryScreen from '../screens/history/HistoryScreen';
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
 import SubscriptionsScreen from '../screens/subscription/SubscriptionScreen';
@@ -38,11 +38,11 @@ function CustomDrawerContent({ navigation }: { navigation: any }) {
     },
     {
       id: 'stock',
-      title: 'Stock Management',
-      icon: 'cube',
+      title: 'Stock Management', // ✅ This matches the screen
+      icon: 'cube-outline', // ✅ Use Ionicons icon
       onPress: () => {
-        console.log('📦 Navigating to Stock');
-        navigation.navigate('Stock');
+        console.log('📦 Navigating to Stock Management');
+        navigation.navigate('StockManagement'); // ✅ FIXED: Correct screen name
         navigation.closeDrawer();
       },
     },
@@ -91,7 +91,7 @@ function CustomDrawerContent({ navigation }: { navigation: any }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🚪 Logging out Thor A D...');
+              console.log('🚪 Logging out...');
               await logout();
               navigation.closeDrawer();
             } catch (error) {
@@ -217,11 +217,51 @@ function DrawerNavigatorWithGlobalNav() {
           />
           
           {/* Additional screens */}
-          <Drawer.Screen name="Billing" component={BillingScreen} />
-          <Drawer.Screen name="Stock" component={StockScreen} />
-          <Drawer.Screen name="History" component={HistoryScreen} />
-          <Drawer.Screen name="NotificationsStack" component={NotificationsScreen} />
-          <Drawer.Screen name="Subscriptions" component={SubscriptionsScreen} />
+          <Drawer.Screen 
+            name="Billing" 
+            component={BillingScreen}
+            options={{
+              title: 'Local Billing',
+              drawerItemStyle: { display: 'none' }, // Hide from auto drawer
+            }}
+          />
+          
+          {/* ✅ FIXED: Stock Management Screen */}
+          <Drawer.Screen 
+            name="StockManagement" 
+            component={StockManagementScreen}
+            options={{
+              title: 'Stock Management',
+              drawerItemStyle: { display: 'none' }, // Hide from auto drawer, use custom
+            }}
+          />
+          
+          <Drawer.Screen 
+            name="History" 
+            component={HistoryScreen}
+            options={{
+              title: 'Transaction History',
+              drawerItemStyle: { display: 'none' },
+            }}
+          />
+          
+          <Drawer.Screen 
+            name="NotificationsStack" 
+            component={NotificationsScreen}
+            options={{
+              title: 'Notifications',
+              drawerItemStyle: { display: 'none' },
+            }}
+          />
+          
+          <Drawer.Screen 
+            name="Subscriptions" 
+            component={SubscriptionsScreen}
+            options={{
+              title: 'Subscriptions',
+              drawerItemStyle: { display: 'none' },
+            }}
+          />
         </Drawer.Navigator>
       </View>
 

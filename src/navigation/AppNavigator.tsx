@@ -21,6 +21,9 @@ import SubscriptionScreen from '../screens/subscription/SubscriptionScreen';
 // ✅ Import NotificationsScreen
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
 
+// ✅ Import StockManagementScreen
+import StockManagementScreen from '../screens/stock/StockManagementScreen';
+
 // Navigation components
 import BottomTabs from './BottomTabs';
 import TopBar from '../components/navigation/TopBar';
@@ -33,7 +36,7 @@ import NotificationService from '../services/NotificationService';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// ✅ GLOBAL STATE: For drawer and top bar management
+// ✅ AppState Context
 interface AppStateContextType {
   isDrawerOpen: boolean;
   setIsDrawerOpen: (open: boolean) => void;
@@ -58,7 +61,94 @@ const AppStateContext = React.createContext<AppStateContextType>({
   loadNotificationCount: () => {},
 });
 
-// ✅ SCREEN WRAPPERS: To manage screen content with fixed top bar
+// ✅ FIXED: Create proper component wrappers (NOT inline functions)
+const CreateShopScreenWrapper: React.FC<any> = (props) => {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  return (
+    <View style={styles.mainContainer}>
+      <TopBar
+        title="Store Setup"
+        subtitle="Complete your profile"
+        onMenuPress={() => setIsDrawerOpen(true)}
+        showNotifications={false}
+        backgroundColor="#ffffff"
+      />
+      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
+        <View style={styles.screenContainer}>
+          <CreateShopScreen {...props} />
+        </View>
+      </DrawerLayout>
+    </View>
+  );
+};
+
+const OrderDetailsScreenWrapper: React.FC<any> = (props) => {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  return (
+    <View style={styles.mainContainer}>
+      <TopBar
+        title="Order Details"
+        subtitle="View order information"
+        onMenuPress={() => setIsDrawerOpen(true)}
+        showNotifications={true}
+        backgroundColor="#ffffff"
+      />
+      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
+        <View style={styles.screenContainer}>
+          <OrderDetailsScreen {...props} />
+        </View>
+      </DrawerLayout>
+    </View>
+  );
+};
+
+const BillingScreenWrapper: React.FC<any> = (props) => {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  return (
+    <View style={styles.mainContainer}>
+      <TopBar
+        title="Local Billing"
+        subtitle="Point of Sale"
+        onMenuPress={() => setIsDrawerOpen(true)}
+        showNotifications={true}
+        backgroundColor="#ffffff"
+      />
+      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
+        <View style={styles.screenContainer}>
+          <BillingScreen {...props} />
+        </View>
+      </DrawerLayout>
+    </View>
+  );
+};
+
+// ✅ FIXED: StockManagement wrapper component
+const StockManagementScreenWrapper: React.FC<any> = (props) => {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  return (
+    <View style={styles.mainContainer}>
+      <TopBar
+        title="📦 Stock Management"
+        subtitle="Quick inventory updates • Real-time tracking"
+        onMenuPress={() => setIsDrawerOpen(true)}
+        showNotifications={true}
+        backgroundColor="#ffffff"
+      />
+      
+      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
+        <View style={styles.screenContainer}>
+          <StockManagementScreen {...props} />
+        </View>
+      </DrawerLayout>
+    </View>
+  );
+};
+
+// ✅ Keep existing tab screen wrappers
 const DashboardScreenWrapper = (props: any) => {
   const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
   
@@ -134,7 +224,6 @@ const HistoryScreenWrapper = (props: any) => {
   );
 };
 
-// ✅ NEW: SubscriptionScreen Wrapper - FIXED for drawer access
 const SubscriptionScreenWrapper = (props: any) => {
   const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
   
@@ -150,7 +239,6 @@ const SubscriptionScreenWrapper = (props: any) => {
   );
 };
 
-// ✅ NotificationsScreen Wrapper with full navigation
 const NotificationsScreenWrapper = (props: any) => {
   const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
   
@@ -166,14 +254,13 @@ const NotificationsScreenWrapper = (props: any) => {
   );
 };
 
-// ✅ UPDATED: Main Tab Navigator with SubscriptionScreen as a tab
+// ✅ Keep existing MainTabNavigator
 const MainTabNavigator: React.FC = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [currentTitle, setCurrentTitle] = useState('Dashboard');
   const [currentSubtitle, setCurrentSubtitle] = useState('Welcome back! 🌴');
 
-  // ✅ Load notification count from service
   const loadNotificationCount = async (): Promise<void> => {
     try {
       const count = await NotificationService.getUnreadCount();
@@ -185,13 +272,9 @@ const MainTabNavigator: React.FC = () => {
     }
   };
 
-  // ✅ Load notification count on mount and periodically
   React.useEffect(() => {
     loadNotificationCount();
-    
-    // Refresh notification count every 30 seconds
     const interval = setInterval(loadNotificationCount, 30000);
-    
     return () => clearInterval(interval);
   }, []);
 
@@ -218,7 +301,6 @@ const MainTabNavigator: React.FC = () => {
       loadNotificationCount,
     }}>
       <View style={styles.mainContainer}>
-        {/* ✅ FIXED TOP BAR - Always visible */}
         <TopBar
           title={currentTitle}
           subtitle={currentSubtitle}
@@ -228,13 +310,12 @@ const MainTabNavigator: React.FC = () => {
           backgroundColor="#ffffff"
         />
 
-        {/* ✅ MAIN CONTENT WITH DRAWER */}
         <DrawerLayout isOpen={isDrawerOpen} onClose={closeDrawer}>
           <View style={styles.tabContainer}>
             <Tab.Navigator
               tabBar={(props) => <BottomTabs {...props} />}
               screenOptions={{
-                headerShown: false, // Hide default headers since we have TopBar
+                headerShown: false,
               }}
               initialRouteName="Dashboard"
             >
@@ -244,21 +325,19 @@ const MainTabNavigator: React.FC = () => {
               <Tab.Screen name="Orders" component={OrdersScreenWrapper} />
               <Tab.Screen name="History" component={HistoryScreenWrapper} />
               
-              {/* ✅ FIXED: SubscriptionScreen as a hidden tab (accessible via drawer) */}
               <Tab.Screen 
                 name="Subscription" 
                 component={SubscriptionScreenWrapper}
                 options={{
-                  tabBarButton: () => null, // Hide from bottom tabs but keep in navigation
+                  tabBarButton: () => null,
                 }}
               />
               
-              {/* ✅ NotificationsScreen as a hidden tab (accessible via TopBar) */}
               <Tab.Screen 
                 name="Notifications" 
                 component={NotificationsScreenWrapper}
                 options={{
-                  tabBarButton: () => null, // Hide from bottom tabs but keep in navigation
+                  tabBarButton: () => null,
                 }}
               />
             </Tab.Navigator>
@@ -269,6 +348,7 @@ const MainTabNavigator: React.FC = () => {
   );
 };
 
+// ✅ Main AppNavigator with FIXED components
 const AppNavigator: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -277,7 +357,7 @@ const AppNavigator: React.FC = () => {
     checkAuthStatus();
   }, []);
 
-  // ✅ Auth check interval
+  // ✅ Keep existing auth logic
   useEffect(() => {
     const authCheckInterval = setInterval(async () => {
       try {
@@ -342,66 +422,18 @@ const AppNavigator: React.FC = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {isAuthenticated ? (
         <>
-          {/* ✅ MAIN APP: Now includes SubscriptionScreen and NotificationsScreen as hidden tabs */}
+          {/* ✅ MAIN APP */}
           <Stack.Screen name="MainTabs" component={MainTabNavigator} />
           
-          {/* ✅ MODAL/DETAIL SCREENS: Separate stack screens (NO drawer for these) */}
-          <Stack.Screen name="CreateShop">
-            {(props) => (
-              <View style={styles.mainContainer}>
-                <TopBar
-                  title="Store Setup"
-                  subtitle="Complete your profile"
-                  onMenuPress={() => {}}
-                  showNotifications={false}
-                  backgroundColor="#ffffff"
-                />
-                <View style={styles.screenContainer}>
-                  <CreateShopScreen {...props} />
-                </View>
-              </View>
-            )}
-          </Stack.Screen>
-          
-          <Stack.Screen name="OrderDetails">
-            {(props) => (
-              <View style={styles.mainContainer}>
-                <TopBar
-                  title="Order Details"
-                  subtitle="View order information"
-                  onMenuPress={() => {}}
-                  showNotifications={true}
-                  backgroundColor="#ffffff"
-                />
-                <View style={styles.screenContainer}>
-                  <OrderDetailsScreen {...props} />
-                </View>
-              </View>
-            )}
-          </Stack.Screen>
-          
-          <Stack.Screen name="Billing">
-            {(props) => (
-              <View style={styles.mainContainer}>
-                <TopBar
-                  title="Local Billing"
-                  subtitle="Point of Sale"
-                  onMenuPress={() => {}}
-                  showNotifications={true}
-                  backgroundColor="#ffffff"
-                />
-                <View style={styles.screenContainer}>
-                  <BillingScreen {...props} />
-                </View>
-              </View>
-            )}
-          </Stack.Screen>
-          
-          {/* ✅ REMOVED: Subscription stack screen - now it's in the Tab Navigator */}
+          {/* ✅ FIXED: Modal screens with proper component references */}
+          <Stack.Screen name="CreateShop" component={CreateShopScreenWrapper} />
+          <Stack.Screen name="OrderDetails" component={OrderDetailsScreenWrapper} />
+          <Stack.Screen name="Billing" component={BillingScreenWrapper} />
+          <Stack.Screen name="StockManagement" component={StockManagementScreenWrapper} />
         </>
       ) : (
         <>
-          {/* ✅ AUTH SCREENS: No top bar needed */}
+          {/* ✅ AUTH SCREENS */}
           <Stack.Screen name="Login">
             {(props) => (
               <LoginScreen 
