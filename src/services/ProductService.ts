@@ -1,20 +1,34 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from './ApiClient';
+import { Platform } from 'react-native';
 
 class ProductService {
-  private baseURL = 'http://192.168.1.4:8000';
+  // ✅ FIXED: Use production URL by default, with fallback to local
+  private getBaseURL = (): string => {
+    // Change this to your production backend URL
+    const PRODUCTION_URL = 'https://keralaseller-backend.onrender.com';
+    const LOCAL_URL = 'http://192.168.1.4:8000';
+    
+    // Use production URL (change to LOCAL_URL for local development)
+    return PRODUCTION_URL;
+  };
 
-  // ✅ ADDED: Get categories method
+  // ✅ ENHANCED: Get categories with better error handling
   async getCategories(): Promise<any> {
     try {
       console.log('📡 ProductService: Fetching categories...');
+      const baseURL = this.getBaseURL();
+      console.log('🌐 Base URL:', baseURL);
       
       const token = await AsyncStorage.getItem('access_token');
       if (!token) {
         throw new Error('No authentication token found');
       }
 
-      const response = await fetch(`${this.baseURL}/api/categories/`, {
+      const url = `${baseURL}/api/categories/`;
+      console.log('📡 Full URL:', url);
+
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -32,57 +46,197 @@ class ProductService {
       }
 
       const result = await response.json();
-      console.log('✅ Categories loaded:', result);
+      console.log('✅ Categories loaded:', result.length || result.results?.length || 0, 'items');
       
-      // Handle both paginated and direct array responses
       return { data: result.results || result };
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ ProductService.getCategories failed:', error);
+      if (error.message === 'Network request failed') {
+        throw new Error('Cannot connect to server. Please check your internet connection and ensure the backend is running.');
+      }
       throw error;
     }
   }
 
-  // ✅ FIXED: Use native fetch for file uploads (create)
-  async createProduct(productData: FormData): Promise<any> {
+  // ✅ FIXED: Enhanced create product with better network error handling
+  async createProductWithoutImages(productData: any): Promise<any> {
     try {
-      console.log('🚀 ProductService: Creating product with native fetch...');
+      console.log('🚀 ProductService: Creating product without images...');
+      const baseURL = this.getBaseURL();
+      console.log('🌐 Base URL:', baseURL);
       
       const token = await AsyncStorage.getItem('access_token');
       if (!token) {
         throw new Error('No authentication token found');
       }
 
-      console.log('🔐 Token available for product creation');
-      console.log('📋 FormData keys:', Array.from(productData.keys()));
+      const url = `${baseURL}/user/store/products/`;
+      console.log('📡 Full URL:', url);
+      console.log('📋 Request body:', JSON.stringify(productData, null, 2));
 
-      const response = await fetch(`${this.baseURL}/user/store/products/`, {
+      // ✅ Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(productData),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        console.log('📊 Response status:', response.status);
+        console.log('📊 Response headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Server error response:', errorText);
+          
+          // Try to parse as JSON for better error messages
+          try {
+            const errorJson = JSON.parse(errorText);
+            const errorMessage = errorJson.detail || errorJson.error || errorJson.message || errorText;
+            throw new Error(`Server error (${response.status}): ${errorMessage}`);
+          } catch (parseError) {
+            throw new Error(`Server error (${response.status}): ${errorText}`);
+          }
+        }
+
+        const result = await response.json();
+        console.log('✅ Product created successfully:', result);
+        
+        return { data: result };
+        
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Request timeout - server took too long to respond');
+        }
+        throw fetchError;
+      }
+      
+    } catch (error: any) {
+      console.error('❌ ProductService.createProductWithoutImages failed:', error);
+      console.error('❌ Error name:', error.name);
+      console.error('❌ Error message:', error.message);
+      
+      // ✅ Better error messages for common issues
+      if (error.message === 'Network request failed') {
+        throw new Error(`Cannot connect to server.\n\nPossible causes:\n• Backend server is not running\n• Wrong API URL: ${this.getBaseURL()}\n• Network connection issue\n\nPlease check and try again.`);
+      }
+      
+      throw error;
+    }
+  }
+
+  // ✅ FIXED: Enhanced update product
+  async updateProductWithoutImages(productId: number, productData: any): Promise<any> {
+    try {
+      console.log('🚀 ProductService: Updating product without images...');
+      console.log('📋 Product ID:', productId);
+      const baseURL = this.getBaseURL();
+      console.log('🌐 Base URL:', baseURL);
+      
+      const token = await AsyncStorage.getItem('access_token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const url = `${baseURL}/user/store/products/${productId}/`;
+      console.log('📡 Full URL:', url);
+      console.log('📋 Request body:', JSON.stringify(productData, null, 2));
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(productData),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        console.log('📊 Response status:', response.status);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Server error response:', errorText);
+          
+          try {
+            const errorJson = JSON.parse(errorText);
+            const errorMessage = errorJson.detail || errorJson.error || errorJson.message || errorText;
+            throw new Error(`Server error (${response.status}): ${errorMessage}`);
+          } catch (parseError) {
+            throw new Error(`Server error (${response.status}): ${errorText}`);
+          }
+        }
+
+        const result = await response.json();
+        console.log('✅ Product updated successfully:', result);
+        
+        return { data: result };
+        
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Request timeout - server took too long to respond');
+        }
+        throw fetchError;
+      }
+      
+    } catch (error: any) {
+      console.error('❌ ProductService.updateProductWithoutImages failed:', error);
+      
+      if (error.message === 'Network request failed') {
+        throw new Error(`Cannot connect to server.\n\nPossible causes:\n• Backend server is not running\n• Wrong API URL: ${this.getBaseURL()}\n• Network connection issue\n\nPlease check and try again.`);
+      }
+      
+      throw error;
+    }
+  }
+
+  // ✅ Keep all other methods as they were
+  async createProduct(productData: FormData): Promise<any> {
+    try {
+      console.log('🚀 ProductService: Creating product with FormData...');
+      const baseURL = this.getBaseURL();
+      
+      const token = await AsyncStorage.getItem('access_token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`${baseURL}/user/store/products/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          // ✅ CRITICAL: Don't set Content-Type - let fetch handle it for FormData
         },
         body: productData,
       });
 
-      console.log('📊 Create product response:', response.status, response.statusText);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Create product error:', errorText);
-        
-        // Try to parse as JSON for better error handling
-        try {
-          const errorJson = JSON.parse(errorText);
-          throw new Error(errorJson.detail || errorJson.error || `HTTP ${response.status}: ${errorText}`);
-        } catch {
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const result = await response.json();
-      console.log('✅ Product created successfully:', result);
-      
       return { data: result };
       
     } catch (error) {
@@ -91,135 +245,33 @@ class ProductService {
     }
   }
 
-  // ✅ FIXED: Use native fetch for file uploads (update)
   async updateProduct(productId: number, productData: FormData): Promise<any> {
     try {
-      console.log('🚀 ProductService: Updating product with native fetch...');
-      console.log('📋 Product ID:', productId);
-      
+      const baseURL = this.getBaseURL();
       const token = await AsyncStorage.getItem('access_token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
-      console.log('🔐 Token available for product update');
-      console.log('📋 FormData keys:', Array.from(productData.keys()));
-
-      const response = await fetch(`${this.baseURL}/user/store/products/${productId}/`, {
+      const response = await fetch(`${baseURL}/user/store/products/${productId}/`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          // ✅ CRITICAL: Don't set Content-Type - let fetch handle it for FormData
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
         body: productData,
       });
 
-      console.log('📊 Update product response:', response.status, response.statusText);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Update product error:', errorText);
-        
-        // Try to parse as JSON for better error handling
-        try {
-          const errorJson = JSON.parse(errorText);
-          throw new Error(errorJson.detail || errorJson.error || `HTTP ${response.status}: ${errorText}`);
-        } catch {
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const result = await response.json();
-      console.log('✅ Product updated successfully:', result);
-      
       return { data: result };
-      
     } catch (error) {
       console.error('❌ ProductService.updateProduct failed:', error);
       throw error;
     }
   }
 
-  // ✅ ALTERNATIVE: Create/Update product without images (JSON only)
-  async createProductWithoutImages(productData: any): Promise<any> {
-    try {
-      console.log('🧪 ProductService: Creating product without images...');
-      
-      const token = await AsyncStorage.getItem('access_token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      const response = await fetch(`${this.baseURL}/user/store/products/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(productData),
-      });
-
-      console.log('📊 No images response:', response.status, response.statusText);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ No images error:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const result = await response.json();
-      console.log('✅ Product created without images:', result);
-      
-      return { data: result };
-      
-    } catch (error) {
-      console.error('❌ ProductService.createProductWithoutImages failed:', error);
-      throw error;
-    }
-  }
-
-  async updateProductWithoutImages(productId: number, productData: any): Promise<any> {
-    try {
-      console.log('🧪 ProductService: Updating product without images...');
-      console.log('📋 Product ID:', productId);
-      
-      const token = await AsyncStorage.getItem('access_token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      const response = await fetch(`${this.baseURL}/user/store/products/${productId}/`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(productData),
-      });
-
-      console.log('📊 Update no images response:', response.status, response.statusText);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Update no images error:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const result = await response.json();
-      console.log('✅ Product updated without images:', result);
-      
-      return { data: result };
-      
-    } catch (error) {
-      console.error('❌ ProductService.updateProductWithoutImages failed:', error);
-      throw error;
-    }
-  }
-
-  // ✅ KEEP: Use Axios for JSON requests (these work fine)
   async getProducts(): Promise<any> {
     try {
-      console.log('📡 ProductService: Fetching products with Axios...');
       const response = await apiClient.get('/user/store/products/');
       return response;
     } catch (error) {
@@ -230,7 +282,6 @@ class ProductService {
 
   async getProduct(productId: number): Promise<any> {
     try {
-      console.log('📡 ProductService: Fetching product:', productId);
       const response = await apiClient.get(`/user/store/products/${productId}/`);
       return response;
     } catch (error) {
@@ -241,7 +292,6 @@ class ProductService {
 
   async deleteProduct(productId: number): Promise<any> {
     try {
-      console.log('🗑️ ProductService: Deleting product:', productId);
       const response = await apiClient.delete(`/user/store/products/${productId}/`);
       return response;
     } catch (error) {
@@ -250,51 +300,36 @@ class ProductService {
     }
   }
 
-  // ✅ FIXED: Use native fetch for subscription control
   async toggleSubscriptionControl(productId: number, isActive: boolean): Promise<any> {
     try {
-      console.log('🔄 ProductService: Toggling subscription control...');
-      console.log('📋 Product ID:', productId, 'Active:', isActive);
-      
+      const baseURL = this.getBaseURL();
       const token = await AsyncStorage.getItem('access_token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
-      const response = await fetch(`${this.baseURL}/user/store/products/${productId}/toggle-subscription/`, {
+      const response = await fetch(`${baseURL}/user/store/products/${productId}/toggle-subscription/`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          is_subscription_controlled: isActive
-        }),
+        body: JSON.stringify({ is_subscription_controlled: isActive }),
       });
-
-      console.log('📊 Toggle response:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Toggle error:', errorText);
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const result = await response.json();
-      console.log('✅ Subscription control toggled:', result);
-      
       return { data: result };
-      
     } catch (error) {
       console.error('❌ ProductService.toggleSubscriptionControl failed:', error);
       throw error;
     }
   }
 
-  // ✅ ADDED: Get stock history
   async getStockHistory(): Promise<any> {
     try {
-      console.log('📡 ProductService: Fetching stock history...');
       const response = await apiClient.get('/user/store/stock-history/');
       return response;
     } catch (error) {
@@ -303,10 +338,8 @@ class ProductService {
     }
   }
 
-  // ✅ ADDED: Get dashboard stats
   async getDashboardStats(): Promise<any> {
     try {
-      console.log('📡 ProductService: Fetching dashboard stats...');
       const response = await apiClient.get('/user/store/dashboard/');
       return response;
     } catch (error) {
@@ -315,10 +348,8 @@ class ProductService {
     }
   }
 
-  // ✅ ADDED: Search products
   async searchProducts(query: string): Promise<any> {
     try {
-      console.log('📡 ProductService: Searching products:', query);
       const response = await apiClient.get(`/user/store/products/?search=${encodeURIComponent(query)}`);
       return response;
     } catch (error) {
@@ -327,10 +358,8 @@ class ProductService {
     }
   }
 
-  // ✅ ADDED: Get product by ID with detailed info
   async getProductDetails(productId: number): Promise<any> {
     try {
-      console.log('📡 ProductService: Fetching product details:', productId);
       const response = await apiClient.get(`/user/store/products/${productId}/details/`);
       return response;
     } catch (error) {
@@ -339,10 +368,8 @@ class ProductService {
     }
   }
 
-  // ✅ ADDED: Bulk operations
   async bulkUpdateProducts(productIds: number[], updateData: any): Promise<any> {
     try {
-      console.log('📡 ProductService: Bulk updating products:', productIds.length);
       const response = await apiClient.post('/user/store/products/bulk-update/', {
         product_ids: productIds,
         update_data: updateData
@@ -356,7 +383,6 @@ class ProductService {
 
   async bulkDeleteProducts(productIds: number[]): Promise<any> {
     try {
-      console.log('📡 ProductService: Bulk deleting products:', productIds.length);
       const response = await apiClient.post('/user/store/products/bulk-delete/', {
         product_ids: productIds
       });

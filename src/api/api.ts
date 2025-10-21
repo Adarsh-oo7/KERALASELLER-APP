@@ -1,7 +1,12 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = 'https://keralaseller-backend.onrender.com';
+// ✅ Correct URL for Android Emulator (10.0.2.2 = localhost)
+const API_BASE_URL = __DEV__ 
+  ? 'http://10.0.2.2:8000'  // Development: Android Emulator
+  : 'https://keralaseller-backend.onrender.com';  // Production
+
+console.log('🔧 API Base URL:', API_BASE_URL);
 
 const api = axios.create({
   baseURL: API_BASE_URL,

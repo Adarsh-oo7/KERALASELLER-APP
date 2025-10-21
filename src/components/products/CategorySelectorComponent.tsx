@@ -1,3 +1,9 @@
+/**
+ * CategorySelectorComponent.tsx
+ * Complete category selector with hierarchical navigation
+ * Matches web form functionality
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -9,20 +15,22 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import ProductService from '../../services/ProductService';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface CategorySelectorComponentProps {
   selectedCategory: number | null;
   onCategorySelect: (categoryId: number) => void;
   onAttributesChange: (attributes: { [key: string]: string }) => void;
   error?: string;
-  existingAttributes?: { [key: string]: string }; // ✅ ADDED: For editing support
+  existingAttributes?: { [key: string]: string };
 }
 
 interface Category {
   id: number;
   name: string;
   description?: string;
+  parent?: number | null;
   attributes?: Array<{
     name: string;
     required: boolean;
@@ -30,27 +38,31 @@ interface Category {
   }>;
 }
 
+// ✅ API CONFIGURATION (like web form)
+const getApiBaseUrl = () => {
+  // Change this to your backend URL
+  return 'https://keralaseller-backend.onrender.com';
+};
+
 const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
   selectedCategory,
   onCategorySelect,
   onAttributesChange,
   error,
-  existingAttributes = {}, // ✅ ADDED: Default to empty object
+  existingAttributes = {},
 }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [attributes, setAttributes] = useState<{ [key: string]: string }>(existingAttributes);
 
-  // ✅ ENHANCED: Debug logging
+  // ✅ ENHANCED: Fetch categories with proper error handling
   useEffect(() => {
-    console.log('📋 CategorySelector initialized with:');
-    console.log('📋 Selected Category:', selectedCategory);
-    console.log('📋 Existing Attributes:', existingAttributes);
+    console.log('📋 CategorySelector initialized');
     fetchCategories();
   }, []);
 
-  // ✅ ENHANCED: Initialize attributes when category changes
+  // ✅ Initialize attributes when category changes
   useEffect(() => {
     if (selectedCategory && categories.length > 0) {
       const selectedCategoryData = categories.find(cat => cat.id === selectedCategory);
@@ -67,18 +79,53 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
     }
   }, [selectedCategory, categories]);
 
+  // ✅ COMPLETE FETCH FUNCTION (like web form)
   const fetchCategories = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Fetching categories...');
+      console.log('🔄 Fetching categories from API...');
       
-      const response = await ProductService.getCategories();
-      console.log('✅ Categories fetched:', response.data?.length || 0);
+      const API_URL = `${getApiBaseUrl()}/api/categories/`;
+      const token = await AsyncStorage.getItem('access_token');
       
-      setCategories(response.data || []);
+      console.log('📡 API URL:', API_URL);
+      console.log('🔑 Token available:', !!token);
+
+      const response = await fetch(API_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Categories fetched:', data.length || 0);
+      console.log('📋 Sample category:', data[0]);
+      
+      setCategories(data || []);
     } catch (error: any) {
       console.error('❌ Failed to fetch categories:', error);
-      Alert.alert('Error', 'Failed to load categories. Please check your connection and try again.');
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+      });
+      
+      Alert.alert(
+        'Error Loading Categories',
+        'Failed to load categories. Please check your internet connection and try again.\n\n' + 
+        `Error: ${error.message}`,
+        [
+          { text: 'Retry', onPress: fetchCategories },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setLoading(false);
     }
@@ -108,30 +155,35 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
     onAttributesChange(newAttributes);
   };
 
+  // ✅ LOADING STATE
   if (loading) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#3b82f6" />
           <Text style={styles.loadingText}>Loading categories...</Text>
+          <Text style={styles.loadingSubtext}>Please wait</Text>
         </View>
       </View>
     );
   }
 
-  // ✅ ENHANCED: Better error handling
+  // ✅ ERROR STATE (no categories)
   if (categories.length === 0 && !loading) {
     return (
       <View style={styles.container}>
         <Text style={styles.label}>Product Category *</Text>
         <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={48} color="#ef4444" />
+          <Text style={styles.errorTitle}>No Categories Available</Text>
           <Text style={styles.errorText}>
-            No categories available. Please check your internet connection.
+            Unable to load categories. Please check your internet connection.
           </Text>
           <TouchableOpacity 
             style={styles.retryButton} 
             onPress={fetchCategories}
           >
+            <Ionicons name="refresh" size={16} color="white" />
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -141,12 +193,12 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* ✅ ENHANCED: Category Header */}
+      {/* Header */}
       <View style={styles.headerContainer}>
         <Text style={styles.label}>Product Category *</Text>
         {categories.length > 0 && (
           <Text style={styles.categoryCount}>
-            {categories.length} categories available
+            {categories.length} available
           </Text>
         )}
       </View>
@@ -154,13 +206,21 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
       {/* Search */}
       {categories.length > 5 && (
         <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search for category..."
-            placeholderTextColor="#9ca3af"
-          />
+          <View style={styles.searchInputContainer}>
+            <Ionicons name="search" size={20} color="#9ca3af" />
+            <TextInput
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search categories..."
+              placeholderTextColor="#9ca3af"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color="#9ca3af" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       )}
 
@@ -169,6 +229,7 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         <View style={styles.selectedCategoryContainer}>
           <Text style={styles.selectedLabel}>Selected Category:</Text>
           <View style={styles.selectedCategory}>
+            <Ionicons name="checkmark-circle" size={20} color="#10b981" />
             <Text style={styles.selectedCategoryText}>
               {selectedCategoryData.name}
             </Text>
@@ -176,19 +237,29 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
               onPress={() => handleCategorySelect(0)}
               style={styles.clearButton}
             >
-              <Text style={styles.clearButtonText}>✕</Text>
+              <Ionicons name="close" size={16} color="white" />
             </TouchableOpacity>
           </View>
         </View>
       )}
 
       {/* Error Message */}
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={16} color="#ef4444" />
+          <Text style={styles.errorBannerText}>{error}</Text>
+        </View>
+      )}
 
       {/* Categories List */}
-      <ScrollView style={styles.categoriesContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.categoriesContainer} 
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+      >
         {filteredCategories.length === 0 ? (
           <View style={styles.noCategoriesContainer}>
+            <Ionicons name="search-outline" size={48} color="#9ca3af" />
             <Text style={styles.noCategoriesText}>
               {searchQuery ? `No categories found for "${searchQuery}"` : 'No categories available'}
             </Text>
@@ -210,28 +281,36 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
                 selectedCategory === category.id && styles.categoryOptionActive
               ]}
               onPress={() => handleCategorySelect(category.id)}
+              activeOpacity={0.7}
             >
               <View style={styles.categoryContent}>
-                <Text style={[
-                  styles.categoryName,
-                  selectedCategory === category.id && styles.categoryNameActive
-                ]}>
-                  {category.name}
-                </Text>
+                <View style={styles.categoryHeader}>
+                  <Text style={[
+                    styles.categoryName,
+                    selectedCategory === category.id && styles.categoryNameActive
+                  ]}>
+                    {category.name}
+                  </Text>
+                  {selectedCategory === category.id && (
+                    <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                  )}
+                </View>
+                
                 {category.description && (
                   <Text style={styles.categoryDescription} numberOfLines={2}>
                     {category.description}
                   </Text>
                 )}
+                
                 {category.attributes && category.attributes.length > 0 && (
-                  <Text style={styles.attributesInfo}>
-                    {category.attributes.length} attributes available
-                  </Text>
+                  <View style={styles.attributesBadge}>
+                    <Ionicons name="pricetags" size={12} color="#3b82f6" />
+                    <Text style={styles.attributesInfo}>
+                      {category.attributes.length} attributes
+                    </Text>
+                  </View>
                 )}
               </View>
-              {selectedCategory === category.id && (
-                <Text style={styles.checkMark}>✓</Text>
-              )}
             </TouchableOpacity>
           ))
         )}
@@ -240,7 +319,10 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
       {/* Category Attributes */}
       {selectedCategoryData?.attributes && selectedCategoryData.attributes.length > 0 && (
         <View style={styles.attributesContainer}>
-          <Text style={styles.attributesTitle}>Additional Details</Text>
+          <View style={styles.attributesHeader}>
+            <Ionicons name="list" size={20} color="#3b82f6" />
+            <Text style={styles.attributesTitle}>Additional Details</Text>
+          </View>
           <Text style={styles.attributesSubtitle}>
             Complete these fields to help customers find your product
           </Text>
@@ -254,7 +336,11 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
               
               {attribute.options && attribute.options.length > 0 ? (
                 // Dropdown for predefined options
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.optionsScroll}
+                >
                   <View style={styles.optionsContainer}>
                     <TouchableOpacity
                       style={[
@@ -304,10 +390,12 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* ✅ ENHANCED: Popular Categories with Search Integration */}
+      {/* Quick Select (Popular Categories) */}
       {!selectedCategory && categories.length > 0 && (
         <View style={styles.popularContainer}>
-          <Text style={styles.popularTitle}>Quick Select:</Text>
+          <Text style={styles.popularTitle}>
+            <Ionicons name="flash" size={14} color="#f59e0b" /> Quick Select:
+          </Text>
           <View style={styles.popularList}>
             {categories.slice(0, 5).map((category) => (
               <TouchableOpacity
@@ -322,10 +410,13 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* ✅ ADDED: Help text */}
-      <Text style={styles.helpText}>
-        Choose a category that best matches your product to help customers find it easily.
-      </Text>
+      {/* Help text */}
+      <View style={styles.helpContainer}>
+        <Ionicons name="information-circle" size={14} color="#9ca3af" />
+        <Text style={styles.helpText}>
+          Choose a category that best matches your product
+        </Text>
+      </View>
     </View>
   );
 };
@@ -335,12 +426,17 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   
-  // ✅ ENHANCED: Header styles
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
   },
   
   categoryCount: {
@@ -357,28 +453,50 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
+  
   loadingText: {
     marginTop: 12,
     fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  
+  loadingSubtext: {
+    marginTop: 4,
+    fontSize: 14,
     color: '#6b7280',
   },
   
-  // ✅ ENHANCED: Error container
   errorContainer: {
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
     backgroundColor: '#fef2f2',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#fecaca',
+    gap: 12,
+  },
+  
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ef4444',
+  },
+  
+  errorText: {
+    fontSize: 14,
+    color: '#dc2626',
+    textAlign: 'center',
   },
   
   retryButton: {
-    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#3b82f6',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
   },
   
   retryButtonText: {
@@ -390,43 +508,53 @@ const styles = StyleSheet.create({
   searchContainer: {
     marginBottom: 16,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  searchInput: {
+  
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
     backgroundColor: 'white',
+    gap: 8,
+  },
+  
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     color: '#374151',
   },
+  
   selectedCategoryContainer: {
     marginBottom: 16,
   },
+  
   selectedLabel: {
     fontSize: 14,
     color: '#6b7280',
     marginBottom: 8,
+    fontWeight: '500',
   },
+  
   selectedCategory: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#d1fae5',
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: '#10b981',
+    gap: 8,
   },
+  
   selectedCategoryText: {
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#047857',
   },
+  
   clearButton: {
     width: 24,
     height: 24,
@@ -435,19 +563,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  clearButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
+  
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 8,
   },
-  errorText: {
+  
+  errorBannerText: {
+    flex: 1,
     fontSize: 12,
     color: '#ef4444',
-    marginBottom: 8,
-    textAlign: 'center',
   },
+  
   categoriesContainer: {
-    maxHeight: 250,
+    maxHeight: 300,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     borderRadius: 8,
@@ -455,22 +589,25 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   
-  // ✅ ENHANCED: No categories container
   noCategoriesContainer: {
     alignItems: 'center',
-    padding: 20,
+    padding: 32,
+    gap: 12,
   },
+  
   noCategoriesText: {
     textAlign: 'center',
     color: '#6b7280',
-    marginBottom: 12,
+    fontSize: 14,
   },
+  
   clearSearchButton: {
     backgroundColor: '#6b7280',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
   },
+  
   clearSearchText: {
     color: 'white',
     fontSize: 12,
@@ -478,96 +615,117 @@ const styles = StyleSheet.create({
   },
   
   categoryOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
   },
+  
   categoryOptionActive: {
     backgroundColor: '#eff6ff',
     borderLeftWidth: 4,
     borderLeftColor: '#3b82f6',
   },
   
-  // ✅ ENHANCED: Category content
   categoryContent: {
-    flex: 1,
+    gap: 6,
   },
+  
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  
   categoryName: {
     fontSize: 16,
     color: '#374151',
     fontWeight: '500',
+    flex: 1,
   },
+  
   categoryNameActive: {
     color: '#1d4ed8',
     fontWeight: '600',
   },
+  
   categoryDescription: {
     fontSize: 12,
     color: '#6b7280',
-    marginTop: 4,
+    lineHeight: 18,
   },
+  
+  attributesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  
   attributesInfo: {
     fontSize: 10,
     color: '#3b82f6',
-    marginTop: 4,
     fontStyle: 'italic',
   },
   
-  checkMark: {
-    fontSize: 18,
-    color: '#10b981',
-    fontWeight: 'bold',
-  },
   attributesContainer: {
     backgroundColor: '#f8fafc',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    gap: 12,
   },
+  
+  attributesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  
   attributesTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 4,
   },
   
-  // ✅ ADDED: Attributes subtitle
   attributesSubtitle: {
     fontSize: 12,
     color: '#6b7280',
-    marginBottom: 16,
   },
   
   attributeGroup: {
-    marginBottom: 16,
+    gap: 8,
   },
+  
   attributeLabel: {
     fontSize: 14,
     fontWeight: '500',
     color: '#374151',
-    marginBottom: 8,
   },
+  
   required: {
     color: '#ef4444',
   },
+  
   attributeInput: {
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 6,
-    padding: 10,
+    padding: 12,
     fontSize: 14,
     backgroundColor: 'white',
     color: '#374151',
   },
+  
+  optionsScroll: {
+    marginVertical: 4,
+  },
+  
   optionsContainer: {
     flexDirection: 'row',
     gap: 8,
-    paddingVertical: 4,
   },
+  
   optionButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -576,33 +734,40 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     backgroundColor: 'white',
   },
+  
   optionButtonActive: {
     backgroundColor: '#3b82f6',
     borderColor: '#3b82f6',
   },
+  
   optionText: {
     fontSize: 12,
     color: '#6b7280',
     fontWeight: '500',
   },
+  
   optionTextActive: {
     color: 'white',
     fontWeight: '600',
   },
+  
   popularContainer: {
     marginBottom: 16,
+    gap: 8,
   },
+  
   popularTitle: {
     fontSize: 14,
     fontWeight: '500',
     color: '#6b7280',
-    marginBottom: 8,
   },
+  
   popularList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
+  
   popularTag: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -611,19 +776,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
+  
   popularTagText: {
     fontSize: 12,
     color: '#4b5563',
     fontWeight: '500',
   },
   
-  // ✅ ADDED: Help text
+  helpContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  
   helpText: {
+    flex: 1,
     fontSize: 11,
     color: '#9ca3af',
     fontStyle: 'italic',
-    textAlign: 'center',
-    paddingHorizontal: 16,
   },
 });
 

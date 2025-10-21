@@ -1,3 +1,8 @@
+/**
+ * BasicInfoComponent.tsx
+ * Enhanced with smart price validation from web form
+ */
+
 import React from 'react';
 import {
   View,
@@ -5,6 +10,7 @@ import {
   TextInput,
   StyleSheet,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface BasicInfoComponentProps {
   formData: {
@@ -23,19 +29,47 @@ const BasicInfoComponent: React.FC<BasicInfoComponentProps> = ({
   updateFormData,
   errors,
 }) => {
+  
+  // ✅ ENHANCED: Smart price validation (from web form)
+  const handlePriceChange = (value: string, field: 'price' | 'mrp') => {
+    // Remove non-numeric characters except decimal point
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    
+    // Prevent multiple decimal points
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+      return; // Don't update if more than one decimal point
+    }
+    
+    // Limit to 2 decimal places
+    if (parts[1] && parts[1].length > 2) {
+      return; // Don't update if more than 2 decimal places
+    }
+    
+    updateFormData({ [field]: cleaned });
+  };
+
   return (
     <View style={styles.container}>
       {/* Product Name */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Product Name *</Text>
+        <Text style={styles.label}>
+          Product Name <Text style={styles.required}>*</Text>
+        </Text>
         <TextInput
           style={[styles.input, errors.name && styles.inputError]}
           value={formData.name}
           onChangeText={(value) => updateFormData({ name: value })}
           placeholder="Enter product name"
+          placeholderTextColor="#9ca3af"
           maxLength={100}
         />
-        {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+        {errors.name && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={14} color="#ef4444" />
+            <Text style={styles.errorText}>{errors.name}</Text>
+          </View>
+        )}
         <Text style={styles.charCount}>{formData.name.length}/100</Text>
       </View>
 
@@ -47,47 +81,85 @@ const BasicInfoComponent: React.FC<BasicInfoComponentProps> = ({
           value={formData.model_name}
           onChangeText={(value) => updateFormData({ model_name: value })}
           placeholder="e.g., iPhone 15, Samsung Galaxy"
+          placeholderTextColor="#9ca3af"
           maxLength={50}
         />
+        <Text style={styles.helpText}>
+          💡 Adding model/brand helps customers find your product
+        </Text>
         <Text style={styles.charCount}>{formData.model_name.length}/50</Text>
       </View>
 
       {/* Price */}
       <View style={styles.row}>
         <View style={[styles.inputGroup, styles.halfWidth]}>
-          <Text style={styles.label}>Selling Price *</Text>
-          <TextInput
-            style={[styles.input, errors.price && styles.inputError]}
-            value={formData.price}
-            onChangeText={(value) => updateFormData({ price: value })}
-            placeholder="₹ 0"
-            keyboardType="numeric"
-            maxLength={10}
-          />
-          {errors.price && <Text style={styles.errorText}>{errors.price}</Text>}
+          <Text style={styles.label}>
+            Selling Price <Text style={styles.required}>*</Text>
+          </Text>
+          <View style={[styles.inputContainer, errors.price && styles.inputError]}>
+            <Text style={styles.currencySymbol}>₹</Text>
+            <TextInput
+              style={styles.priceInput}
+              value={formData.price}
+              onChangeText={(value) => handlePriceChange(value, 'price')}
+              placeholder="0.00"
+              placeholderTextColor="#9ca3af"
+              keyboardType="decimal-pad"
+              maxLength={10}
+            />
+          </View>
+          {errors.price && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={14} color="#ef4444" />
+              <Text style={styles.errorText}>{errors.price}</Text>
+            </View>
+          )}
         </View>
 
         <View style={[styles.inputGroup, styles.halfWidth]}>
           <Text style={styles.label}>MRP (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.mrp}
-            onChangeText={(value) => updateFormData({ mrp: value })}
-            placeholder="₹ 0"
-            keyboardType="numeric"
-            maxLength={10}
-          />
+          <View style={[styles.inputContainer, errors.mrp && styles.inputError]}>
+            <Text style={styles.currencySymbol}>₹</Text>
+            <TextInput
+              style={styles.priceInput}
+              value={formData.mrp}
+              onChangeText={(value) => handlePriceChange(value, 'mrp')}
+              placeholder="0.00"
+              placeholderTextColor="#9ca3af"
+              keyboardType="decimal-pad"
+              maxLength={10}
+            />
+          </View>
+          {errors.mrp && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={14} color="#ef4444" />
+              <Text style={styles.errorText}>{errors.mrp}</Text>
+            </View>
+          )}
         </View>
       </View>
 
-      {/* Price Comparison */}
+      {/* ✅ ENHANCED: Price Comparison with icon */}
       {formData.price && formData.mrp && parseFloat(formData.mrp) > parseFloat(formData.price) && (
         <View style={styles.priceComparison}>
-          <Text style={styles.savingsText}>
-            💰 Customer saves ₹{(parseFloat(formData.mrp) - parseFloat(formData.price)).toFixed(2)}
-          </Text>
+          <View style={styles.priceComparisonHeader}>
+            <Ionicons name="pricetag" size={20} color="#059669" />
+            <Text style={styles.savingsText}>
+              Customer saves ₹{(parseFloat(formData.mrp) - parseFloat(formData.price)).toFixed(2)}
+            </Text>
+          </View>
           <Text style={styles.discountText}>
-            ({(((parseFloat(formData.mrp) - parseFloat(formData.price)) / parseFloat(formData.mrp)) * 100).toFixed(1)}% off)
+            🎉 {(((parseFloat(formData.mrp) - parseFloat(formData.price)) / parseFloat(formData.mrp)) * 100).toFixed(1)}% discount will attract more buyers!
+          </Text>
+        </View>
+      )}
+
+      {/* ✅ WARNING: If MRP < Price */}
+      {formData.price && formData.mrp && parseFloat(formData.mrp) < parseFloat(formData.price) && (
+        <View style={styles.warningBanner}>
+          <Ionicons name="warning" size={18} color="#f59e0b" />
+          <Text style={styles.warningText}>
+            MRP should be greater than or equal to selling price
           </Text>
         </View>
       )}
@@ -99,7 +171,8 @@ const BasicInfoComponent: React.FC<BasicInfoComponentProps> = ({
           style={styles.textArea}
           value={formData.description}
           onChangeText={(value) => updateFormData({ description: value })}
-          placeholder="Describe your product features, specifications, etc."
+          placeholder="Describe your product features, specifications, warranty, condition, etc."
+          placeholderTextColor="#9ca3af"
           multiline
           numberOfLines={4}
           maxLength={500}
@@ -108,13 +181,30 @@ const BasicInfoComponent: React.FC<BasicInfoComponentProps> = ({
         <Text style={styles.charCount}>{formData.description.length}/500</Text>
       </View>
 
-      {/* Tips */}
+      {/* ✅ ENHANCED: Tips section with icons */}
       <View style={styles.tipsContainer}>
-        <Text style={styles.tipsTitle}>💡 Tips for better sales:</Text>
-        <Text style={styles.tip}>• Use clear, descriptive product names</Text>
-        <Text style={styles.tip}>• Add model/brand for electronics</Text>
-        <Text style={styles.tip}>• Competitive pricing attracts customers</Text>
-        <Text style={styles.tip}>• Detailed descriptions build trust</Text>
+        <View style={styles.tipsHeader}>
+          <Ionicons name="bulb" size={18} color="#1e40af" />
+          <Text style={styles.tipsTitle}>Tips for better sales</Text>
+        </View>
+        <View style={styles.tipsList}>
+          <View style={styles.tipItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.tip}>Use clear, descriptive product names</Text>
+          </View>
+          <View style={styles.tipItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.tip}>Add model/brand for electronics</Text>
+          </View>
+          <View style={styles.tipItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.tip}>Competitive pricing attracts customers</Text>
+          </View>
+          <View style={styles.tipItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.tip}>Detailed descriptions build trust</Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -133,6 +223,9 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginBottom: 8,
   },
+  required: {
+    color: '#ef4444',
+  },
   input: {
     borderWidth: 1,
     borderColor: '#d1d5db',
@@ -140,10 +233,36 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: 'white',
+    color: '#374151',
   },
   inputError: {
     borderColor: '#ef4444',
   },
+  
+  // ✅ NEW: Price input with currency symbol
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: 'white',
+    paddingLeft: 12,
+  },
+  currencySymbol: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginRight: 4,
+  },
+  priceInput: {
+    flex: 1,
+    padding: 12,
+    paddingLeft: 4,
+    fontSize: 16,
+    color: '#374151',
+  },
+  
   textArea: {
     borderWidth: 1,
     borderColor: '#d1d5db',
@@ -151,6 +270,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: 'white',
+    color: '#374151',
     minHeight: 100,
   },
   row: {
@@ -160,52 +280,111 @@ const styles = StyleSheet.create({
   halfWidth: {
     flex: 1,
   },
+  
+  // ✅ ENHANCED: Error container with icon
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 4,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#ef4444',
+  },
+  
   charCount: {
     fontSize: 12,
     color: '#9ca3af',
     textAlign: 'right',
     marginTop: 4,
   },
-  errorText: {
-    fontSize: 12,
-    color: '#ef4444',
+  
+  helpText: {
+    fontSize: 11,
+    color: '#6b7280',
     marginTop: 4,
+    fontStyle: 'italic',
   },
+  
+  // ✅ ENHANCED: Price comparison
   priceComparison: {
-    backgroundColor: '#ecfdf5',
+    backgroundColor: '#d1fae5',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#10b981',
+    gap: 6,
+  },
+  priceComparisonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  savingsText: {
+    fontSize: 16,
+    color: '#047857',
+    fontWeight: '700',
+  },
+  discountText: {
+    fontSize: 13,
+    color: '#059669',
+    lineHeight: 18,
+  },
+  
+  // ✅ NEW: Warning banner
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef3c7',
     padding: 12,
     borderRadius: 8,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#10b981',
+    borderColor: '#f59e0b',
+    gap: 8,
   },
-  savingsText: {
-    fontSize: 14,
-    color: '#059669',
-    fontWeight: '600',
+  warningText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400e',
+    fontWeight: '500',
   },
-  discountText: {
-    fontSize: 12,
-    color: '#047857',
-  },
+  
+  // ✅ ENHANCED: Tips container
   tipsContainer: {
-    backgroundColor: '#f0f9ff',
+    backgroundColor: '#eff6ff',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: '#93c5fd',
+    gap: 12,
+  },
+  tipsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   tipsTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#1e40af',
-    marginBottom: 8,
+  },
+  tipsList: {
+    gap: 8,
+  },
+  tipItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   tip: {
+    flex: 1,
     fontSize: 12,
-    color: '#1e40af',
-    marginBottom: 4,
+    color: '#1e3a8a',
+    lineHeight: 18,
   },
 });
 

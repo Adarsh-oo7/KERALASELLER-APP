@@ -3,7 +3,7 @@ import { CommonActions } from '@react-navigation/native';
 import apiClient from './ApiClient';
 
 const API_BASE_URL = __DEV__ 
-  ? 'http://192.168.1.4:8000'
+  ? 'http://10.0.2.2:8000'  // ✅ CORRECT for Android Emulator
   : 'https://keralaseller-backend.onrender.com';
 
 class AuthService {

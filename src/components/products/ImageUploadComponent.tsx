@@ -1,3 +1,8 @@
+/**
+ * ImageUploadComponent.tsx  
+ * Enhanced with image compression for faster Cloudinary uploads
+ */
+
 import React from 'react';
 import {
   View,
@@ -9,6 +14,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 
 interface ImageUploadComponentProps {
   mainImage: string;
@@ -29,6 +35,7 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
   onSubImagesChange,
   error,
 }) => {
+  
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -48,11 +55,17 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
 
     Alert.alert(
       'Select Image',
-      'Choose an option',
+      'Choose how you want to add your image',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Camera', onPress: () => openCamera(type) },
-        { text: 'Gallery', onPress: () => openGallery(type) },
+        { 
+          text: '📷 Take Photo', 
+          onPress: () => openCamera(type) 
+        },
+        { 
+          text: '🖼️ Choose from Gallery', 
+          onPress: () => openGallery(type) 
+        },
       ]
     );
   };
@@ -66,24 +79,15 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ Use MediaTypeOptions
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.8, // ✅ Compress to 80% quality
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
         const imageUri = result.assets[0].uri;
-        if (type === 'main') {
-          onMainImageChange(imageUri);
-        } else {
-          if (subImages.length < 4) {
-            onSubImagesChange([...subImages, imageUri]);
-          } else {
-            Alert.alert('Limit Reached', 'You can only add up to 4 additional images');
-          }
-        }
-        console.log(`✅ ${type} image selected:`, imageUri);
+        handleImageSelected(imageUri, type);
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -94,24 +98,15 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
   const openGallery = async (type: 'main' | 'sub') => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ Use MediaTypeOptions
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.8, // ✅ Compress to 80% quality
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
         const imageUri = result.assets[0].uri;
-        if (type === 'main') {
-          onMainImageChange(imageUri);
-        } else {
-          if (subImages.length < 4) {
-            onSubImagesChange([...subImages, imageUri]);
-          } else {
-            Alert.alert('Limit Reached', 'You can only add up to 4 additional images');
-          }
-        }
-        console.log(`✅ ${type} image selected:`, imageUri);
+        handleImageSelected(imageUri, type);
       }
     } catch (error) {
       console.error('Gallery error:', error);
@@ -119,9 +114,61 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
     }
   };
 
+  // ✅ ENHANCED: Centralized image handling with validation
+  const handleImageSelected = (imageUri: string, type: 'main' | 'sub') => {
+    console.log(`✅ ${type} image selected:`, imageUri);
+    
+    if (type === 'main') {
+      onMainImageChange(imageUri);
+    } else {
+      if (subImages.length < 4) {
+        onSubImagesChange([...subImages, imageUri]);
+      } else {
+        Alert.alert(
+          'Limit Reached',
+          'You can only add up to 4 additional images.\n\nTip: Choose your best product angles!',
+          [{ text: 'OK' }]
+        );
+      }
+    }
+  };
+
   const removeSubImage = (index: number) => {
-    const updatedImages = subImages.filter((_, i) => i !== index);
-    onSubImagesChange(updatedImages);
+    Alert.alert(
+      'Remove Image',
+      'Are you sure you want to remove this image?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            const updatedImages = subImages.filter((_, i) => i !== index);
+            onSubImagesChange(updatedImages);
+            console.log('🗑️ Sub image removed at index:', index);
+          },
+        },
+      ]
+    );
+  };
+
+  // ✅ ENHANCED: Clear main image
+  const clearMainImage = () => {
+    Alert.alert(
+      'Remove Main Image',
+      'Are you sure? This is the primary product image.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            onMainImageChange('');
+            console.log('🗑️ Main image cleared');
+          },
+        },
+      ]
+    );
   };
 
   const currentMainImage = mainImage || existingMainImage;
@@ -131,7 +178,10 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
     <View style={styles.container}>
       {/* Main Image */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Main Product Image *</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="image" size={20} color="#3b82f6" />
+          <Text style={styles.sectionTitle}>Main Product Image *</Text>
+        </View>
         <Text style={styles.sectionDescription}>
           This will be the primary image customers see first
         </Text>
@@ -139,6 +189,7 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
         <TouchableOpacity
           style={[styles.mainImageContainer, error && styles.mainImageError]}
           onPress={() => selectImage('main')}
+          activeOpacity={0.8}
         >
           {currentMainImage ? (
             <View style={styles.imageWrapper}>
@@ -148,29 +199,52 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
                 resizeMode="cover"
               />
               <View style={styles.imageOverlay}>
+                <Ionicons name="camera" size={16} color="white" />
                 <Text style={styles.changeText}>Tap to change</Text>
               </View>
+              {/* ✅ NEW: Clear button */}
+              <TouchableOpacity
+                style={styles.clearMainImageButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  clearMainImage();
+                }}
+              >
+                <Ionicons name="close-circle" size={24} color="#ef4444" />
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.imagePlaceholder}>
-              <Text style={styles.placeholderIcon}>📷</Text>
+              <Ionicons name="camera" size={48} color="#3b82f6" />
               <Text style={styles.placeholderText}>Add Main Image</Text>
-              <Text style={styles.placeholderSubtext}>Tap to upload</Text>
+              <Text style={styles.placeholderSubtext}>Tap to upload or take photo</Text>
             </View>
           )}
         </TouchableOpacity>
         
-        {error && <Text style={styles.errorText}>{error}</Text>}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={14} color="#ef4444" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
       </View>
 
       {/* Additional Images */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Additional Images (Optional)</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="images" size={20} color="#10b981" />
+          <Text style={styles.sectionTitle}>Additional Images (Optional)</Text>
+        </View>
         <Text style={styles.sectionDescription}>
           Add up to 4 more images to showcase different angles
         </Text>
         
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.subImagesScrollContent}
+        >
           <View style={styles.subImagesContainer}>
             {/* Existing sub images */}
             {allSubImages.map((imageUri, index) => (
@@ -184,8 +258,12 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
                   style={styles.removeButton}
                   onPress={() => removeSubImage(index)}
                 >
-                  <Text style={styles.removeButtonText}>✕</Text>
+                  <Ionicons name="close" size={14} color="white" />
                 </TouchableOpacity>
+                {/* ✅ NEW: Image number badge */}
+                <View style={styles.imageNumberBadge}>
+                  <Text style={styles.imageNumberText}>{index + 1}</Text>
+                </View>
               </View>
             ))}
             
@@ -194,34 +272,72 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
               <TouchableOpacity
                 style={styles.addSubImageButton}
                 onPress={() => selectImage('sub')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.addIcon}>+</Text>
+                <Ionicons name="add" size={32} color="#6b7280" />
                 <Text style={styles.addText}>Add Image</Text>
+                <Text style={styles.addSubtext}>{4 - allSubImages.length} left</Text>
               </TouchableOpacity>
             )}
           </View>
         </ScrollView>
         
-        <Text style={styles.imageCount}>
-          {allSubImages.length}/4 additional images
-        </Text>
+        <View style={styles.imageCountContainer}>
+          <Ionicons 
+            name={allSubImages.length === 4 ? "checkmark-circle" : "information-circle"} 
+            size={14} 
+            color={allSubImages.length === 4 ? "#10b981" : "#6b7280"} 
+          />
+          <Text style={[
+            styles.imageCount,
+            allSubImages.length === 4 && styles.imageCountComplete
+          ]}>
+            {allSubImages.length}/4 additional images
+            {allSubImages.length === 4 && ' ✓'}
+          </Text>
+        </View>
       </View>
 
       {/* Image Guidelines */}
       <View style={styles.guidelinesContainer}>
-        <Text style={styles.guidelinesTitle}>📋 Image Guidelines:</Text>
-        <Text style={styles.guideline}>• Use high-quality, clear images</Text>
-        <Text style={styles.guideline}>• Show product from different angles</Text>
-        <Text style={styles.guideline}>• Ensure good lighting and focus</Text>
-        <Text style={styles.guideline}>• Avoid watermarks or text overlays</Text>
-        <Text style={styles.guideline}>• Square images (1:1 ratio) work best</Text>
+        <View style={styles.guidelinesHeader}>
+          <Ionicons name="list" size={18} color="#1e40af" />
+          <Text style={styles.guidelinesTitle}>Image Guidelines</Text>
+        </View>
+        <View style={styles.guidelinesList}>
+          <View style={styles.guidelineItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.guideline}>Use high-quality, clear images</Text>
+          </View>
+          <View style={styles.guidelineItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.guideline}>Show product from different angles</Text>
+          </View>
+          <View style={styles.guidelineItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.guideline}>Ensure good lighting and focus</Text>
+          </View>
+          <View style={styles.guidelineItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.guideline}>Avoid watermarks or text overlays</Text>
+          </View>
+          <View style={styles.guidelineItem}>
+            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Text style={styles.guideline}>Square images (1:1) work best</Text>
+          </View>
+        </View>
       </View>
 
-      {/* Image Preview */}
+      {/* Preview */}
       {currentMainImage && (
         <View style={styles.previewContainer}>
-          <Text style={styles.previewTitle}>Preview:</Text>
-          <Text style={styles.previewDescription}>How customers will see your product</Text>
+          <View style={styles.previewHeader}>
+            <Ionicons name="eye" size={18} color="#374151" />
+            <Text style={styles.previewTitle}>Preview</Text>
+          </View>
+          <Text style={styles.previewDescription}>
+            How customers will see your product
+          </Text>
           
           <View style={styles.previewCard}>
             <Image 
@@ -232,9 +348,14 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
             <View style={styles.previewContent}>
               <Text style={styles.previewProductName}>Your Product Name</Text>
               <Text style={styles.previewPrice}>₹ Your Price</Text>
-              <Text style={styles.previewBadge}>
-                {allSubImages.length > 0 ? `+${allSubImages.length} more photos` : 'Single photo'}
-              </Text>
+              {allSubImages.length > 0 && (
+                <View style={styles.previewBadge}>
+                  <Ionicons name="images" size={10} color="#6b7280" />
+                  <Text style={styles.previewBadgeText}>
+                    +{allSubImages.length} more {allSubImages.length === 1 ? 'photo' : 'photos'}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -243,8 +364,6 @@ const ImageUploadComponent: React.FC<ImageUploadComponentProps> = ({
   );
 };
 
-// ... styles remain the same as before ...
-
 const styles = StyleSheet.create({
   container: {
     paddingBottom: 20,
@@ -252,11 +371,16 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 30,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 4,
   },
   sectionDescription: {
     fontSize: 14,
@@ -264,26 +388,26 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   mainImageContainer: {
-    width: 200,
-    height: 200,
+    width: 220,
+    height: 220,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#3b82f6',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f0f9ff',
+    backgroundColor: '#eff6ff',
     alignSelf: 'center',
+    overflow: 'hidden',
   },
   mainImageError: {
     borderColor: '#ef4444',
+    backgroundColor: '#fef2f2',
   },
   imageWrapper: {
     position: 'relative',
     width: '100%',
     height: '100%',
-    borderRadius: 10,
-    overflow: 'hidden',
   },
   mainImage: {
     width: '100%',
@@ -295,20 +419,27 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    padding: 8,
+    padding: 10,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   changeText: {
     color: 'white',
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  clearMainImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'white',
+    borderRadius: 12,
   },
   imagePlaceholder: {
     alignItems: 'center',
-    gap: 8,
-  },
-  placeholderIcon: {
-    fontSize: 32,
+    gap: 12,
   },
   placeholderText: {
     fontSize: 16,
@@ -316,48 +447,71 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   placeholderSubtext: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#6b7280',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 6,
   },
   errorText: {
     fontSize: 12,
     color: '#ef4444',
-    marginTop: 8,
-    textAlign: 'center',
+    fontWeight: '500',
+  },
+  subImagesScrollContent: {
+    paddingRight: 20,
   },
   subImagesContainer: {
     flexDirection: 'row',
     gap: 12,
-    paddingRight: 20,
   },
   subImageWrapper: {
     position: 'relative',
   },
   subImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
   },
   removeButton: {
     position: 'absolute',
     top: -6,
     right: -6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#ef4444',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
   },
-  removeButtonText: {
+  imageNumberBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageNumberText: {
     color: 'white',
     fontSize: 10,
     fontWeight: 'bold',
   },
   addSubImageButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: '#d1d5db',
     borderStyle: 'dashed',
@@ -365,53 +519,82 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f9fafb',
   },
-  addIcon: {
-    fontSize: 24,
-    color: '#6b7280',
-    marginBottom: 4,
-  },
   addText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#6b7280',
-    textAlign: 'center',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  addSubtext: {
+    fontSize: 10,
+    color: '#9ca3af',
+  },
+  imageCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 6,
   },
   imageCount: {
     fontSize: 12,
     color: '#6b7280',
-    marginTop: 8,
-    textAlign: 'center',
+    fontWeight: '500',
+  },
+  imageCountComplete: {
+    color: '#10b981',
+    fontWeight: '600',
   },
   guidelinesContainer: {
-    backgroundColor: '#f0f9ff',
+    backgroundColor: '#eff6ff',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: '#93c5fd',
+  },
+  guidelinesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   guidelinesTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#1e40af',
-    marginBottom: 8,
+  },
+  guidelinesList: {
+    gap: 8,
+  },
+  guidelineItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   guideline: {
+    flex: 1,
     fontSize: 12,
-    color: '#1e40af',
-    marginBottom: 4,
+    color: '#1e3a8a',
+    lineHeight: 18,
   },
   previewContainer: {
     backgroundColor: '#f8fafc',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
   },
   previewTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 4,
   },
   previewDescription: {
     fontSize: 12,
@@ -421,15 +604,15 @@ const styles = StyleSheet.create({
   previewCard: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
   previewImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 6,
+    width: 70,
+    height: 70,
+    borderRadius: 8,
     marginRight: 12,
   },
   previewContent: {
@@ -442,18 +625,24 @@ const styles = StyleSheet.create({
     color: '#374151',
   },
   previewPrice: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#059669',
   },
   previewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  previewBadgeText: {
     fontSize: 10,
     color: '#6b7280',
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
+    fontWeight: '500',
   },
 });
 

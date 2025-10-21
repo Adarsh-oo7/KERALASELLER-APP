@@ -1,42 +1,78 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  StyleSheet,
-  ActivityIndicator,
-  Image,
-  Switch,
-  Platform,
+  View, Text, TextInput, TouchableOpacity, ScrollView, Alert, StyleSheet,
+  ActivityIndicator, Image, Switch, Platform, FlatList, Modal,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
-import StoreService from '../../services/StoreService';
+import apiClient from '../../services/ApiClient';
 import AuthService from '../../services/AuthService';
-import { StoreProfile, ApiError } from '../../types/api';
+
+// ✅ Cloudinary Config (Same as Web)
+const CLOUDINARY_CONFIG = {
+  cloudName: 'dnmbfeckd',
+  uploadPreset: 'keralasellers_preset',
+  fallbackPreset: 'ml_default',
+  folder: 'kerala-sellers/store-profiles',
+};
+
+// ✅ Cloudinary Upload Function
+const uploadToCloudinary = async (fileUri: string, options: any = {}) => {
+  const presetsToTry = [
+    { preset: CLOUDINARY_CONFIG.uploadPreset, name: 'custom' },
+    { preset: CLOUDINARY_CONFIG.fallbackPreset, name: 'fallback' },
+  ];
+
+  for (const { preset, name } of presetsToTry) {
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: fileUri,
+        type: 'image/jpeg',
+        name: `store_${Date.now()}.jpg`,
+      } as any);
+      formData.append('upload_preset', preset);
+      formData.append('folder', options.folder || CLOUDINARY_CONFIG.folder);
+      if (options.width) formData.append('width', options.width.toString());
+      if (options.height) formData.append('height', options.height.toString());
+      if (options.crop) formData.append('crop', options.crop);
+      formData.append('quality', 'auto:good');
+      formData.append('fetch_format', 'auto');
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`,
+        { method: 'POST', body: formData }
+      );
+
+      if (!response.ok) {
+        if (name === 'fallback') throw new Error('Upload failed');
+        continue;
+      }
+
+      const result = await response.json();
+      return { success: true, url: result.secure_url, publicId: result.public_id };
+    } catch (error) {
+      if (name === 'fallback') return { success: false, error: error.message };
+    }
+  }
+  return { success: false, error: 'All upload presets failed' };
+};
 
 interface StoreFormData {
   name: string;
   description: string;
   whatsapp_number: string;
   tagline: string;
-  instagram_link: string;
-  facebook_link: string;
   delivery_time_local: string;
   delivery_time_national: string;
   payment_method: string;
+  accepts_cod: boolean;
+  cashfree_bank_account: string;
+  cashfree_ifsc: string;
+  cashfree_account_holder: string;
   razorpay_key_id: string;
   razorpay_key_secret: string;
   upi_id: string;
-  accepts_cod: boolean;
-  gst_number: string;
-  business_license: string;
-  owner_name: string;
-  business_address: string;
-  verification_status: string;
 }
 
 type CreateShopScreenProps = {
@@ -47,478 +83,326 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState<'mandatory' | 'optional'>('mandatory');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [verificationProgress, setVerificationProgress] = useState<number>(0);
+  const [isUploadingImages, setIsUploadingImages] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   
-  // ✅ FIXED: Better mode detection
-  const [isEditMode, setIsEditMode] = useState<boolean>(false);
-  const [storeExists, setStoreExists] = useState<boolean>(false);
-  const [storeId, setStoreId] = useState<number | null>(null);
-
   const [store, setStore] = useState<StoreFormData>({
     name: '',
     description: '',
     whatsapp_number: '',
     tagline: '',
-    instagram_link: '',
-    facebook_link: '',
     delivery_time_local: '',
     delivery_time_national: '',
-    payment_method: 'NONE', // ✅ FIXED: Use NONE as default (matches Django backend)
+    payment_method: 'CASHFREE',
+    accepts_cod: false,
+    cashfree_bank_account: '',
+    cashfree_ifsc: '',
+    cashfree_account_holder: '',
     razorpay_key_id: '',
     razorpay_key_secret: '',
     upi_id: '',
-    accepts_cod: true,
-    gst_number: '',
-    business_license: '',
-    owner_name: '',
-    business_address: '',
-    verification_status: 'pending'
   });
 
-  // File states
   const [logoUri, setLogoUri] = useState<string>('');
   const [bannerUri, setBannerUri] = useState<string>('');
   const [currentLogoUrl, setCurrentLogoUrl] = useState<string>('');
-  const [currentBannerUrl, setCurrentBannerUrl] = useState<string>('');
+  const [cloudinaryData, setCloudinaryData] = useState<any>({ logo: null, banner: null });
+  
+  // ✅ NEW: Predefined Banners (Like Web)
+  const [predefinedBanners, setPredefinedBanners] = useState<any[]>([]);
+  const [selectedPredefinedBanners, setSelectedPredefinedBanners] = useState<number[]>([]);
+  const [currentBannerUrls, setCurrentBannerUrls] = useState<string[]>([]);
+  const [showBannerGallery, setShowBannerGallery] = useState<boolean>(false);
+  
+  // ✅ NEW: Cashfree State (Like Web)
+  const [cashfreeConnected, setCashfreeConnected] = useState<boolean>(false);
+  const [isConnectingCashfree, setIsConnectingCashfree] = useState<boolean>(false);
 
   useEffect(() => {
     requestPermissions();
     fetchStoreProfile();
+    fetchPredefinedBanners();
   }, []);
 
   const requestPermissions = async (): Promise<void> => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Please grant camera roll permissions to upload images.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Permission Required', 'Please grant camera roll permissions.');
       }
     }
   };
 
-  // ✅ FIXED: Simplified store detection - ANY existing profile = EDIT mode
+  const fetchPredefinedBanners = async (): Promise<void> => {
+    try {
+      const response = await apiClient.get('/api/predefined-banners/');
+      const activeBanners = response.data.filter((b: any) => b.is_active);
+      setPredefinedBanners(activeBanners);
+      console.log(`✅ Loaded ${activeBanners.length} predefined banners`);
+    } catch (error) {
+      console.error('❌ Error fetching predefined banners:', error);
+    }
+  };
+
   const fetchStoreProfile = async (): Promise<void> => {
     try {
-      console.log('🔍 Checking if store profile exists...');
-      const response = await StoreService.getProfile();
-      const profileData = response.data.store_profile;
+      setIsLoading(true);
+      const response = await apiClient.get('/user/store/profile/');
       
-      if (profileData) {
-        // ✅ ANY existing profile goes to EDIT mode
-        console.log('✅ Store profile found - EDIT MODE');
-        setStoreExists(true);
-        setIsEditMode(true);
-        setStoreId(profileData.id || null);
-        
+      if (response.data.store_profile) {
+        const profile = response.data.store_profile;
         setStore({
-          name: profileData.name || '',
-          description: profileData.description || '',
-          whatsapp_number: profileData.whatsapp_number || '',
-          tagline: profileData.tagline || '',
-          instagram_link: profileData.instagram_link || '',
-          facebook_link: profileData.facebook_link || '',
-          delivery_time_local: profileData.delivery_time_local || '',
-          delivery_time_national: profileData.delivery_time_national || '',
-          payment_method: profileData.payment_method || 'NONE', // ✅ Use backend value directly
-          razorpay_key_id: profileData.razorpay_key_id || '',
-          razorpay_key_secret: profileData.razorpay_key_secret || '',
-          upi_id: profileData.upi_id || '',
-          accepts_cod: profileData.accepts_cod !== undefined ? profileData.accepts_cod : true,
-          gst_number: profileData.gst_number || '',
-          business_license: profileData.business_license || '',
-          owner_name: profileData.owner_name || '',
-          business_address: profileData.business_address || '',
-          verification_status: profileData.verification_status || 'pending'
+          name: profile.name || '',
+          description: profile.description || '',
+          whatsapp_number: profile.whatsapp_number || '',
+          tagline: profile.tagline || '',
+          delivery_time_local: profile.delivery_time_local || '',
+          delivery_time_national: profile.delivery_time_national || '',
+          payment_method: profile.payment_method || 'CASHFREE',
+          accepts_cod: profile.accepts_cod || false,
+          cashfree_bank_account: profile.cashfree_bank_account || '',
+          cashfree_ifsc: profile.cashfree_ifsc || '',
+          cashfree_account_holder: profile.cashfree_account_holder || '',
+          razorpay_key_id: profile.razorpay_key_id || '',
+          razorpay_key_secret: profile.razorpay_key_secret || '',
+          upi_id: profile.upi_id || '',
         });
         
-        setCurrentLogoUrl(profileData.logo_url || '');
-        setCurrentBannerUrl(profileData.banner_image_url || '');
-        calculateProgress(profileData);
+        setCurrentLogoUrl(profile.logo_url || '');
         
-      } else {
-        // ✅ No profile = CREATE mode
-        console.log('ℹ️ No store profile found - CREATE MODE');
-        setStoreExists(false);
-        setIsEditMode(false);
+        const banners: number[] = [];
+        const bannerUrls: string[] = [];
+        if (profile.predefined_banner_1) {
+          banners.push(profile.predefined_banner_1);
+          bannerUrls.push(profile.banner_1_url);
+        }
+        if (profile.predefined_banner_2) {
+          banners.push(profile.predefined_banner_2);
+          bannerUrls.push(profile.banner_2_url);
+        }
+        if (profile.predefined_banner_3) {
+          banners.push(profile.predefined_banner_3);
+          bannerUrls.push(profile.banner_3_url);
+        }
+        setSelectedPredefinedBanners(banners);
+        setCurrentBannerUrls(bannerUrls);
       }
-    } catch (error: any) {
-      console.error('❌ Error checking store profile:', error);
-      
-      if (error.response?.status === 404) {
-        console.log('ℹ️ 404 - No store profile exists - CREATE MODE');
-        setStoreExists(false);
-        setIsEditMode(false);
-      } else if (error.response?.status === 401) {
-        Alert.alert('Session Expired', 'Please login again', [
-          { text: 'OK', onPress: () => handleLogout() }
-        ]);
-      } else {
-        console.log('⚠️ Other error occurred:', error.response?.status);
-        setStoreExists(false);
-        setIsEditMode(false);
-      }
+
+      await checkCashfreeStatus();
+    } catch (error) {
+      console.error('Error fetching store profile:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const calculateProgress = (storeData: any): void => {
-    const mandatoryFields = ['name', 'description', 'whatsapp_number'];
-    const optionalFields = ['gst_number', 'business_license', 'owner_name', 'business_address'];
-    
-    let completed = 0;
-    let total = mandatoryFields.length + optionalFields.length + 1;
-    
-    mandatoryFields.forEach(field => {
-      if (storeData[field]?.trim()) completed++;
-    });
-    
-    if (storeData.logo_url) completed++;
-    
-    optionalFields.forEach(field => {
-      if (storeData[field]?.trim()) completed++;
-    });
-    
-    setVerificationProgress(Math.round((completed / total) * 100));
+  const checkCashfreeStatus = async () => {
+    try {
+      const response = await apiClient.get('/api/payments/cashfree/vendor/status/');
+      if (response.data.registered) {
+        setCashfreeConnected(true);
+      }
+    } catch (error) {
+      console.log('No Cashfree vendor found');
+    }
   };
 
   const handleInputChange = (name: keyof StoreFormData, value: string | boolean): void => {
     setStore(prev => ({ ...prev, [name]: value }));
-    
     if (errorMessage) setErrorMessage('');
     if (successMessage) setSuccessMessage('');
   };
 
-  const validateForm = (): string[] => {
-    const errors: string[] = [];
-    
-    if (!store.name?.trim()) errors.push('Store name is required');
-    if (!store.description?.trim()) errors.push('Store description is required');
-    if (!store.whatsapp_number?.trim()) errors.push('WhatsApp number is required');
-    
-    if (store.whatsapp_number) {
-      const cleanNumber = store.whatsapp_number.replace(/\D/g, '');
-      if (!/^[6-9]\d{9}$/.test(cleanNumber)) {
-        errors.push('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9');
+  const handleFileChange = async (fileType: 'logo' | 'banner', file: any) => {
+    if (!file) return;
+
+    setIsUploadingImages(true);
+    const result = await uploadToCloudinary(file.uri, {
+      folder: `${CLOUDINARY_CONFIG.folder}/${fileType}`,
+      width: fileType === 'logo' ? 400 : 1200,
+      height: fileType === 'logo' ? 400 : 400,
+      crop: 'fill',
+    });
+
+    if (result.success) {
+      setCloudinaryData((prev: any) => ({ ...prev, [fileType]: result }));
+      if (fileType === 'logo') setCurrentLogoUrl(result.url);
+      if (fileType === 'banner') {
+        setCurrentBannerUrls([result.url]);
+        setSelectedPredefinedBanners([]);
       }
+      setSuccessMessage(`${fileType} uploaded successfully!`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } else {
+      setErrorMessage(`Failed to upload ${fileType}`);
     }
-    
-    return errors;
+    setIsUploadingImages(false);
   };
 
-  // ✅ SIMPLIFIED: Use the smart create/update method
-  const handleSubmit = async (): Promise<void> => {
-    const validationErrors = validateForm();
-    if (validationErrors.length > 0) {
-      Alert.alert('Validation Error', validationErrors.join('\n\n'));
+  const handleBannerSelect = (bannerId: number, bannerUrl: string) => {
+    if (selectedPredefinedBanners.includes(bannerId)) {
+      setSelectedPredefinedBanners(prev => prev.filter(id => id !== bannerId));
+      setCurrentBannerUrls(prev => prev.filter(url => url !== bannerUrl));
+    } else if (selectedPredefinedBanners.length < 3) {
+      setSelectedPredefinedBanners(prev => [...prev, bannerId]);
+      setCurrentBannerUrls(prev => [...prev, bannerUrl]);
+    } else {
+      setErrorMessage('⚠️ Maximum 3 banners allowed');
+      setTimeout(() => setErrorMessage(''), 3000);
+    }
+  };
+
+  const handleCashfreeConnect = async () => {
+    if (!store.cashfree_bank_account?.trim() || !store.cashfree_ifsc?.trim() || !store.cashfree_account_holder?.trim()) {
+      setErrorMessage('Please fill all Cashfree fields');
       return;
     }
-    
-    setIsSaving(true);
-    setSuccessMessage('');
-    setErrorMessage('');
-    
-    try {
-      console.log('🔄 Saving store profile...');
-      
-      let response;
-      
-      // ✅ STEP 1: Save text data (this should always work)
-      console.log('📤 Step 1: Saving text data...');
-      response = await StoreService.createOrUpdateProfile(store);
-      console.log('✅ Text data saved successfully');
 
-      // ✅ STEP 2: Handle files separately if they exist
-      const hasFiles = logoUri || bannerUri;
-      if (hasFiles) {
-        console.log('📤 Step 2: Uploading files...');
-        
-        try {
-          const formData = new FormData();
-          formData.append('name', store.name); // Required field
-          
-          if (logoUri) {
-            formData.append('logo', {
-              uri: logoUri,
-              type: 'image/jpeg',
-              name: 'logo.jpg',
-            } as any);
-          }
-          
-          if (bannerUri) {
-            formData.append('banner_image', {
-              uri: bannerUri,
-              type: 'image/jpeg',
-              name: 'banner.jpg',
-            } as any);
-          }
-          
-          // ✅ For files, we always UPDATE (since profile exists after step 1)
-          const fileResponse = await StoreService.updateProfile(formData);
-          console.log('✅ Files uploaded successfully');
-          response = fileResponse;
-          
-        } catch (fileError: any) {
-          console.error('⚠️ File upload failed:', fileError);
-          Alert.alert(
-            'Partial Success',
-            'Your store profile was saved, but image upload failed. You can try uploading images again later.',
-            [{ text: 'OK' }]
-          );
-        }
+    try {
+      setIsConnectingCashfree(true);
+      const response = await apiClient.post('/api/payments/cashfree/vendor/register/', {
+        bank_account: store.cashfree_bank_account,
+        ifsc: store.cashfree_ifsc,
+        account_holder_name: store.cashfree_account_holder,
+        email: `${store.whatsapp_number}@keralasellers.com`,
+      });
+
+      if (response.data.vendor_id) {
+        setCashfreeConnected(true);
+        setSuccessMessage('Bank account registered! You will receive 100% of sales directly.');
       }
+    } catch (error: any) {
+      setErrorMessage(error.response?.data?.error || 'Failed to register bank account');
+    } finally {
+      setIsConnectingCashfree(false);
+    }
+  };
+
+  const handleSubmit = async (): Promise<void> => {
+    if (!store.name?.trim() || !store.description?.trim() || !store.whatsapp_number?.trim()) {
+      setErrorMessage('Please fill all required fields');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      let updatedCloudinaryData = { ...cloudinaryData };
+
+      // Upload new images if selected
+      if (logoUri || bannerUri) {
+        setIsUploadingImages(true);
+        
+        if (logoUri) {
+          const logoResult = await uploadToCloudinary(logoUri, {
+            folder: `${CLOUDINARY_CONFIG.folder}/logo`,
+            width: 400,
+            height: 400,
+            crop: 'fill',
+          });
+          if (logoResult.success) {
+            updatedCloudinaryData.logo = {
+              publicId: logoResult.publicId,
+              url: logoResult.url,
+            };
+          }
+        }
+
+        if (bannerUri) {
+          const bannerResult = await uploadToCloudinary(bannerUri, {
+            folder: `${CLOUDINARY_CONFIG.folder}/banner`,
+            width: 1200,
+            height: 400,
+            crop: 'fill',
+          });
+          if (bannerResult.success) {
+            updatedCloudinaryData.banner = {
+              publicId: bannerResult.publicId,
+              url: bannerResult.url,
+            };
+          }
+        }
+        
+        setIsUploadingImages(false);
+      }
+
+      const requestData = {
+        ...store,
+        predefined_banner_1: selectedPredefinedBanners[0] || null,
+        predefined_banner_2: selectedPredefinedBanners[1] || null,
+        predefined_banner_3: selectedPredefinedBanners[2] || null,
+        cloudinary_logo: updatedCloudinaryData.logo ? {
+          public_id: updatedCloudinaryData.logo.publicId,
+          url: updatedCloudinaryData.logo.url,
+        } : null,
+        cloudinary_banner_1: updatedCloudinaryData.banner ? {
+          public_id: updatedCloudinaryData.banner.publicId,
+          url: updatedCloudinaryData.banner.url,
+        } : null,
+      };
+
+      const response = await apiClient.patch('/user/store/profile/', requestData);
       
-      handleSuccess(response);
+      setSuccessMessage('✅ Settings updated successfully!');
+      Alert.alert('Success', 'Store profile updated successfully!');
       
     } catch (error: any) {
-      handleError(error);
+      const errorMsg = error.response?.data?.error || 'Failed to update settings';
+      setErrorMessage(errorMsg);
+      Alert.alert('Error', errorMsg);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  // ✅ UPDATED: Better test method
-  const testSaveWithoutFiles = async () => {
-    try {
-      console.log('🧪 Testing smart save without files...');
-      
-      const testData = {
-        name: store.name || 'Updated Test Store',
-        description: store.description || 'Updated test description for store profile',
-        whatsapp_number: store.whatsapp_number || '9876543210',
-        tagline: store.tagline || 'Updated test tagline',
-        payment_method: 'NONE', // ✅ Use exact backend value
-        accepts_cod: true,
-        verification_status: 'pending',
-      };
-      
-      const response = await StoreService.createOrUpdateProfile(testData);
-      console.log('✅ Smart save test successful');
-      
-      Alert.alert('Success!', 'Smart save without files works! Profile updated.');
-      
-    } catch (error: any) {
-      console.error('❌ Smart save test failed:', error);
-      Alert.alert('Failed', error.message || 'Smart save test failed');
-    }
-  };
-
-  // ✅ HELPER: Handle success
-  const handleSuccess = (response: any) => {
-    console.log(`✅ Store profile ${isEditMode ? 'updated' : 'created'} successfully!`);
-    
-    Alert.alert(
-      isEditMode ? 'Profile Updated! ✅' : 'Store Created! 🎉', 
-      isEditMode 
-        ? 'Your store profile has been updated successfully!' 
-        : 'Your Kerala store is now live and ready to receive customers!',
-      [
-        {
-          text: 'View Dashboard',
-          onPress: () => navigation.navigate('MainTabs')
-        }
-      ]
-    );
-    
-    // Update state
-    if (response.data?.store_profile) {
-      setCurrentLogoUrl(response.data.store_profile.logo_url || '');
-      setCurrentBannerUrl(response.data.store_profile.banner_image_url || '');
-      calculateProgress(response.data.store_profile);
-      
-      if (!isEditMode) {
-        setIsEditMode(true);
-        setStoreExists(true);
-      }
-    }
-    
-    setLogoUri('');
-    setBannerUri('');
-    setSuccessMessage(`Store profile ${isEditMode ? 'updated' : 'created'} successfully!`);
-  };
-
-  // ✅ HELPER: Handle errors
-  const handleError = (error: any) => {
-    console.error(`❌ Store profile ${isEditMode ? 'update' : 'creation'} failed:`, error);
-    
-    let errorMessage = `Failed to ${isEditMode ? 'update' : 'create'} store profile`;
-    
-    if (error.message === 'Network Error') {
-      errorMessage = 'Network connection failed. Please check your internet connection and try again.';
-    } else if (error.response?.status === 400) {
-      const errorData = error.response.data;
-      if (errorData.error) {
-        errorMessage = errorData.error;
-      } else if (typeof errorData === 'object') {
-        const fieldErrors = [];
-        Object.entries(errorData).forEach(([field, messages]) => {
-          if (Array.isArray(messages)) {
-            fieldErrors.push(`${field}: ${messages.join(', ')}`);
-          } else if (typeof messages === 'string') {
-            fieldErrors.push(`${field}: ${messages}`);
-          }
-        });
-        if (fieldErrors.length > 0) {
-          errorMessage = fieldErrors.join('\n');
-        }
-      }
-    } else if (error.response?.status === 401) {
-      errorMessage = 'Authentication failed. Please login again.';
-      setTimeout(() => handleLogout(), 1000);
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
-    setErrorMessage(errorMessage);
-    Alert.alert('Error', errorMessage);
-  };
-
-  const testAPI = async () => {
-    try {
-      console.log('🧪 Testing API connection...');
-      await StoreService.testConnection();
-      Alert.alert('Success!', 'API connection is working correctly.');
-    } catch (error: any) {
-      console.error('❌ API test failed:', error);
-      Alert.alert('API Test Failed', error.message || 'Unknown error occurred');
+      setIsUploadingImages(false);
     }
   };
 
   const selectImage = async (type: 'logo' | 'banner'): Promise<void> => {
-    try {
-      Alert.alert(
-        'Select Image',
-        'Choose an option',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Camera', onPress: () => openCamera(type) },
-          { text: 'Gallery', onPress: () => openGallery(type) },
-        ]
-      );
-    } catch (error) {
-      console.error('Image selection error:', error);
-      Alert.alert('Error', 'Failed to select image');
-    }
+    Alert.alert('Select Image', 'Choose an option', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Camera', onPress: () => openCamera(type) },
+      { text: 'Gallery', onPress: () => openGallery(type) },
+    ]);
   };
 
-const openCamera = async (type: 'logo' | 'banner'): Promise<void> => {
-  try {
+  const openCamera = async (type: 'logo' | 'banner') => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Camera permission is needed to take photos.');
+      Alert.alert('Permission Required', 'Camera permission needed');
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ KEEP THIS: It works in newer versions
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: type === 'logo' ? [1, 1] : [16, 9],
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const imageUri = result.assets[0].uri;
-      if (type === 'logo') {
-        setLogoUri(imageUri);
-      } else {
-        setBannerUri(imageUri);
-      }
-      console.log(`✅ ${type} image selected:`, imageUri);
+    if (!result.canceled && result.assets[0]) {
+      if (type === 'logo') setLogoUri(result.assets[0].uri);
+      else setBannerUri(result.assets[0].uri);
     }
-  } catch (error) {
-    console.error('Camera error:', error);
-    Alert.alert('Error', 'Failed to take photo');
-  }
-};
-
-const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
-  try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ KEEP THIS: It works in newer versions
-      allowsEditing: true,
-      aspect: type === 'logo' ? [1, 1] : [16, 9],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const imageUri = result.assets[0].uri;
-      if (type === 'logo') {
-        setLogoUri(imageUri);
-      } else {
-        setBannerUri(imageUri);
-      }
-      console.log(`✅ ${type} image selected:`, imageUri);
-    }
-  } catch (error) {
-    console.error('Gallery error:', error);
-    Alert.alert('Error', 'Failed to select image from gallery');
-  }
-};
-
-
-  const handleLogout = async (): Promise<void> => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await AuthService.logout();
-          }
-        }
-      ]
-    );
   };
 
-  const renderVerificationStatus = (): JSX.Element => {
-    const getStatusConfig = () => {
-      switch (store.verification_status) {
-        case 'verified':
-          return { color: '#10b981', bgColor: '#d1fae5', text: 'Verified Seller', emoji: '✅' };
-        case 'rejected':
-          return { color: '#ef4444', bgColor: '#fee2e2', text: 'Verification Rejected', emoji: '❌' };
-        default:
-          return { color: '#f59e0b', bgColor: '#fef3c7', text: 'Verification Pending', emoji: '⏳' };
-      }
-    };
+  const openGallery = async (type: 'logo' | 'banner') => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: type === 'logo' ? [1, 1] : [16, 9],
+      quality: 0.8,
+    });
 
-    const config = getStatusConfig();
-
-    return (
-      <View style={[styles.verificationStatus, { backgroundColor: config.bgColor }]}>
-        <Text style={[styles.verificationText, { color: config.color }]}>
-          {config.emoji} {config.text}
-        </Text>
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <View 
-              style={[
-                styles.progressFill, 
-                { width: `${verificationProgress}%`, backgroundColor: config.color }
-              ]} 
-            />
-          </View>
-          <Text style={styles.progressText}>{verificationProgress}% Complete</Text>
-        </View>
-      </View>
-    );
+    if (!result.canceled && result.assets[0]) {
+      if (type === 'logo') setLogoUri(result.assets[0].uri);
+      else setBannerUri(result.assets[0].uri);
+    }
   };
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>
-          Loading store profile...
-        </Text>
+        <Text style={styles.loadingText}>Loading store profile...</Text>
       </View>
     );
   }
@@ -526,21 +410,11 @@ const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ✅ SMART: Auto-changing header based on actual detection */}
         <View style={styles.header}>
-          <Text style={styles.title}>
-            {(isEditMode || storeExists) ? '⚙️ Edit Your Store' : '🏪 Create Your Store'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {(isEditMode || storeExists)
-              ? 'Update your Kerala Sellers store profile' 
-              : 'Set up your Kerala Sellers store profile'
-            }
-          </Text>
-          {renderVerificationStatus()}
+          <Text style={styles.title}>⚙️ Store Settings</Text>
+          <Text style={styles.subtitle}>Manage your store information</Text>
         </View>
 
-        {/* Success/Error Messages */}
         {successMessage ? (
           <View style={styles.successAlert}>
             <Text style={styles.alertText}>✅ {successMessage}</Text>
@@ -553,6 +427,13 @@ const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
           </View>
         ) : null}
 
+        {isUploadingImages && (
+          <View style={styles.uploadingContainer}>
+            <ActivityIndicator size="small" color="#3b82f6" />
+            <Text style={styles.uploadingText}>☁️ Uploading to Cloudinary...</Text>
+          </View>
+        )}
+
         {/* Tab Navigation */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
@@ -560,11 +441,8 @@ const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
             onPress={() => setActiveTab('mandatory')}
           >
             <Text style={[styles.tabText, activeTab === 'mandatory' && styles.activeTabText]}>
-              🏪 Essential Info
+              🏪 Essential
             </Text>
-            <View style={styles.requiredBadge}>
-              <Text style={styles.badgeText}>Required</Text>
-            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -572,81 +450,68 @@ const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
             onPress={() => setActiveTab('optional')}
           >
             <Text style={[styles.tabText, activeTab === 'optional' && styles.activeTabText]}>
-              🛡️ Verification
+              💳 Payment
             </Text>
-            <View style={styles.optionalBadge}>
-              <Text style={styles.badgeText}>Optional</Text>
-            </View>
           </TouchableOpacity>
         </View>
 
-        {/* Form Content */}
+        {/* MANDATORY TAB */}
         {activeTab === 'mandatory' ? (
           <View style={styles.formSection}>
-            {/* Store Branding */}
+            {/* Store Images */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>⭐ Store Branding</Text>
+              <Text style={styles.sectionTitle}>⭐ Store Images</Text>
               
-              <View style={styles.brandingContainer}>
+              <View style={styles.imageRow}>
                 <View style={styles.imageSection}>
-                  <Text style={styles.label}>Store Logo</Text>
-                  <TouchableOpacity 
-                    style={styles.imageUpload}
-                    onPress={() => selectImage('logo')}
-                    activeOpacity={0.7}
-                  >
+                  <Text style={styles.label}>Logo</Text>
+                  <TouchableOpacity onPress={() => selectImage('logo')} style={styles.imageUpload}>
                     {logoUri || currentLogoUrl ? (
-                      <View style={styles.imageContainer}>
-                        <Image 
-                          source={{ uri: logoUri || currentLogoUrl }} 
-                          style={styles.logoImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.imageOverlay}>
-                          <Text style={styles.changeText}>Tap to change</Text>
-                        </View>
-                      </View>
+                      <Image source={{ uri: logoUri || currentLogoUrl }} style={styles.logoImage} />
                     ) : (
                       <View style={styles.imagePlaceholder}>
                         <Text style={styles.placeholderIcon}>📷</Text>
                         <Text style={styles.placeholderText}>Add Logo</Text>
-                        <Text style={styles.placeholderSubtext}>Tap to upload</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.imageSection}>
-                  <Text style={styles.label}>Store Banner</Text>
-                  <TouchableOpacity 
-                    style={styles.bannerUpload}
-                    onPress={() => selectImage('banner')}
-                    activeOpacity={0.7}
-                  >
-                    {bannerUri || currentBannerUrl ? (
-                      <View style={styles.imageContainer}>
-                        <Image 
-                          source={{ uri: bannerUri || currentBannerUrl }} 
-                          style={styles.bannerImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.imageOverlay}>
-                          <Text style={styles.changeText}>Tap to change</Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={styles.imagePlaceholder}>
-                        <Text style={styles.placeholderIcon}>🖼️</Text>
-                        <Text style={styles.placeholderText}>Add Banner</Text>
-                        <Text style={styles.placeholderSubtext}>Tap to upload</Text>
                       </View>
                     )}
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {/* Banner Gallery Button */}
+              <TouchableOpacity
+                onPress={() => setShowBannerGallery(!showBannerGallery)}
+                style={[
+                  styles.galleryButton,
+                  { backgroundColor: selectedPredefinedBanners.length > 0 ? '#10b981' : '#8b5cf6' }
+                ]}
+              >
+                <Text style={styles.galleryButtonText}>
+                  {selectedPredefinedBanners.length > 0 
+                    ? `✅ ${selectedPredefinedBanners.length} Banner${selectedPredefinedBanners.length > 1 ? 's' : ''} Selected`
+                    : '🎨 Choose Banners (Max 3)'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Selected Banners Preview */}
+              {currentBannerUrls.length > 0 && (
+                <View style={styles.selectedBannersContainer}>
+                  <Text style={styles.label}>Selected Banners ({currentBannerUrls.length})</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectedBannersScroll}>
+                    {currentBannerUrls.map((url, index) => (
+                      <View key={index} style={styles.selectedBannerItem}>
+                        <Image source={{ uri: url }} style={styles.selectedBannerImage} />
+                        <View style={styles.selectedBadge}>
+                          <Text style={styles.selectedBadgeText}>#{index + 1}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
-            {/* Basic Information */}
+            {/* Basic Info */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>🏢 Basic Information</Text>
               
@@ -656,13 +521,36 @@ const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
                   style={styles.input}
                   value={store.name}
                   onChangeText={(value) => handleInputChange('name', value)}
-                  placeholder="Enter your store name"
-                  maxLength={100}
+                  placeholder="My Awesome Store"
                 />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>WhatsApp Business Number *</Text>
+                <Text style={styles.label}>Tagline</Text>
+                <TextInput
+                  style={styles.input}
+                  value={store.tagline}
+                  onChangeText={(value) => handleInputChange('tagline', value)}
+                  placeholder="Quality Products, Fast Delivery"
+                  maxLength={150}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Description *</Text>
+                <TextInput
+                  style={styles.textArea}
+                  value={store.description}
+                  onChangeText={(value) => handleInputChange('description', value)}
+                  placeholder="Tell customers about your store..."
+                  multiline
+                  numberOfLines={4}
+                  maxLength={500}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>WhatsApp Number *</Text>
                 <TextInput
                   style={styles.input}
                   value={store.whatsapp_number}
@@ -671,625 +559,272 @@ const openGallery = async (type: 'logo' | 'banner'): Promise<void> => {
                   keyboardType="phone-pad"
                   maxLength={10}
                 />
-                <Text style={styles.helpText}>Enter your 10-digit WhatsApp number (without +91)</Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Store Tagline</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.tagline}
-                  onChangeText={(value) => handleInputChange('tagline', value)}
-                  placeholder="Quality Products, Delivered Fast"
-                  maxLength={150}
-                />
-                <Text style={styles.charCount}>{store.tagline.length}/150</Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Store Description *</Text>
-                <TextInput
-                  style={styles.textArea}
-                  value={store.description}
-                  onChangeText={(value) => handleInputChange('description', value)}
-                  placeholder="Describe your store and what you sell..."
-                  multiline
-                  numberOfLines={4}
-                  maxLength={500}
-                />
-                <Text style={styles.charCount}>{store.description.length}/500</Text>
-              </View>
-            </View>
-
-            {/* Payment Settings */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>💳 Payment Settings</Text>
-              
-              <View style={styles.inputGroup}>
-                <View style={styles.switchContainer}>
-                  <Text style={styles.label}>Accept Cash on Delivery</Text>
-                  <Switch
-                    value={store.accepts_cod}
-                    onValueChange={(value) => handleInputChange('accepts_cod', value)}
-                    trackColor={{ false: '#767577', true: '#3b82f6' }}
-                    thumbColor={store.accepts_cod ? '#ffffff' : '#f4f3f4'}
-                  />
-                </View>
-                <Text style={styles.helpText}>
-                  {store.accepts_cod 
-                    ? '✅ Customers can pay with cash on delivery' 
-                    : '❌ Only online payments accepted'
-                  }
-                </Text>
-              </View>
-
-              {/* ✅ Payment Method Selector */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Online Payment Method</Text>
-                <View style={styles.paymentOptions}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.paymentOption, 
-                      store.payment_method === 'NONE' && styles.paymentOptionActive
-                    ]}
-                    onPress={() => handleInputChange('payment_method', 'NONE')}
-                  >
-                    <Text style={[
-                      styles.paymentOptionText,
-                      store.payment_method === 'NONE' && styles.paymentOptionTextActive
-                    ]}>None</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.paymentOption, 
-                      store.payment_method === 'RAZORPAY' && styles.paymentOptionActive
-                    ]}
-                    onPress={() => handleInputChange('payment_method', 'RAZORPAY')}
-                  >
-                    <Text style={[
-                      styles.paymentOptionText,
-                      store.payment_method === 'RAZORPAY' && styles.paymentOptionTextActive
-                    ]}>Razorpay</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[
-                      styles.paymentOption, 
-                      store.payment_method === 'UPI' && styles.paymentOptionActive
-                    ]}
-                    onPress={() => handleInputChange('payment_method', 'UPI')}
-                  >
-                    <Text style={[
-                      styles.paymentOptionText,
-                      store.payment_method === 'UPI' && styles.paymentOptionTextActive
-                    ]}>UPI</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.helpText}>
-                  Choose your preferred online payment method
-                </Text>
-              </View>
-            </View>
-
-            {/* Social Media */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>🌐 Social Media</Text>
-              
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Instagram Profile</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.instagram_link}
-                  onChangeText={(value) => handleInputChange('instagram_link', value)}
-                  placeholder="https://instagram.com/yourstore"
-                  keyboardType="url"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Facebook Page</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.facebook_link}
-                  onChangeText={(value) => handleInputChange('facebook_link', value)}
-                  placeholder="https://facebook.com/yourstore"
-                  keyboardType="url"
-                />
               </View>
             </View>
           </View>
         ) : (
+          /* PAYMENT TAB */
           <View style={styles.formSection}>
-            {/* Business Verification */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>🛡️ Business Verification</Text>
-              <Text style={styles.sectionDescription}>
-                Add business details to get verified and build customer trust
-              </Text>
+              <Text style={styles.sectionTitle}>💳 Payment Methods</Text>
               
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Business Owner Name</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.owner_name}
-                  onChangeText={(value) => handleInputChange('owner_name', value)}
-                  placeholder="Full name as per documents"
-                  maxLength={100}
-                />
+                <Text style={styles.label}>Payment Method *</Text>
+                <View style={styles.paymentOptions}>
+                  <TouchableOpacity
+                    style={[styles.paymentOption, store.payment_method === 'CASHFREE' && styles.paymentOptionActive]}
+                    onPress={() => handleInputChange('payment_method', 'CASHFREE')}
+                  >
+                    <Text style={[styles.paymentOptionText, store.payment_method === 'CASHFREE' && styles.paymentOptionTextActive]}>
+                      Cashfree
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.paymentOption, store.payment_method === 'UPI' && styles.paymentOptionActive]}
+                    onPress={() => handleInputChange('payment_method', 'UPI')}
+                  >
+                    <Text style={[styles.paymentOptionText, store.payment_method === 'UPI' && styles.paymentOptionTextActive]}>
+                      UPI
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.paymentOption, store.payment_method === 'RAZORPAY' && styles.paymentOptionActive]}
+                    onPress={() => handleInputChange('payment_method', 'RAZORPAY')}
+                  >
+                    <Text style={[styles.paymentOptionText, store.payment_method === 'RAZORPAY' && styles.paymentOptionTextActive]}>
+                      Razorpay
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>GST Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.gst_number}
-                  onChangeText={(value) => handleInputChange('gst_number', value)}
-                  placeholder="22AAAAA0000A1Z5"
-                  maxLength={15}
-                />
-              </View>
+              {/* CASHFREE */}
+              {store.payment_method === 'CASHFREE' && !cashfreeConnected && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Bank Account Number *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={store.cashfree_bank_account}
+                      onChangeText={(value) => handleInputChange('cashfree_bank_account', value)}
+                      placeholder="Your bank account number"
+                      keyboardType="numeric"
+                    />
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Business Address</Text>
-                <TextInput
-                  style={styles.textArea}
-                  value={store.business_address}
-                  onChangeText={(value) => handleInputChange('business_address', value)}
-                  placeholder="Complete business address with pincode"
-                  multiline
-                  numberOfLines={3}
-                  maxLength={300}
-                />
-              </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>IFSC Code *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={store.cashfree_ifsc}
+                      onChangeText={(value) => handleInputChange('cashfree_ifsc', value)}
+                      placeholder="SBIN0001234"
+                    />
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Business License Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.business_license}
-                  onChangeText={(value) => handleInputChange('business_license', value)}
-                  placeholder="Trade license or registration number"
-                  maxLength={50}
-                />
-              </View>
-            </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Account Holder Name *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={store.cashfree_account_holder}
+                      onChangeText={(value) => handleInputChange('cashfree_account_holder', value)}
+                      placeholder="Name as per bank"
+                    />
+                  </View>
 
-            {/* Delivery Settings */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>🚚 Delivery Settings</Text>
-              
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Local Delivery Time</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.delivery_time_local}
-                  onChangeText={(value) => handleInputChange('delivery_time_local', value)}
-                  placeholder="2-3 business days"
-                />
-              </View>
+                  <TouchableOpacity
+                    onPress={handleCashfreeConnect}
+                    disabled={isConnectingCashfree}
+                    style={styles.cashfreeButton}
+                  >
+                    <Text style={styles.cashfreeButtonText}>
+                      {isConnectingCashfree ? 'Registering...' : 'Register Bank Account (0% Commission)'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>National Delivery Time</Text>
-                <TextInput
-                  style={styles.input}
-                  value={store.delivery_time_national}
-                  onChangeText={(value) => handleInputChange('delivery_time_national', value)}
-                  placeholder="5-7 business days"
+              {store.payment_method === 'CASHFREE' && cashfreeConnected && (
+                <View style={styles.cashfreeConnected}>
+                  <Text style={styles.cashfreeConnectedText}>
+                    ✅ Bank registered! You'll receive 100% of sales directly.
+                  </Text>
+                </View>
+              )}
+
+              {/* UPI */}
+              {store.payment_method === 'UPI' && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>UPI ID *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={store.upi_id}
+                    onChangeText={(value) => handleInputChange('upi_id', value)}
+                    placeholder="yourname@paytm"
+                  />
+                </View>
+              )}
+
+              {/* RAZORPAY */}
+              {store.payment_method === 'RAZORPAY' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Razorpay Key ID *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={store.razorpay_key_id}
+                      onChangeText={(value) => handleInputChange('razorpay_key_id', value)}
+                      placeholder="rzp_test_..."
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Razorpay Key Secret *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={store.razorpay_key_secret}
+                      onChangeText={(value) => handleInputChange('razorpay_key_secret', value)}
+                      placeholder="Your secret key"
+                      secureTextEntry
+                    />
+                  </View>
+                </>
+              )}
+
+              <View style={styles.switchContainer}>
+                <Text style={styles.label}>Accept Cash on Delivery</Text>
+                <Switch
+                  value={store.accepts_cod}
+                  onValueChange={(value) => handleInputChange('accepts_cod', value)}
+                  trackColor={{ false: '#767577', true: '#3b82f6' }}
+                  thumbColor={store.accepts_cod ? '#ffffff' : '#f4f3f4'}
                 />
               </View>
             </View>
           </View>
         )}
 
-        {/* Test Buttons */}
-        <TouchableOpacity style={styles.testButton} onPress={testAPI}>
-          <Text style={styles.testButtonText}>🧪 Test API Connection</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.testButton, { backgroundColor: '#8b5cf6' }]}
-          onPress={testSaveWithoutFiles}
-        >
-          <Text style={styles.testButtonText}>🧪 Test Save (No Files)</Text>
-        </TouchableOpacity>
-
-        {/* ✅ SMART: Auto-changing button text */}
+        {/* Save Button */}
         <TouchableOpacity
           style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
           onPress={handleSubmit}
           disabled={isSaving}
         >
-          {isSaving ? (
-            <>
-              <ActivityIndicator color="white" size="small" />
-              <Text style={styles.saveButtonText}>
-                {(isEditMode || storeExists) ? 'Updating Profile...' : 'Creating Store...'}
-              </Text>
-            </>
-          ) : (
-            <Text style={styles.saveButtonText}>
-              {(isEditMode || storeExists) ? '💾 Update Store Profile' : '🏪 Create Store Profile'}
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.dashboardButton} 
-          onPress={() => navigation.navigate('MainTabs')}
-        >
-          <Text style={styles.dashboardButtonText}>📊 View Dashboard</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>🚪 Logout</Text>
+          <Text style={styles.saveButtonText}>
+            {isSaving ? 'Saving...' : '💾 Save Changes'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Banner Gallery Modal */}
+      <Modal visible={showBannerGallery} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                Choose Banners ({selectedPredefinedBanners.length}/3)
+              </Text>
+              <TouchableOpacity onPress={() => setShowBannerGallery(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={predefinedBanners}
+              keyExtractor={(item) => item.id.toString()}
+              numColumns={2}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.galleryItem,
+                    selectedPredefinedBanners.includes(item.id) && styles.galleryItemSelected,
+                  ]}
+                  onPress={() => handleBannerSelect(item.id, item.image_url)}
+                >
+                  <Image source={{ uri: item.image_url }} style={styles.galleryImage} />
+                  {selectedPredefinedBanners.includes(item.id) && (
+                    <View style={styles.selectedBadgeGallery}>
+                      <Text style={styles.selectedBadgeText}>
+                        #{selectedPredefinedBanners.indexOf(item.id) + 1}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.bannerName}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#6b7280',
-  },
-  header: {
-    marginBottom: 24,
-    marginTop: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6b7280',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  verificationStatus: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  verificationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  progressBar: {
-    flex: 1,
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 3,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  successAlert: {
-    backgroundColor: '#d1fae5',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#10b981',
-  },
-  errorAlert: {
-    backgroundColor: '#fee2e2',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  alertText: {
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  activeTab: {
-    backgroundColor: '#3b82f6',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginBottom: 4,
-  },
-  activeTabText: {
-    color: 'white',
-  },
-  requiredBadge: {
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  optionalBadge: {
-    backgroundColor: '#10b981',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  badgeText: {
-    fontSize: 10,
-    color: 'white',
-    fontWeight: '600',
-  },
-  formSection: {
-    gap: 16,
-  },
-  sectionCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 16,
-  },
-  brandingContainer: {
-    gap: 16,
-  },
-  imageSection: {
-    alignItems: 'center',
-  },
-  imageContainer: {
-    position: 'relative',
-    width: '100%',
-    height: '100%',
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  imageUpload: {
-    width: 120,
-    height: 120,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f9ff',
-  },
-  bannerUpload: {
-    width: '100%',
-    height: 120,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f9ff',
-  },
-  logoImage: {
-    width: 116,
-    height: 116,
-    borderRadius: 10,
-  },
-  bannerImage: {
-    width: '100%',
-    height: 116,
-    borderRadius: 10,
-  },
-  imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  changeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  imagePlaceholder: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  placeholderIcon: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
-  placeholderText: {
-    fontSize: 14,
-    color: '#3b82f6',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  placeholderSubtext: {
-    fontSize: 12,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: 'white',
-  },
-  textArea: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: 'white',
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  charCount: {
-    fontSize: 12,
-    color: '#9ca3af',
-    textAlign: 'right',
-    marginTop: 4,
-  },
-  helpText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  // ✅ Payment Option Styles
-  paymentOptions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  paymentOption: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#f9fafb',
-    alignItems: 'center',
-  },
-  paymentOptionActive: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
-  },
-  paymentOptionText: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  paymentOptionTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  testButton: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  testButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveButton: {
-    backgroundColor: '#10b981',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 16,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  dashboardButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  dashboardButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  logoutButton: {
-    backgroundColor: '#ef4444',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 40,
-  },
-  logoutText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  scrollContent: { padding: 20, paddingBottom: 40 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
+  loadingText: { marginTop: 10, fontSize: 16, color: '#6b7280' },
+  header: { marginBottom: 24, marginTop: 20 },
+  title: { fontSize: 28, fontWeight: 'bold', color: '#1f2937', marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontSize: 16, color: '#6b7280', textAlign: 'center' },
+  successAlert: { backgroundColor: '#d1fae5', padding: 12, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#10b981' },
+  errorAlert: { backgroundColor: '#fee2e2', padding: 12, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#ef4444' },
+  alertText: { fontSize: 14, textAlign: 'center' },
+  uploadingContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#dbeafe', borderRadius: 8, marginBottom: 16, gap: 8 },
+  uploadingText: { fontSize: 14, color: '#1e40af', fontWeight: '500' },
+  tabContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 12, padding: 4, marginBottom: 20 },
+  tab: { flex: 1, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
+  activeTab: { backgroundColor: '#3b82f6' },
+  tabText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
+  activeTabText: { color: 'white' },
+  formSection: { gap: 16 },
+  sectionCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1f2937', marginBottom: 16, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: '#f3f4f6' },
+  inputGroup: { marginBottom: 16 },
+  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: 'white' },
+  textArea: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: 'white', minHeight: 80, textAlignVertical: 'top' },
+  imageRow: { flexDirection: 'row', gap: 16 },
+  imageSection: { flex: 1, alignItems: 'center' },
+  imageUpload: { width: 120, height: 120, borderRadius: 12, borderWidth: 2, borderColor: '#3b82f6', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f9ff' },
+  logoImage: { width: 116, height: 116, borderRadius: 10 },
+  imagePlaceholder: { alignItems: 'center', gap: 4 },
+  placeholderIcon: { fontSize: 24 },
+  placeholderText: { fontSize: 12, color: '#3b82f6', fontWeight: '600' },
+  galleryButton: { padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 12 },
+  galleryButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
+  selectedBannersContainer: { marginTop: 12 },
+  selectedBannersScroll: { marginTop: 8 },
+  selectedBannerItem: { position: 'relative', marginRight: 8, borderRadius: 8, overflow: 'hidden', borderWidth: 2, borderColor: '#10b981' },
+  selectedBannerImage: { width: 150, height: 80 },
+  selectedBadge: { position: 'absolute', top: 4, left: 4, backgroundColor: '#10b981', borderRadius: 4, padding: 4 },
+  selectedBadgeText: { color: 'white', fontSize: 11, fontWeight: '600' },
+  paymentOptions: { flexDirection: 'row', gap: 8 },
+  paymentOption: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#f9fafb', alignItems: 'center' },
+  paymentOptionActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
+  paymentOptionText: { fontSize: 14, color: '#6b7280', fontWeight: '500' },
+  paymentOptionTextActive: { color: 'white', fontWeight: '600' },
+  cashfreeButton: { backgroundColor: '#3b82f6', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 16 },
+  cashfreeButtonText: { color: 'white', fontSize: 15, fontWeight: '600' },
+  cashfreeConnected: { backgroundColor: '#ecfdf5', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#10b981', marginTop: 12 },
+  cashfreeConnectedText: { color: '#065f46', fontWeight: '600', textAlign: 'center' },
+  switchContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
+  saveButton: { backgroundColor: '#10b981', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 16 },
+  saveButtonDisabled: { backgroundColor: '#9ca3af' },
+  saveButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '80%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#1f2937' },
+  modalClose: { fontSize: 24, color: '#6b7280', fontWeight: 'bold' },
+  galleryItem: { flex: 1, margin: 6, borderRadius: 8, borderWidth: 2, borderColor: '#e5e7eb', overflow: 'hidden' },
+  galleryItemSelected: { borderColor: '#10b981', borderWidth: 3 },
+  galleryImage: { width: '100%', height: 100 },
+  selectedBadgeGallery: { position: 'absolute', top: 6, right: 6, backgroundColor: '#10b981', borderRadius: 6, padding: 4 },
+  bannerName: { padding: 8, backgroundColor: 'white', fontSize: 12, fontWeight: '500', color: '#374151', textAlign: 'center' },
 });
 
 export default CreateShopScreen;

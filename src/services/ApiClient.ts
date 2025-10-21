@@ -1,8 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// ✅ FIXED: Correct URL for Android Emulator
 const API_BASE_URL = __DEV__ 
-  ? 'http://192.168.1.4:8000'
+  ? 'http://10.0.2.2:8000'  // ✅ ANDROID EMULATOR FIX
   : 'https://keralaseller-backend.onrender.com';
 
 console.log('🔧 API Base URL:', API_BASE_URL);

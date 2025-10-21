@@ -12,7 +12,8 @@ export interface ApiEnvironment {
 export const API_CONFIG = {
   // Development (your local Django server)
   development: {
-    baseURL: 'http://10.0.2.2:8000', // ✅ Your working Android emulator URL
+    baseURL: 'http://10.0.2.2:8000',
+ // ✅ Updated to your Django server IP
     timeout: 15000,
     websocketURL: 'ws://10.0.2.2:8000/ws/',
     debug: true,
@@ -27,7 +28,7 @@ export const API_CONFIG = {
   } as ApiEnvironment,
   
   // Switch this when going live
-  current: 'development' as 'development' | 'production',
+current: 'production' as 'development' | 'production',
 };
 
 export const getApiConfig = (): ApiEnvironment => {
