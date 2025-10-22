@@ -10,7 +10,10 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { 
+  useNavigation, 
+  useNavigationState,
+} from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AuthService from '../../services/AuthService';
 import { AppStateContext } from '../../navigation/AppNavigator';
@@ -29,11 +32,27 @@ interface UserData {
   name?: string;
   email?: string;
   id?: string;
+  store_name?: string;
+  shop_name?: string;
 }
 
+// ✅ Helper function OUTSIDE the component (defined first)
+const getActiveRouteName = (state: any): string => {
+  if (!state) return 'Dashboard';
+  
+  const route = state.routes[state.index];
+  
+  // If the route has nested state (like Tab Navigator inside Stack Navigator)
+  if (route.state) {
+    return getActiveRouteName(route.state);
+  }
+  
+  return route.name || 'Dashboard';
+};
+
 const TopBar: React.FC<TopBarProps> = ({
-  title = 'Kerala Sellers',
-  subtitle,
+  title: propTitle,
+  subtitle: propSubtitle,
   onMenuPress,
   showNotifications = true,
   notificationCount: propNotificationCount,
@@ -46,31 +65,131 @@ const TopBar: React.FC<TopBarProps> = ({
   // ✅ Get notification count from context
   const { notificationCount: contextNotificationCount, loadNotificationCount } = useContext(AppStateContext);
 
+  // ✅ Listen to navigation state changes in real-time
+  const currentRouteName = useNavigationState(state => {
+    if (!state) return 'Dashboard';
+    return getActiveRouteName(state);
+  });
+
   useEffect(() => {
     loadUserData();
   }, []);
 
+  // ✅ Log when route changes (for debugging)
+  useEffect(() => {
+    console.log('📍 TopBar: Current route changed to:', currentRouteName);
+  }, [currentRouteName]);
+
   const loadUserData = async (): Promise<void> => {
     try {
       const user = await AuthService.getCurrentUser();
+      console.log('👤 TopBar: User data loaded:', user);
       setUserData(user);
     } catch (error) {
       console.error('Failed to load user data:', error);
     }
   };
 
-  // ✅ FIXED: Better notification navigation
+  // ✅ Get greeting based on time of day
+  const getGreeting = (): string => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    if (hour < 21) return 'Good Evening';
+    return 'Good Night';
+  };
+
+  // ✅ Get shop name from user data or fallback
+  const getShopName = (): string => {
+    return userData?.store_name || userData?.shop_name || 'Kerala Sellers';
+  };
+
+  // ✅ Get welcome message with user's name
+  const getWelcomeMessage = (): string => {
+    const greeting = getGreeting();
+    const firstName = userData?.name?.split(' ')[0] || 'Seller';
+    return `${greeting}, ${firstName}! 👋`;
+  };
+
+  // ✅ Get screen-specific title and subtitle based on CURRENT screen only
+  const getScreenTitle = (): { title: string; subtitle: string } => {
+    const shopName = getShopName();
+    const welcomeMsg = getWelcomeMessage();
+
+    // Screen-specific configurations
+    const screenConfigs: Record<string, { title: string; subtitle: string }> = {
+      'Dashboard': {
+        title: shopName,
+        subtitle: welcomeMsg
+      },
+      'Products': {
+        title: 'My Products',
+        subtitle: 'Manage your product catalog'
+      },
+      'Orders': {
+        title: 'Orders',
+        subtitle: 'Track and manage orders'
+      },
+      'Notifications': {
+        title: 'Notifications',
+        subtitle: 'Stay updated with alerts'
+      },
+      'Profile': {
+        title: shopName,
+        subtitle: 'Manage your account'
+      },
+      'AddProduct': {
+        title: 'Add Product',
+        subtitle: 'Add new items to your store'
+      },
+      'EditProduct': {
+        title: 'Edit Product',
+        subtitle: 'Update product details'
+      },
+      'OrderDetails': {
+        title: 'Order Details',
+        subtitle: 'View order information'
+      },
+      'Settings': {
+        title: 'Settings',
+        subtitle: 'Manage app preferences'
+      },
+      'StoreProfile': {
+        title: shopName,
+        subtitle: 'Your store information'
+      },
+      'Subscription': {
+        title: 'Subscription',
+        subtitle: 'Manage your plan'
+      },
+      'AllOrders': {
+        title: 'All Orders',
+        subtitle: 'Complete order history'
+      },
+    };
+
+    // Return screen-specific config or default
+    return screenConfigs[currentRouteName] || {
+      title: shopName,
+      subtitle: welcomeMsg
+    };
+  };
+
+  // ✅ Use prop title/subtitle if provided, otherwise use dynamic based on screen
+  const { title: dynamicTitle, subtitle: dynamicSubtitle } = getScreenTitle();
+  const displayTitle = propTitle || dynamicTitle;
+  const displaySubtitle = propSubtitle || dynamicSubtitle;
+
+  // ✅ Better notification navigation
   const handleNotificationPress = (): void => {
     console.log('🔔 TopBar: Opening notifications screen...');
     
     try {
-      // First try to navigate to MainTabs -> Notifications
       navigation.navigate('MainTabs', { 
         screen: 'Notifications',
         initial: false
       });
       
-      // Refresh notification count after navigation
       setTimeout(() => {
         loadNotificationCount();
       }, 200);
@@ -80,7 +199,6 @@ const TopBar: React.FC<TopBarProps> = ({
     } catch (error) {
       console.error('❌ TopBar: Navigation to notifications failed:', error);
       
-      // Fallback alert
       Alert.alert(
         'Notifications 🔔',
         'Notifications feature coming soon!',
@@ -127,14 +245,14 @@ const TopBar: React.FC<TopBarProps> = ({
             <Ionicons name="menu" size={26} color={textColor} />
           </TouchableOpacity>
 
-          {/* CENTER: Title & Subtitle */}
+          {/* CENTER: Dynamic Title & Subtitle */}
           <View style={styles.titleContainer}>
             <Text style={[styles.title, { color: textColor }]} numberOfLines={1}>
-              {title}
+              {displayTitle}
             </Text>
-            {subtitle && (
+            {displaySubtitle && (
               <Text style={[styles.subtitle, { color: '#6b7280' }]} numberOfLines={1}>
-                {subtitle}
+                {displaySubtitle}
               </Text>
             )}
           </View>
@@ -167,8 +285,8 @@ const TopBar: React.FC<TopBarProps> = ({
           )}
         </View>
 
-        {/* Notification hint for dashboard */}
-        {userData && displayNotificationCount > 0 && title.includes('Dashboard') && (
+        {/* Notification hint for unread notifications */}
+        {userData && displayNotificationCount > 0 && currentRouteName === 'Dashboard' && (
           <TouchableOpacity 
             style={styles.notificationHint}
             onPress={handleNotificationPress}

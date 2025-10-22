@@ -10,14 +10,12 @@ import {
   RefreshControl,
   TextInput,
   Image,
-  Switch,
   ScrollView,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import ProductService from '../../services/ProductService';
-import SubscriptionService from '../../services/SubscriptionService';
 import { ApiError } from '../../types/api';
 
 type ProductsScreenProps = {
@@ -36,34 +34,25 @@ interface Product {
   main_image_url?: string;
   image_url?: string;
   sku?: string;
-  is_subscription_controlled?: boolean;
-  online_activated_at?: string;
 }
 
 const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [subscriptionInfo, setSubscriptionInfo] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'low_stock' | 'out_of_stock' | 'in_stock'>('all');
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [toggleLoading, setToggleLoading] = useState<number | null>(null);
-  
-  // ✅ NEW: Sort states
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'stock'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showSortMenu, setShowSortMenu] = useState(false);
 
   const fetchProducts = useCallback(async () => {
     try {
-      console.log('🔍 Fetching products and subscription info...');
       setError('');
-      
       const response = await ProductService.getProducts();
-      console.log('✅ Products response:', response.data);
       
       let productsData: Product[] = [];
       if (Array.isArray(response.data)) {
@@ -76,21 +65,8 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
 
       setProducts(productsData);
       setFilteredProducts(productsData);
-      console.log(`📦 Found ${productsData.length} products`);
-
-      try {
-        const subscriptionResponse = await SubscriptionService.getCurrentSubscription();
-        console.log('✅ Subscription info loaded:', subscriptionResponse.data);
-        setSubscriptionInfo(subscriptionResponse.data);
-      } catch (subError: any) {
-        console.log('⚠️ No subscription found (this is normal for new users):', subError.response?.status);
-        setSubscriptionInfo(null);
-      }
-
     } catch (error: any) {
-      console.error('❌ Failed to fetch products:', error);
       const apiError = error as ApiError;
-      
       if (apiError.response?.status === 401) {
         setError('Session expired. Please login again.');
       } else {
@@ -102,93 +78,9 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     }
   }, []);
 
-  const handleToggleSubscriptionControl = async (product: Product): Promise<void> => {
-    const newStatus = !product.is_subscription_controlled;
-    
-    if (newStatus && subscriptionInfo && subscriptionInfo.is_active) {
-      const activeCount = products.filter(p => p.is_subscription_controlled && p.online_stock > 0).length;
-      const limit = subscriptionInfo.plan.product_limit;
-      
-      if (limit && activeCount >= limit && !product.is_subscription_controlled) {
-        Alert.alert(
-          'Subscription Limit Reached',
-          `Your ${subscriptionInfo.plan.name} plan allows maximum ${limit} products online. Upgrade your plan to activate more products.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Upgrade Plan', 
-              onPress: () => navigation.navigate('Subscription')
-            }
-          ]
-        );
-        return;
-      }
-    }
-
-    if (newStatus && !subscriptionInfo?.is_active) {
-      Alert.alert(
-        'Subscription Required',
-        'You need an active subscription to enable online selling for products.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Get Plan', 
-            onPress: () => navigation.navigate('Subscription')
-          }
-        ]
-      );
-      return;
-    }
-
-    Alert.alert(
-      newStatus ? 'Enable Online Selling' : 'Disable Online Selling',
-      newStatus 
-        ? `Enable "${product.name}" for online selling?`
-        : `Remove "${product.name}" from online store?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: newStatus ? 'Enable' : 'Disable',
-          onPress: () => toggleProductSubscriptionControl(product, newStatus)
-        }
-      ]
-    );
-  };
-
-  const toggleProductSubscriptionControl = async (product: Product, isActive: boolean): Promise<void> => {
-    setToggleLoading(product.id);
-    
-    try {
-      const response = await ProductService.toggleSubscriptionControl(product.id, isActive);
-
-      if (response.data.success) {
-        setProducts(prev => 
-          prev.map(p => 
-            p.id === product.id 
-              ? { 
-                  ...p, 
-                  is_subscription_controlled: response.data.is_subscription_controlled,
-                  online_activated_at: response.data.online_activated_at
-                }
-              : p
-          )
-        );
-        
-        Alert.alert('Success', response.data.message);
-      }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.error || 'Failed to update product status';
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setToggleLoading(null);
-    }
-  };
-
-  // ✅ ENHANCED: Apply filters, search, AND sorting
   useEffect(() => {
     let filtered = [...products];
 
-    // Apply search filter
     if (searchTerm.trim()) {
       filtered = filtered.filter(product =>
         product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -197,31 +89,20 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
       );
     }
 
-    // Apply stock filter
     switch (filterType) {
       case 'low_stock':
-        filtered = filtered.filter(product => 
-          product.online_stock > 0 && product.online_stock <= 5
-        );
+        filtered = filtered.filter(product => product.online_stock > 0 && product.online_stock <= 5);
         break;
       case 'out_of_stock':
-        filtered = filtered.filter(product => 
-          product.online_stock <= 0
-        );
+        filtered = filtered.filter(product => product.online_stock <= 0);
         break;
       case 'in_stock':
-        filtered = filtered.filter(product => 
-          product.online_stock > 5
-        );
-        break;
-      default:
+        filtered = filtered.filter(product => product.online_stock > 5);
         break;
     }
 
-    // ✅ NEW: Apply sorting
     filtered.sort((a, b) => {
       let aValue, bValue;
-      
       switch (sortBy) {
         case 'price':
           aValue = parseFloat(a.price || '0');
@@ -231,12 +112,11 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
           aValue = parseInt(a.online_stock?.toString() || '0');
           bValue = parseInt(b.online_stock?.toString() || '0');
           break;
-        default: // name
+        default:
           aValue = (a.name || '').toLowerCase();
           bValue = (b.name || '').toLowerCase();
           break;
       }
-
       if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -249,7 +129,6 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     fetchProducts();
   }, [fetchProducts]);
 
-  // ✅ NEW: Refresh on screen focus
   useFocusEffect(
     useCallback(() => {
       fetchProducts();
@@ -264,7 +143,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
   const handleDelete = async (productId: number): Promise<void> => {
     Alert.alert(
       'Delete Product',
-      'Are you sure you want to delete this product? This action cannot be undone.',
+      'Are you sure you want to delete this product?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -274,10 +153,8 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
             setDeletingId(productId);
             try {
               await ProductService.deleteProduct(productId);
-              console.log(`✅ Product ${productId} deleted successfully`);
               fetchProducts();
             } catch (error: any) {
-              console.error('❌ Failed to delete product:', error);
               Alert.alert('Error', 'Failed to delete product');
             } finally {
               setDeletingId(null);
@@ -288,22 +165,10 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     );
   };
 
-  const formatSaleType = (type: string): string => {
-    const types: { [key: string]: string } = {
-      'BOTH': 'Online & Store',
-      'ONLINE': 'Online Only',
-      'OFFLINE': 'Store Only',
-      'ONLINE_AND_OFFLINE': 'Online & Store',
-      'OFFLINE_ONLY': 'Store Only',
-      'ONLINE_ONLY': 'Online Only'
-    };
-    return types[type] || type;
-  };
-
   const getStockStatus = (onlineStock: number) => {
-    if (onlineStock <= 0) return { label: 'Out of Stock', color: '#ef4444', bgColor: '#fee2e2' };
-    if (onlineStock <= 5) return { label: 'Low Stock', color: '#f59e0b', bgColor: '#fef3c7' };
-    return { label: 'In Stock', color: '#10b981', bgColor: '#d1fae5' };
+    if (onlineStock <= 0) return { label: 'Out', color: '#ef4444', bgColor: '#fee2e2' };
+    if (onlineStock <= 5) return { label: 'Low', color: '#f59e0b', bgColor: '#fef3c7' };
+    return { label: 'Stock', color: '#10b981', bgColor: '#d1fae5' };
   };
 
   const getFilterCounts = () => {
@@ -315,7 +180,6 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     };
   };
 
-  // ✅ NEW: Analytics calculation
   const getAnalytics = () => {
     const totalProducts = products.length;
     const totalValue = products.reduce((sum, p) => 
@@ -325,68 +189,14 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
       ? products.reduce((sum, p) => sum + parseFloat(p.price || '0'), 0) / totalProducts 
       : 0;
     const lowStockCount = products.filter(p => p.online_stock > 0 && p.online_stock <= 5).length;
-    const onlineProducts = products.filter(p => p.is_subscription_controlled && p.online_stock > 0).length;
 
-    return {
-      totalProducts,
-      totalValue,
-      averagePrice,
-      lowStockCount,
-      onlineProducts,
-    };
+    return { totalProducts, totalValue, averagePrice, lowStockCount };
   };
 
-  // ✅ NEW: Sort menu toggle
   const toggleSortOrder = () => {
     setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
   };
 
-  const renderSubscriptionBanner = () => {
-    if (!subscriptionInfo) {
-      return (
-        <View style={styles.subscriptionWarning}>
-          <Text style={styles.warningIcon}>⚠️</Text>
-          <View style={styles.warningContent}>
-            <Text style={styles.warningTitle}>Get Subscription to Sell Online</Text>
-            <Text style={styles.warningText}>Enable products for online selling</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.getSubscriptionButton}
-            onPress={() => navigation.navigate('Subscription')}
-          >
-            <Text style={styles.getSubscriptionButtonText}>Get Plan</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    if (subscriptionInfo.is_active) {
-      const activeOnlineProducts = products.filter(p => p.is_subscription_controlled && p.online_stock > 0).length;
-      const limit = subscriptionInfo.plan.product_limit || 'Unlimited';
-      
-      return (
-        <View style={styles.subscriptionActive}>
-          <Text style={styles.activeIcon}>👑</Text>
-          <View style={styles.activeContent}>
-            <Text style={styles.activeTitle}>{subscriptionInfo.plan.name} Plan Active</Text>
-            <Text style={styles.activeText}>
-              {activeOnlineProducts}/{limit} products online
-            </Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.manageButton}
-            onPress={() => navigation.navigate('Subscription')}
-          >
-            <Text style={styles.manageButtonText}>Manage</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return null;
-  };
-
-  // ✅ NEW: Analytics Cards Component
   const renderAnalytics = () => {
     const analytics = getAnalytics();
     
@@ -398,49 +208,38 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
         contentContainerStyle={styles.analyticsContent}
       >
         <View style={styles.analyticsCard}>
-          <View style={styles.analyticsIcon}>
-            <Ionicons name="cube" size={20} color="#3b82f6" />
-          </View>
-          <Text style={styles.analyticsLabel}>Total Products</Text>
+          <Ionicons name="cube" size={18} color="#3b82f6" />
+          <Text style={styles.analyticsLabel}>Products</Text>
           <Text style={styles.analyticsValue}>{analytics.totalProducts}</Text>
         </View>
 
         <View style={styles.analyticsCard}>
-          <View style={styles.analyticsIcon}>
-            <Ionicons name="cash" size={20} color="#10b981" />
-          </View>
-          <Text style={styles.analyticsLabel}>Inventory Value</Text>
-          <Text style={styles.analyticsValue}>₹{Math.round(analytics.totalValue).toLocaleString('en-IN')}</Text>
+          <Ionicons name="cash" size={18} color="#10b981" />
+          <Text style={styles.analyticsLabel}>Value</Text>
+          <Text style={styles.analyticsValue}>
+            ₹{analytics.totalValue >= 1000 
+              ? (analytics.totalValue / 1000).toFixed(1) + 'k' 
+              : Math.round(analytics.totalValue)}
+          </Text>
         </View>
 
         <View style={styles.analyticsCard}>
-          <View style={styles.analyticsIcon}>
-            <Ionicons name="trending-up" size={20} color="#f59e0b" />
-          </View>
-          <Text style={styles.analyticsLabel}>Avg Price</Text>
-          <Text style={styles.analyticsValue}>₹{Math.round(analytics.averagePrice).toLocaleString('en-IN')}</Text>
+          <Ionicons name="trending-up" size={18} color="#f59e0b" />
+          <Text style={styles.analyticsLabel}>Avg</Text>
+          <Text style={styles.analyticsValue}>
+            ₹{Math.round(analytics.averagePrice)}
+          </Text>
         </View>
 
         <View style={styles.analyticsCard}>
-          <View style={styles.analyticsIcon}>
-            <Ionicons name="alert-circle" size={20} color="#ef4444" />
-          </View>
-          <Text style={styles.analyticsLabel}>Low Stock</Text>
+          <Ionicons name="alert-circle" size={18} color="#ef4444" />
+          <Text style={styles.analyticsLabel}>Low</Text>
           <Text style={styles.analyticsValue}>{analytics.lowStockCount}</Text>
-        </View>
-
-        <View style={styles.analyticsCard}>
-          <View style={styles.analyticsIcon}>
-            <Ionicons name="globe" size={20} color="#8b5cf6" />
-          </View>
-          <Text style={styles.analyticsLabel}>Online</Text>
-          <Text style={styles.analyticsValue}>{analytics.onlineProducts}</Text>
         </View>
       </ScrollView>
     );
   };
 
-  // ✅ NEW: Sort Button Component
   const renderSortButton = () => (
     <View style={styles.sortButtonContainer}>
       <TouchableOpacity
@@ -449,7 +248,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
       >
         <Ionicons name="swap-vertical" size={16} color="#6b7280" />
         <Text style={styles.sortButtonText}>
-          Sort: {sortBy === 'name' ? 'Name' : sortBy === 'price' ? 'Price' : 'Stock'}
+          {sortBy === 'name' ? 'Name' : sortBy === 'price' ? 'Price' : 'Stock'}
         </Text>
         <Ionicons 
           name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
@@ -464,7 +263,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
             style={[styles.sortMenuItem, sortBy === 'name' && styles.sortMenuItemActive]}
             onPress={() => { setSortBy('name'); setShowSortMenu(false); }}
           >
-            <Text style={styles.sortMenuItemText}>Sort by Name</Text>
+            <Text style={styles.sortMenuItemText}>Name</Text>
             {sortBy === 'name' && <Ionicons name="checkmark" size={16} color="#3b82f6" />}
           </TouchableOpacity>
 
@@ -472,7 +271,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
             style={[styles.sortMenuItem, sortBy === 'price' && styles.sortMenuItemActive]}
             onPress={() => { setSortBy('price'); setShowSortMenu(false); }}
           >
-            <Text style={styles.sortMenuItemText}>Sort by Price</Text>
+            <Text style={styles.sortMenuItemText}>Price</Text>
             {sortBy === 'price' && <Ionicons name="checkmark" size={16} color="#3b82f6" />}
           </TouchableOpacity>
 
@@ -480,7 +279,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
             style={[styles.sortMenuItem, sortBy === 'stock' && styles.sortMenuItemActive]}
             onPress={() => { setSortBy('stock'); setShowSortMenu(false); }}
           >
-            <Text style={styles.sortMenuItemText}>Sort by Stock</Text>
+            <Text style={styles.sortMenuItemText}>Stock</Text>
             {sortBy === 'stock' && <Ionicons name="checkmark" size={16} color="#3b82f6" />}
           </TouchableOpacity>
 
@@ -504,11 +303,9 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     </View>
   );
 
-  // ✅ UPDATED: Product card with tap-to-view
   const renderProduct = ({ item }: { item: Product }) => {
     const stockStatus = getStockStatus(item.online_stock);
     const isDeleting = deletingId === item.id;
-    const isToggling = toggleLoading === item.id;
 
     return (
       <TouchableOpacity
@@ -520,13 +317,19 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
       >
         <View style={styles.productCard}>
           <View style={styles.productHeader}>
-            <Image 
-              source={{ 
-                uri: item.main_image_url || item.image_url || 'https://via.placeholder.com/80x80/e9ecef/6c757d?text=No+Image'
-              }} 
-              style={styles.productImage}
-              onError={() => console.log('Image load error for product:', item.id)}
-            />
+            <View style={styles.imageContainer}>
+              <Image 
+                source={{ 
+                  uri: item.main_image_url || item.image_url || 'https://via.placeholder.com/70x70/e9ecef/6c757d?text=No+Image'
+                }} 
+                style={styles.productImage}
+              />
+              <View style={[styles.stockBadge, { backgroundColor: stockStatus.bgColor }]}>
+                <Text style={[styles.stockBadgeText, { color: stockStatus.color }]}>
+                  {stockStatus.label}
+                </Text>
+              </View>
+            </View>
             
             <View style={styles.productInfo}>
               <Text style={styles.productName} numberOfLines={2}>
@@ -534,14 +337,11 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
               </Text>
               {item.model_name && (
                 <Text style={styles.modelName} numberOfLines={1}>
-                  Model: {item.model_name}
+                  {item.model_name}
                 </Text>
               )}
-              {item.sku && (
-                <Text style={styles.sku}>SKU: {item.sku}</Text>
-              )}
               
-              <View style={styles.priceContainer}>
+              <View style={styles.priceRow}>
                 <Text style={styles.price}>
                   ₹{parseFloat(item.price || '0').toLocaleString('en-IN')}
                 </Text>
@@ -551,55 +351,10 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
                   </Text>
                 )}
               </View>
-            </View>
-          </View>
 
-          <View style={styles.productDetails}>
-            <View style={styles.stockContainer}>
-              <Text style={styles.stockLabel}>Stock (Online/Total)</Text>
-              <Text style={styles.stockValue}>
-                {item.online_stock || 0} / {item.total_stock || 0}
+              <Text style={styles.stockText}>
+                Stock: {item.online_stock || 0} / {item.total_stock || 0}
               </Text>
-            </View>
-
-            <View style={styles.statusContainer}>
-              <View style={[
-                styles.statusBadge,
-                { backgroundColor: stockStatus.bgColor }
-              ]}>
-                <Text style={[styles.statusText, { color: stockStatus.color }]}>
-                  {stockStatus.label}
-                </Text>
-              </View>
-              
-              <View style={styles.saleTypeBadge}>
-                <Text style={styles.saleTypeText}>
-                  {formatSaleType(item.sale_type)}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.subscriptionControl}>
-            <View style={styles.subscriptionControlLeft}>
-              <Text style={styles.controlLabel}>Sell Online</Text>
-              {item.is_subscription_controlled && item.online_stock > 0 && (
-                <Text style={styles.onlineActiveText}>✅ Available Online</Text>
-              )}
-            </View>
-            
-            <View style={styles.subscriptionControlRight}>
-              {isToggling ? (
-                <ActivityIndicator size="small" color="#3b82f6" />
-              ) : (
-                <Switch
-                  value={item.is_subscription_controlled && item.online_stock > 0}
-                  onValueChange={() => handleToggleSubscriptionControl(item)}
-                  trackColor={{ false: '#f3f4f6', true: '#3b82f6' }}
-                  thumbColor={'#ffffff'}
-                  disabled={!subscriptionInfo?.is_active}
-                />
-              )}
             </View>
           </View>
 
@@ -645,8 +400,8 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     const filters = [
       { key: 'all', label: `All (${filterCounts.all})` },
       { key: 'in_stock', label: `In Stock (${filterCounts.in_stock})` },
-      { key: 'low_stock', label: `Low Stock (${filterCounts.low_stock})` },
-      { key: 'out_of_stock', label: `Out of Stock (${filterCounts.out_of_stock})` },
+      { key: 'low_stock', label: `Low (${filterCounts.low_stock})` },
+      { key: 'out_of_stock', label: `Out (${filterCounts.out_of_stock})` },
     ] as const;
 
     return (
@@ -680,21 +435,14 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons 
-        name="cube-outline" 
-        size={64} 
-        color="#9ca3af" 
-        style={styles.emptyIcon}
-      />
+      <Ionicons name="cube-outline" size={64} color="#9ca3af" style={styles.emptyIcon} />
       <Text style={styles.emptyTitle}>
-        {searchTerm || filterType !== 'all' 
-          ? 'No products match your filters' 
-          : 'No Products Found'}
+        {searchTerm || filterType !== 'all' ? 'No products found' : 'No Products Yet'}
       </Text>
       <Text style={styles.emptyDescription}>
         {searchTerm || filterType !== 'all'
-          ? 'Try adjusting your search terms or filters to find products.'
-          : 'You haven\'t added any products to your store yet. Start by adding your first product!'}
+          ? 'Try adjusting your filters'
+          : 'Add your first product to get started'}
       </Text>
       
       {searchTerm || filterType !== 'all' ? (
@@ -713,7 +461,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
           onPress={() => navigation.navigate('AddProduct')}
         >
           <Ionicons name="add-circle" size={20} color="white" />
-          <Text style={styles.addButtonText}>Add Your First Product</Text>
+          <Text style={styles.addButtonText}>Add Product</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -723,7 +471,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading your products...</Text>
+        <Text style={styles.loadingText}>Loading products...</Text>
       </View>
     );
   }
@@ -735,7 +483,7 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
         <Text style={styles.errorTitle}>Error Loading Products</Text>
         <Text style={styles.errorMessage}>{error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchProducts}>
-          <Ionicons name="refresh" size={16} color="white" />
+          <Ionicons name="refresh" size={18} color="white" />
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
       </View>
@@ -746,21 +494,18 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.headerInfo}>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>My Products ({filteredProducts.length})</Text>
-          <Text style={styles.subtitle}>Manage your product inventory</Text>
+          <Text style={styles.title}>Products ({filteredProducts.length})</Text>
+          <Text style={styles.subtitle}>Manage inventory</Text>
         </View>
         <TouchableOpacity 
           style={styles.addProductButton}
           onPress={() => navigation.navigate('AddProduct')}
         >
           <Ionicons name="add" size={18} color="white" />
-          <Text style={styles.addProductButtonText}>Add Product</Text>
+          <Text style={styles.addProductButtonText}>Add</Text>
         </TouchableOpacity>
       </View>
 
-      {renderSubscriptionBanner()}
-
-      {/* ✅ NEW: Analytics Cards */}
       {products.length > 0 && renderAnalytics()}
 
       <View style={styles.searchContainer}>
@@ -768,23 +513,19 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
           <Ionicons name="search" size={20} color="#9ca3af" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search products by name, model, or SKU..."
+            placeholder="Search products..."
             value={searchTerm}
             onChangeText={setSearchTerm}
             placeholderTextColor="#9ca3af"
           />
           {searchTerm.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearchTerm('')}
-              style={styles.clearSearchButton}
-            >
+            <TouchableOpacity onPress={() => setSearchTerm('')} style={styles.clearSearchButton}>
               <Ionicons name="close-circle" size={20} color="#9ca3af" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* ✅ NEW: Sort Button */}
       {products.length > 0 && renderSortButton()}
 
       {renderFilterTabs()}
@@ -793,12 +534,8 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
         data={filteredProducts}
         renderItem={renderProduct}
         keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        contentContainerStyle={
-          filteredProducts.length === 0 ? styles.emptyListContainer : styles.listContainer
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={filteredProducts.length === 0 ? styles.emptyListContainer : styles.listContainer}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
       />
@@ -807,111 +544,445 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc', gap: 16 },
-  loadingText: { fontSize: 16, color: '#6b7280' },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#f8fafc', gap: 16 },
-  errorTitle: { fontSize: 20, fontWeight: 'bold', color: '#ef4444' },
-  errorMessage: { fontSize: 16, color: '#6b7280', textAlign: 'center' },
-  retryButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#3b82f6', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, gap: 8 },
-  retryButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f8fafc' 
+  },
   
-  headerInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  headerContent: { flex: 1 },
-  title: { fontSize: 20, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#6b7280' },
-  addProductButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#3b82f6', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, gap: 6 },
-  addProductButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: '#f8fafc', 
+    gap: 16 
+  },
+  loadingText: { 
+    fontSize: 15, 
+    color: '#6b7280',
+    fontWeight: '500'
+  },
   
-  subscriptionWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fefce8', marginHorizontal: 20, marginTop: 16, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#f59e0b' },
-  warningIcon: { fontSize: 20, marginRight: 12 },
-  warningContent: { flex: 1 },
-  warningTitle: { fontSize: 14, fontWeight: '600', color: '#92400e', marginBottom: 2 },
-  warningText: { fontSize: 12, color: '#a16207' },
-  getSubscriptionButton: { backgroundColor: '#f59e0b', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  getSubscriptionButtonText: { color: 'white', fontSize: 12, fontWeight: '600' },
-  subscriptionActive: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', marginHorizontal: 20, marginTop: 16, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#3b82f6' },
-  activeIcon: { fontSize: 20, marginRight: 12 },
-  activeContent: { flex: 1 },
-  activeTitle: { fontSize: 14, fontWeight: '600', color: '#1f2937', marginBottom: 2 },
-  activeText: { fontSize: 12, color: '#6b7280' },
-  manageButton: { backgroundColor: '#3b82f6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  manageButtonText: { color: 'white', fontSize: 12, fontWeight: '600' },
+  errorContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 24, 
+    backgroundColor: '#f8fafc', 
+    gap: 16 
+  },
+  errorTitle: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    color: '#ef4444',
+    marginTop: 8
+  },
+  errorMessage: { 
+    fontSize: 15, 
+    color: '#6b7280', 
+    textAlign: 'center',
+    lineHeight: 22
+  },
+  retryButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#3b82f6', 
+    paddingHorizontal: 24, 
+    paddingVertical: 12, 
+    borderRadius: 10, 
+    gap: 8,
+    marginTop: 8
+  },
+  retryButtonText: { 
+    color: 'white', 
+    fontSize: 15, 
+    fontWeight: '600' 
+  },
   
-  // ✅ NEW: Analytics styles
-  analyticsContainer: { marginHorizontal: 20, marginTop: 16, marginBottom: 8 },
-  analyticsContent: { gap: 12 },
-  analyticsCard: { backgroundColor: 'white', padding: 16, borderRadius: 12, minWidth: 130, alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#e5e7eb' },
-  analyticsIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
-  analyticsLabel: { fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 },
-  analyticsValue: { fontSize: 18, fontWeight: '700', color: '#1f2937' },
+  headerInfo: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 16, 
+    paddingVertical: 16, 
+    backgroundColor: 'white', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e5e7eb' 
+  },
+  headerContent: { 
+    flex: 1 
+  },
+  title: { 
+    fontSize: 20, 
+    fontWeight: '700', 
+    color: '#1f2937', 
+    marginBottom: 4 
+  },
+  subtitle: { 
+    fontSize: 13, 
+    color: '#6b7280',
+    fontWeight: '500'
+  },
+  addProductButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#3b82f6', 
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    borderRadius: 10, 
+    gap: 6 
+  },
+  addProductButtonText: { 
+    color: 'white', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  
+  analyticsContainer: { 
+    marginHorizontal: 16, 
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  analyticsContent: { 
+    gap: 12, 
+    paddingRight: 16,
+  },
+  analyticsCard: { 
+    backgroundColor: 'white', 
+    paddingVertical: 8,   
+    paddingHorizontal: 16,
+    borderRadius: 10, 
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    borderWidth: 1, 
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  analyticsLabel: { 
+    fontSize: 10, 
+    color: '#6b7280', 
+    textTransform: 'uppercase', 
+    letterSpacing: 0.5, 
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  analyticsValue: { 
+    fontSize: 15,
+    fontWeight: '700', 
+    color: '#1f2937',
+    textAlign: 'center',
+  },
 
-  // ✅ NEW: Sort styles
-  sortButtonContainer: { paddingHorizontal: 20, paddingVertical: 12, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', position: 'relative' },
-  sortButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, alignSelf: 'flex-start' },
-  sortButtonText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  sortMenu: { position: 'absolute', top: 52, left: 20, backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5, zIndex: 1000, minWidth: 180 },
-  sortMenuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 16 },
-  sortMenuItemActive: { backgroundColor: '#eff6ff' },
-  sortMenuItemText: { fontSize: 14, color: '#374151' },
-  sortMenuDivider: { height: 1, backgroundColor: '#e5e7eb', marginVertical: 4 },
+  sortButtonContainer: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 12, 
+    backgroundColor: 'white', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e5e7eb', 
+    position: 'relative' 
+  },
+  sortButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 8, 
+    paddingVertical: 8, 
+    paddingHorizontal: 12, 
+    backgroundColor: '#f9fafb', 
+    borderWidth: 1, 
+    borderColor: '#d1d5db', 
+    borderRadius: 10, 
+    alignSelf: 'flex-start' 
+  },
+  sortButtonText: { 
+    fontSize: 14, 
+    color: '#374151', 
+    fontWeight: '600' 
+  },
+  sortMenu: { 
+    position: 'absolute', 
+    top: 56, 
+    left: 16, 
+    backgroundColor: 'white', 
+    borderRadius: 10, 
+    borderWidth: 1, 
+    borderColor: '#e5e7eb', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 8, 
+    elevation: 5, 
+    zIndex: 1000, 
+    minWidth: 160 
+  },
+  sortMenuItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    paddingVertical: 12, 
+    paddingHorizontal: 16 
+  },
+  sortMenuItemActive: { 
+    backgroundColor: '#eff6ff' 
+  },
+  sortMenuItemText: { 
+    fontSize: 14, 
+    color: '#374151',
+    fontWeight: '500'
+  },
+  sortMenuDivider: { 
+    height: 1, 
+    backgroundColor: '#e5e7eb', 
+    marginVertical: 4 
+  },
   
-  searchContainer: { paddingHorizontal: 20, paddingVertical: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  searchInputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, backgroundColor: '#f9fafb', paddingHorizontal: 12 },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 10, fontSize: 16, color: '#374151' },
-  clearSearchButton: { padding: 4 },
+  searchContainer: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 12,
+    backgroundColor: 'white', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e5e7eb' 
+  },
+  searchInputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#d1d5db', 
+    borderRadius: 10, 
+    backgroundColor: '#f9fafb', 
+    paddingHorizontal: 12,
+    height: 44
+  },
+  searchIcon: { 
+    marginRight: 8 
+  },
+  searchInput: { 
+    flex: 1, 
+    fontSize: 15, 
+    color: '#374151',
+    paddingVertical: 0
+  },
+  clearSearchButton: { 
+    padding: 4 
+  },
   
-  filterContainer: { backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingVertical: 12 },
-  filterScrollContainer: { paddingHorizontal: 20, gap: 8 },
-  filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f3f4f6', minWidth: 80 },
-  activeFilterTab: { backgroundColor: '#3b82f6' },
-  filterTabText: { fontSize: 12, color: '#6b7280', fontWeight: '600', textAlign: 'center' },
-  activeFilterTabText: { color: 'white' },
+  filterContainer: { 
+    backgroundColor: 'white', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e5e7eb', 
+    paddingVertical: 12 
+  },
+  filterScrollContainer: { 
+    paddingHorizontal: 16, 
+    gap: 8 
+  },
+  filterTab: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 20, 
+    backgroundColor: '#f3f4f6', 
+    minWidth: 80 
+  },
+  activeFilterTab: { 
+    backgroundColor: '#3b82f6' 
+  },
+  filterTabText: { 
+    fontSize: 12, 
+    color: '#6b7280', 
+    fontWeight: '600', 
+    textAlign: 'center' 
+  },
+  activeFilterTabText: { 
+    color: 'white' 
+  },
   
-  listContainer: { padding: 20, paddingBottom: 40 },
-  emptyListContainer: { flex: 1 },
-  productCard: { backgroundColor: 'white', borderRadius: 12, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  productHeader: { flexDirection: 'row', marginBottom: 12 },
-  productImage: { width: 80, height: 80, borderRadius: 8, backgroundColor: '#f3f4f6', marginRight: 12 },
-  productInfo: { flex: 1, justifyContent: 'space-between' },
-  productName: { fontSize: 16, fontWeight: '600', color: '#1f2937', marginBottom: 4 },
-  modelName: { fontSize: 12, color: '#6b7280', marginBottom: 2 },
-  sku: { fontSize: 11, color: '#9ca3af', marginBottom: 8 },
-  priceContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  price: { fontSize: 16, fontWeight: 'bold', color: '#059669' },
-  mrp: { fontSize: 12, color: '#6b7280', textDecorationLine: 'line-through' },
-  productDetails: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  stockContainer: { alignItems: 'flex-start' },
-  stockLabel: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
-  stockValue: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  statusContainer: { alignItems: 'flex-end', gap: 8 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  statusText: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  saleTypeBadge: { backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  saleTypeText: { fontSize: 11, color: '#1e40af', fontWeight: '500' },
+  listContainer: { 
+    padding: 16, 
+    paddingBottom: 32 
+  },
+  emptyListContainer: { 
+    flex: 1 
+  },
   
-  subscriptionControl: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb' },
-  subscriptionControlLeft: { flex: 1 },
-  controlLabel: { fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 2 },
-  onlineActiveText: { fontSize: 12, color: '#10b981', fontWeight: '500' },
-  subscriptionControlRight: { alignItems: 'center' },
+  productCard: { 
+    backgroundColor: 'white', 
+    borderRadius: 12, 
+    padding: 14, 
+    marginBottom: 12, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.08, 
+    shadowRadius: 4, 
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f3f4f6'
+  },
+  productHeader: { 
+    flexDirection: 'row', 
+    marginBottom: 12 
+  },
   
-  actionButtons: { flexDirection: 'row', gap: 12 },
-  editButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#6b7280', paddingVertical: 10, borderRadius: 8, gap: 6 },
-  editButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
-  deleteButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ef4444', paddingVertical: 10, borderRadius: 8, gap: 6 },
-  deleteButtonDisabled: { opacity: 0.7 },
-  deleteButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
+  imageContainer: { 
+    position: 'relative', 
+    marginRight: 14 
+  },
+  productImage: { 
+    width: 72, 
+    height: 72, 
+    borderRadius: 36,
+    backgroundColor: '#f3f4f6',
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+  },
+  stockBadge: { 
+    position: 'absolute', 
+    bottom: -2, 
+    right: -2, 
+    paddingHorizontal: 7, 
+    paddingVertical: 3, 
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  stockBadgeText: { 
+    fontSize: 9, 
+    fontWeight: '700', 
+    textTransform: 'uppercase',
+    letterSpacing: 0.3
+  },
   
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyIcon: { marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: '#374151', marginBottom: 8, textAlign: 'center' },
-  emptyDescription: { fontSize: 14, color: '#6b7280', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  clearButton: { backgroundColor: '#6b7280', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
-  clearButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
-  addButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#3b82f6', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, gap: 8 },
-  addButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  productInfo: { 
+    flex: 1, 
+    justifyContent: 'space-between' 
+  },
+  productName: { 
+    fontSize: 16, 
+    fontWeight: '600', 
+    color: '#1f2937', 
+    marginBottom: 4, 
+    lineHeight: 22 
+  },
+  modelName: { 
+    fontSize: 12, 
+    color: '#6b7280', 
+    marginBottom: 6,
+    fontWeight: '500'
+  },
+  priceRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 8, 
+    marginBottom: 4 
+  },
+  price: { 
+    fontSize: 17, 
+    fontWeight: '700', 
+    color: '#059669' 
+  },
+  mrp: { 
+    fontSize: 12, 
+    color: '#9ca3af', 
+    textDecorationLine: 'line-through',
+    fontWeight: '500'
+  },
+  stockText: { 
+    fontSize: 12, 
+    color: '#6b7280',
+    fontWeight: '500'
+  },
+  
+  actionButtons: { 
+    flexDirection: 'row', 
+    gap: 10, 
+    marginTop: 6 
+  },
+  editButton: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    backgroundColor: '#6b7280', 
+    paddingVertical: 10, 
+    borderRadius: 10, 
+    gap: 6 
+  },
+  editButtonText: { 
+    color: 'white', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  deleteButton: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    backgroundColor: '#ef4444', 
+    paddingVertical: 10, 
+    borderRadius: 10, 
+    gap: 6 
+  },
+  deleteButtonDisabled: { 
+    opacity: 0.6 
+  },
+  deleteButtonText: { 
+    color: 'white', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  
+  emptyState: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 40 
+  },
+  emptyIcon: { 
+    marginBottom: 16 
+  },
+  emptyTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#374151', 
+    marginBottom: 8, 
+    textAlign: 'center' 
+  },
+  emptyDescription: { 
+    fontSize: 14, 
+    color: '#6b7280', 
+    textAlign: 'center', 
+    lineHeight: 20, 
+    marginBottom: 24,
+    paddingHorizontal: 20
+  },
+  clearButton: { 
+    backgroundColor: '#6b7280', 
+    paddingHorizontal: 24, 
+    paddingVertical: 12, 
+    borderRadius: 10 
+  },
+  clearButtonText: { 
+    color: 'white', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  addButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#3b82f6', 
+    paddingHorizontal: 24, 
+    paddingVertical: 12, 
+    borderRadius: 10, 
+    gap: 8 
+  },
+  addButtonText: { 
+    color: 'white', 
+    fontSize: 15, 
+    fontWeight: '600' 
+  },
 });
 
 export default ProductsScreen;

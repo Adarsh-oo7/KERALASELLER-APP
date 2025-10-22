@@ -1,7 +1,7 @@
 /**
  * CategorySelectorComponent.tsx
  * Complete category selector with hierarchical navigation
- * Matches web form functionality
+ * NOW USES CENTRALIZED API CONFIG! ✅
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBaseURL } from '../../config/api'; // ✅ ADDED THIS!
 
 interface CategorySelectorComponentProps {
   selectedCategory: number | null;
@@ -38,12 +39,6 @@ interface Category {
   }>;
 }
 
-// ✅ API CONFIGURATION (like web form)
-const getApiBaseUrl = () => {
-  // Change this to your backend URL
-  return 'https://keralaseller-backend.onrender.com';
-};
-
 const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
   selectedCategory,
   onCategorySelect,
@@ -56,13 +51,11 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [attributes, setAttributes] = useState<{ [key: string]: string }>(existingAttributes);
 
-  // ✅ ENHANCED: Fetch categories with proper error handling
   useEffect(() => {
     console.log('📋 CategorySelector initialized');
     fetchCategories();
   }, []);
 
-  // ✅ Initialize attributes when category changes
   useEffect(() => {
     if (selectedCategory && categories.length > 0) {
       const selectedCategoryData = categories.find(cat => cat.id === selectedCategory);
@@ -79,13 +72,13 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
     }
   }, [selectedCategory, categories]);
 
-  // ✅ COMPLETE FETCH FUNCTION (like web form)
+  // ✅ FIXED: Now uses centralized API config!
   const fetchCategories = async () => {
     try {
       setLoading(true);
       console.log('🔄 Fetching categories from API...');
       
-      const API_URL = `${getApiBaseUrl()}/api/categories/`;
+      const API_URL = `${getBaseURL()}/api/categories/`; // ✅ CHANGED THIS LINE!
       const token = await AsyncStorage.getItem('access_token');
       
       console.log('📡 API URL:', API_URL);
@@ -141,7 +134,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
     console.log('📋 Category selected:', categoryId);
     onCategorySelect(categoryId);
     
-    // Reset attributes when category changes
     if (categoryId === 0) {
       setAttributes({});
       onAttributesChange({});
@@ -155,7 +147,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
     onAttributesChange(newAttributes);
   };
 
-  // ✅ LOADING STATE
   if (loading) {
     return (
       <View style={styles.container}>
@@ -168,7 +159,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
     );
   }
 
-  // ✅ ERROR STATE (no categories)
   if (categories.length === 0 && !loading) {
     return (
       <View style={styles.container}>
@@ -193,7 +183,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.headerContainer}>
         <Text style={styles.label}>Product Category *</Text>
         {categories.length > 0 && (
@@ -203,7 +192,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         )}
       </View>
 
-      {/* Search */}
       {categories.length > 5 && (
         <View style={styles.searchContainer}>
           <View style={styles.searchInputContainer}>
@@ -224,7 +212,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* Selected Category Display */}
       {selectedCategory && selectedCategoryData && (
         <View style={styles.selectedCategoryContainer}>
           <Text style={styles.selectedLabel}>Selected Category:</Text>
@@ -243,7 +230,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* Error Message */}
       {error && (
         <View style={styles.errorBanner}>
           <Ionicons name="alert-circle" size={16} color="#ef4444" />
@@ -251,7 +237,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* Categories List */}
       <ScrollView 
         style={styles.categoriesContainer} 
         showsVerticalScrollIndicator={false}
@@ -316,7 +301,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         )}
       </ScrollView>
 
-      {/* Category Attributes */}
       {selectedCategoryData?.attributes && selectedCategoryData.attributes.length > 0 && (
         <View style={styles.attributesContainer}>
           <View style={styles.attributesHeader}>
@@ -335,7 +319,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
               </Text>
               
               {attribute.options && attribute.options.length > 0 ? (
-                // Dropdown for predefined options
                 <ScrollView 
                   horizontal 
                   showsHorizontalScrollIndicator={false}
@@ -376,7 +359,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
                   </View>
                 </ScrollView>
               ) : (
-                // Text input for free form
                 <TextInput
                   style={styles.attributeInput}
                   value={attributes[attribute.name] || ''}
@@ -390,7 +372,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* Quick Select (Popular Categories) */}
       {!selectedCategory && categories.length > 0 && (
         <View style={styles.popularContainer}>
           <Text style={styles.popularTitle}>
@@ -410,7 +391,6 @@ const CategorySelectorComponent: React.FC<CategorySelectorComponentProps> = ({
         </View>
       )}
 
-      {/* Help text */}
       <View style={styles.helpContainer}>
         <Ionicons name="information-circle" size={14} color="#9ca3af" />
         <Text style={styles.helpText}>
@@ -425,26 +405,22 @@ const styles = StyleSheet.create({
   container: {
     paddingBottom: 20,
   },
-  
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
-  
   label: {
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
   },
-  
   categoryCount: {
     fontSize: 12,
     color: '#6b7280',
     fontStyle: 'italic',
   },
-  
   loadingContainer: {
     alignItems: 'center',
     padding: 40,
@@ -453,20 +429,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
-  
   loadingText: {
     marginTop: 12,
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
   },
-  
   loadingSubtext: {
     marginTop: 4,
     fontSize: 14,
     color: '#6b7280',
   },
-  
   errorContainer: {
     alignItems: 'center',
     padding: 24,
@@ -476,19 +449,16 @@ const styles = StyleSheet.create({
     borderColor: '#fecaca',
     gap: 12,
   },
-  
   errorTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ef4444',
   },
-  
   errorText: {
     fontSize: 14,
     color: '#dc2626',
     textAlign: 'center',
   },
-  
   retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,17 +468,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 6,
   },
-  
   retryButtonText: {
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
   },
-  
   searchContainer: {
     marginBottom: 16,
   },
-  
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -519,24 +486,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     gap: 8,
   },
-  
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: '#374151',
   },
-  
   selectedCategoryContainer: {
     marginBottom: 16,
   },
-  
   selectedLabel: {
     fontSize: 14,
     color: '#6b7280',
     marginBottom: 8,
     fontWeight: '500',
   },
-  
   selectedCategory: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -547,14 +510,12 @@ const styles = StyleSheet.create({
     borderColor: '#10b981',
     gap: 8,
   },
-  
   selectedCategoryText: {
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
     color: '#047857',
   },
-  
   clearButton: {
     width: 24,
     height: 24,
@@ -563,7 +524,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -573,13 +533,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 8,
   },
-  
   errorBannerText: {
     flex: 1,
     fontSize: 12,
     color: '#ef4444',
   },
-  
   categoriesContainer: {
     maxHeight: 300,
     borderWidth: 1,
@@ -588,84 +546,70 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     marginBottom: 16,
   },
-  
   noCategoriesContainer: {
     alignItems: 'center',
     padding: 32,
     gap: 12,
   },
-  
   noCategoriesText: {
     textAlign: 'center',
     color: '#6b7280',
     fontSize: 14,
   },
-  
   clearSearchButton: {
     backgroundColor: '#6b7280',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
   },
-  
   clearSearchText: {
     color: 'white',
     fontSize: 12,
     fontWeight: '500',
   },
-  
   categoryOption: {
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
   },
-  
   categoryOptionActive: {
     backgroundColor: '#eff6ff',
     borderLeftWidth: 4,
     borderLeftColor: '#3b82f6',
   },
-  
   categoryContent: {
     gap: 6,
   },
-  
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  
   categoryName: {
     fontSize: 16,
     color: '#374151',
     fontWeight: '500',
     flex: 1,
   },
-  
   categoryNameActive: {
     color: '#1d4ed8',
     fontWeight: '600',
   },
-  
   categoryDescription: {
     fontSize: 12,
     color: '#6b7280',
     lineHeight: 18,
   },
-  
   attributesBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  
   attributesInfo: {
     fontSize: 10,
     color: '#3b82f6',
     fontStyle: 'italic',
   },
-  
   attributesContainer: {
     backgroundColor: '#f8fafc',
     padding: 16,
@@ -675,38 +619,31 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     gap: 12,
   },
-  
   attributesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  
   attributesTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
   },
-  
   attributesSubtitle: {
     fontSize: 12,
     color: '#6b7280',
   },
-  
   attributeGroup: {
     gap: 8,
   },
-  
   attributeLabel: {
     fontSize: 14,
     fontWeight: '500',
     color: '#374151',
   },
-  
   required: {
     color: '#ef4444',
   },
-  
   attributeInput: {
     borderWidth: 1,
     borderColor: '#d1d5db',
@@ -716,16 +653,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     color: '#374151',
   },
-  
   optionsScroll: {
     marginVertical: 4,
   },
-  
   optionsContainer: {
     flexDirection: 'row',
     gap: 8,
   },
-  
   optionButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -734,40 +668,33 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     backgroundColor: 'white',
   },
-  
   optionButtonActive: {
     backgroundColor: '#3b82f6',
     borderColor: '#3b82f6',
   },
-  
   optionText: {
     fontSize: 12,
     color: '#6b7280',
     fontWeight: '500',
   },
-  
   optionTextActive: {
     color: 'white',
     fontWeight: '600',
   },
-  
   popularContainer: {
     marginBottom: 16,
     gap: 8,
   },
-  
   popularTitle: {
     fontSize: 14,
     fontWeight: '500',
     color: '#6b7280',
   },
-  
   popularList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  
   popularTag: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -776,20 +703,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
-  
   popularTagText: {
     fontSize: 12,
     color: '#4b5563',
     fontWeight: '500',
   },
-  
   helpContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 4,
   },
-  
   helpText: {
     flex: 1,
     fontSize: 11,

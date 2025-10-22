@@ -24,23 +24,60 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     try {
       console.log('🔍 Fetching dashboard data...');
       
-      // ✅ Parallel API calls for better performance
-      const [dashboardResponse, storeResponse, subscriptionResponse] = await Promise.allSettled([
-        apiClient.get('/api/seller/dashboard/'),
+      // ✅ Fixed: Use existing working endpoints
+      const [storeResponse, ordersResponse, productsResponse, subscriptionResponse] = await Promise.allSettled([
         apiClient.get('/user/store/profile/'),
-        apiClient.get('/api/subscription/current/'),
+        apiClient.get('/user/orders/'),
+        apiClient.get('/api/products/'),
+      apiClient.get('/api/subscriptions/status/'),   // ✅ Fixed: Use status endpoint
       ]);
-
-      // Dashboard data
-      if (dashboardResponse.status === 'fulfilled') {
-        setDashboardData(dashboardResponse.value.data);
-        console.log('✅ Dashboard data loaded');
-      }
 
       // Store data
       if (storeResponse.status === 'fulfilled') {
-        setStoreData(storeResponse.value.data.store_profile || storeResponse.value.data);
-        console.log('✅ Store data loaded');
+        const storeProfileData = storeResponse.value.data.store_profile || storeResponse.value.data;
+        setStoreData(storeProfileData);
+        console.log('✅ Store data loaded:', storeProfileData);
+      }
+
+      // Aggregate dashboard data from orders and products
+      if (ordersResponse.status === 'fulfilled' && productsResponse.status === 'fulfilled') {
+        const orders = ordersResponse.value.data.results || ordersResponse.value.data || [];
+        const products = productsResponse.value.data.results || productsResponse.value.data || [];
+        
+        // Calculate analytics
+        const totalOrders = Array.isArray(orders) ? orders.length : 0;
+        const totalProducts = Array.isArray(products) ? products.length : 0;
+        const newOrders = Array.isArray(orders) ? orders.filter((o: any) => o.status === 'PENDING').length : 0;
+        
+        // Calculate total revenue
+        const totalRevenue = Array.isArray(orders) 
+          ? orders.reduce((sum: number, order: any) => {
+              if (order.status === 'DELIVERED') {
+                return sum + parseFloat(order.total_amount || 0);
+              }
+              return sum;
+            }, 0)
+          : 0;
+
+        // Get top products (if available)
+        const topProducts = Array.isArray(products)
+          ? products.slice(0, 5).map((p: any) => ({
+              product__name: p.name,
+              total_sold: p.sold_count || 0,
+            }))
+          : [];
+
+        setDashboardData({
+          analytics: {
+            total_revenue: totalRevenue,
+            total_orders: totalOrders,
+            total_products: totalProducts,
+            new_orders_count: newOrders,
+            top_selling_products: topProducts,
+          }
+        });
+        
+        console.log('✅ Dashboard analytics calculated');
       }
 
       // Subscription data
@@ -110,7 +147,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
         .replace(/-+/g, '-')
         .trim('-');
       
-      const sellerId = storeData.seller?.id || dashboardData?.seller?.id || 'store';
+      const sellerId = storeData.seller?.id || storeData.id || 'store';
       return `${baseUrl}/shop/${shopSlug}?id=${sellerId}`;
     }
     
@@ -387,6 +424,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     </ScrollView>
   );
 };
+
+// ... (same styles - keep all your existing styles)
+
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },

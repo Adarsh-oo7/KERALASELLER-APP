@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Alert, RefreshControl, Platform,
+  Alert, RefreshControl, Platform, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import RazorpayCheckout from 'react-native-razorpay';
 import apiClient from '../../services/ApiClient';
 import SubscriptionService from '../../services/SubscriptionService';
 import { ApiError } from '../../types/api';
@@ -16,8 +15,8 @@ const API_BASE_URL = __DEV__
   ? 'http://10.0.2.2:8000'  // Android Emulator
   : 'https://keralaseller-backend.onrender.com';
 
-// ✅ IMPORTANT: Replace with your actual Razorpay Key ID
-const RAZORPAY_KEY_ID = 'rzp_test_YOUR_KEY_ID'; // ⚠️ GET THIS FROM RAZORPAY DASHBOARD
+// ✅ Razorpay Key
+const RAZORPAY_KEY_ID = 'rzp_test_RClyCqWG0I7Frn';
 
 console.log('🔧 Subscription API Base:', API_BASE_URL);
 
@@ -138,7 +137,7 @@ const CurrentPlanCard: React.FC<CurrentPlanCardProps> = ({
   if (!subscription || !subscription.is_active) {
     return (
       <View style={[styles.card, styles.noPlanCard]}>
-        <Ionicons name="crown" size={32} color="#f59e0b" />
+        <Ionicons name="ribbon" size={32} color="#f59e0b" />
         <Text style={styles.noPlanTitle}>No Active Plan</Text>
         <Text style={styles.noPlanText}>
           Choose a plan below to unlock the full potential of your online store.
@@ -292,6 +291,9 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [storeId, setStoreId] = useState<number | null>(null);
+  
+  // ✅ NEW: Ref to store polling interval
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     navigation.setOptions({
@@ -302,6 +304,13 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
         </TouchableOpacity>
       ),
     });
+    
+    // ✅ Cleanup polling on unmount
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
   }, [navigation]);
 
   const loadStoreId = useCallback(async () => {
@@ -321,6 +330,7 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
       const response = await SubscriptionService.getCurrentSubscription();
       console.log('✅ Subscription data loaded');
       setCurrentSubscription(response.data);
+      return response.data;
     } catch (error: any) {
       console.log('⚠️ No active subscription found');
       setCurrentSubscription(null);
@@ -330,6 +340,7 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
       } else if (apiError.response?.status !== 404) {
         setSubscriptionError('Failed to load subscription data');
       }
+      return null;
     } finally {
       setSubscriptionLoading(false);
     }
@@ -398,7 +409,7 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
       const orderId = orderResponse.data.order_id;
       const amount = orderResponse.data.amount;
       
-      // ✅ Open Razorpay directly
+      // ✅ Open payment flow
       openPaymentFlow(orderId, planName, amount, planId);
       
     } catch (error: any) {
@@ -416,94 +427,148 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
     }
   };
 
-  // ✅ NEW: Direct Razorpay Payment
+  // ✅ IMPROVED WEB-BASED PAYMENT FLOW with AUTO POLLING
   const openPaymentFlow = async (orderId: string, planName: string, amount: number, planId: number) => {
     try {
-      // Get user details for prefill
-      const userResponse = await apiClient.get('/user/profile/');
-      const userEmail = userResponse.data.email || 'seller@keralasellers.com';
-      const userName = userResponse.data.name || 'Kerala Seller';
-      const userPhone = userResponse.data.phone || '';
+      const userResponse = await apiClient.get('/user/store/profile/');
+      const seller = userResponse.data.seller || {};
+      const storeProfile = userResponse.data.store_profile || {};
+      
+      const userEmail = seller.email || 'seller@keralasellers.com';
+      const userName = seller.name || storeProfile.owner_name || 'Kerala Seller';
+      const userPhone = seller.phone || storeProfile.seller_phone || storeProfile.whatsapp_number || '';
 
-      const options = {
-        description: `${planName} Subscription`,
-        image: 'https://keralasellers.com/logo.png',
+      console.log('👤 User prefill data:', { userEmail, userName, userPhone });
+
+      // Create Razorpay Standard Checkout URL
+      const baseUrl = 'https://api.razorpay.com/v1/checkout/embedded';
+      const params = new URLSearchParams({
+        key_id: RAZORPAY_KEY_ID,
+        amount: amount.toString(),
         currency: 'INR',
-        key: RAZORPAY_KEY_ID, // ⚠️ Make sure this is set
-        amount: amount,
         order_id: orderId,
         name: 'Kerala Sellers',
-        prefill: {
-          email: userEmail,
-          contact: userPhone,
-          name: userName,
-        },
-        theme: { color: '#3b82f6' },
-      };
+        description: `${planName} Subscription`,
+        'prefill[email]': userEmail,
+        'prefill[contact]': userPhone,
+        'prefill[name]': userName,
+        'theme[color]': '#3b82f6'
+      });
 
-      console.log('🔐 Opening Razorpay with options:', options);
+      const razorpayUrl = `${baseUrl}?${params.toString()}`;
 
-      RazorpayCheckout.open(options)
-        .then(async (data: any) => {
-          console.log('✅ Payment successful:', data);
-          
-          const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = data;
-
-          try {
-            const verifyResponse = await apiClient.post('/api/subscriptions/verify-payment/', {
-              razorpay_order_id,
-              razorpay_payment_id,
-              razorpay_signature,
-              plan_id: planId,
-              billing_cycle: billingCycle,
-            });
-
-            console.log('✅ Payment verified:', verifyResponse.data);
-
-            await loadSubscriptionData();
-            setIsProcessing(null);
-
-            Alert.alert(
-              'Payment Successful! 🎉',
-              `Your ${planName} subscription is now active! You can now sell products online and access all premium features.`,
-              [{ text: 'Great!', onPress: () => navigation.navigate('Dashboard') }]
-            );
-
-          } catch (verifyError: any) {
-            console.error('❌ Payment verification failed:', verifyError);
-            
-            Alert.alert(
-              'Verification Error',
-              'Payment was successful, but verification failed. Please contact support with payment ID: ' + razorpay_payment_id,
-              [{ text: 'OK', onPress: () => setIsProcessing(null) }]
-            );
+      Alert.alert(
+        'Payment',
+        `Complete your ${planName} subscription payment of ₹${(amount / 100).toFixed(2)}`,
+        [
+          {
+            text: 'Continue to Payment',
+            onPress: async () => {
+              try {
+                const supported = await Linking.canOpenURL(razorpayUrl);
+                if (supported) {
+                  await Linking.openURL(razorpayUrl);
+                  
+                  // ✅ START AUTOMATIC STATUS POLLING
+                  startPaymentPolling(orderId, planId, planName);
+                  
+                } else {
+                  Alert.alert('Error', 'Cannot open payment page');
+                  setIsProcessing(null);
+                }
+              } catch (error) {
+                console.error('❌ Error opening link:', error);
+                Alert.alert('Error', 'Failed to open payment page');
+                setIsProcessing(null);
+              }
+            }
+          },
+          { 
+            text: 'Cancel', 
+            style: 'cancel',
+            onPress: () => setIsProcessing(null)
           }
-        })
-        .catch((error: any) => {
-          console.error('❌ Razorpay error:', error);
-          
-          setIsProcessing(null);
-
-          if (error.code === 2 || error.description === 'payment cancelled by user') {
-            Alert.alert(
-              'Payment Cancelled',
-              'You cancelled the payment. Please try again when ready.',
-              [{ text: 'OK' }]
-            );
-          } else {
-            Alert.alert(
-              'Payment Failed',
-              error.description || 'Payment failed. Please try again.',
-              [{ text: 'OK' }]
-            );
-          }
-        });
+        ]
+      );
 
     } catch (error) {
       console.error('❌ Payment flow error:', error);
       Alert.alert('Error', 'Failed to initiate payment. Please try again.');
       setIsProcessing(null);
     }
+  };
+
+  // ✅ NEW: Automatic payment status polling
+  const startPaymentPolling = (orderId: string, planId: number, planName: string) => {
+    let pollCount = 0;
+    const maxPolls = 30; // Poll for up to 2 minutes (30 * 4 seconds)
+    
+    console.log('🔄 Starting automatic payment polling...');
+    
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      
+      try {
+        console.log(`🔍 Checking payment status (attempt ${pollCount}/${maxPolls})...`);
+        
+        // Check if subscription is now active
+        const subscriptionData = await loadSubscriptionData();
+        
+        if (subscriptionData && subscriptionData.is_active) {
+          // ✅ PAYMENT SUCCESSFUL!
+          clearInterval(pollInterval);
+          pollingIntervalRef.current = null;
+          setIsProcessing(null);
+          
+          Alert.alert(
+            'Payment Successful! 🎉',
+            `Your ${planName} subscription is now active! You can now sell products online and access all premium features.`,
+            [{ 
+              text: 'Great!', 
+              onPress: () => {
+                onRefresh(); // Refresh all data
+                navigation.navigate('Dashboard');
+              }
+            }]
+          );
+        } else if (pollCount >= maxPolls) {
+          // ⏱️ Timeout - stop polling
+          clearInterval(pollInterval);
+          pollingIntervalRef.current = null;
+          setIsProcessing(null);
+          
+          Alert.alert(
+            'Payment Status Unknown',
+            'We are still verifying your payment. Please check your subscription status in a few minutes or contact support if money was deducted.',
+            [
+              { 
+                text: 'Check Now', 
+                onPress: () => onRefresh()
+              },
+              { text: 'OK' }
+            ]
+          );
+        }
+      } catch (error: any) {
+        // Still no subscription, continue polling
+        console.log(`⏳ Payment not verified yet (attempt ${pollCount})...`);
+        
+        if (pollCount >= maxPolls) {
+          clearInterval(pollInterval);
+          pollingIntervalRef.current = null;
+          setIsProcessing(null);
+          
+          Alert.alert(
+            'Payment Verification Pending',
+            'Please wait a few moments and refresh to check your subscription status.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+    }, 4000); // Check every 4 seconds
+    
+    // Store interval ref for cleanup
+    pollingIntervalRef.current = pollInterval;
   };
 
   if (isLoading) {
@@ -674,7 +739,7 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
                   {isProcessing === plan.id ? (
                     <View style={styles.buttonContent}>
                       <ActivityIndicator size="small" color="white" />
-                      <Text style={styles.buttonText}>Processing...</Text>
+                      <Text style={styles.buttonText}>Checking Payment...</Text>
                     </View>
                   ) : isCurrentPlan ? (
                     <View style={styles.buttonContent}>
@@ -733,7 +798,7 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
   );
 };
 
-// ✅ COMPLETE STYLES (Same as before)
+// ✅ COMPLETE STYLES (same as before)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   headerRefreshButton: { padding: 8, marginRight: 8 },

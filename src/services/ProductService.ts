@@ -1,23 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from './ApiClient';
 import { Platform } from 'react-native';
+import { getBaseURL } from '../config/api'; // ✅ NOW USES CENTRALIZED CONFIG!
 
 class ProductService {
-  // ✅ FIXED: Use production URL by default, with fallback to local
-  private getBaseURL = (): string => {
-    // Change this to your production backend URL
-    const PRODUCTION_URL = 'https://keralaseller-backend.onrender.com';
-    const LOCAL_URL = 'http://192.168.1.4:8000';
-    
-    // Use production URL (change to LOCAL_URL for local development)
-    return PRODUCTION_URL;
-  };
-
   // ✅ ENHANCED: Get categories with better error handling
   async getCategories(): Promise<any> {
     try {
       console.log('📡 ProductService: Fetching categories...');
-      const baseURL = this.getBaseURL();
+      const baseURL = getBaseURL(); // ✅ FIXED - Uses centralized config
       console.log('🌐 Base URL:', baseURL);
       
       const token = await AsyncStorage.getItem('access_token');
@@ -59,11 +50,11 @@ class ProductService {
     }
   }
 
-  // ✅ FIXED: Enhanced create product with better network error handling
+  // ✅ FIXED: Enhanced create product with centralized config
   async createProductWithoutImages(productData: any): Promise<any> {
     try {
       console.log('🚀 ProductService: Creating product without images...');
-      const baseURL = this.getBaseURL();
+      const baseURL = getBaseURL(); // ✅ FIXED - Uses centralized config
       console.log('🌐 Base URL:', baseURL);
       
       const token = await AsyncStorage.getItem('access_token');
@@ -75,9 +66,8 @@ class ProductService {
       console.log('📡 Full URL:', url);
       console.log('📋 Request body:', JSON.stringify(productData, null, 2));
 
-      // ✅ Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
         const response = await fetch(url, {
@@ -100,7 +90,6 @@ class ProductService {
           const errorText = await response.text();
           console.error('❌ Server error response:', errorText);
           
-          // Try to parse as JSON for better error messages
           try {
             const errorJson = JSON.parse(errorText);
             const errorMessage = errorJson.detail || errorJson.error || errorJson.message || errorText;
@@ -129,9 +118,8 @@ class ProductService {
       console.error('❌ Error name:', error.name);
       console.error('❌ Error message:', error.message);
       
-      // ✅ Better error messages for common issues
       if (error.message === 'Network request failed') {
-        throw new Error(`Cannot connect to server.\n\nPossible causes:\n• Backend server is not running\n• Wrong API URL: ${this.getBaseURL()}\n• Network connection issue\n\nPlease check and try again.`);
+        throw new Error(`Cannot connect to server.\n\nPossible causes:\n• Backend server is not running\n• Wrong API URL: ${getBaseURL()}\n• Network connection issue\n\nPlease check and try again.`);
       }
       
       throw error;
@@ -143,7 +131,7 @@ class ProductService {
     try {
       console.log('🚀 ProductService: Updating product without images...');
       console.log('📋 Product ID:', productId);
-      const baseURL = this.getBaseURL();
+      const baseURL = getBaseURL(); // ✅ FIXED - Uses centralized config
       console.log('🌐 Base URL:', baseURL);
       
       const token = await AsyncStorage.getItem('access_token');
@@ -205,18 +193,17 @@ class ProductService {
       console.error('❌ ProductService.updateProductWithoutImages failed:', error);
       
       if (error.message === 'Network request failed') {
-        throw new Error(`Cannot connect to server.\n\nPossible causes:\n• Backend server is not running\n• Wrong API URL: ${this.getBaseURL()}\n• Network connection issue\n\nPlease check and try again.`);
+        throw new Error(`Cannot connect to server.\n\nPossible causes:\n• Backend server is not running\n• Wrong API URL: ${getBaseURL()}\n• Network connection issue\n\nPlease check and try again.`);
       }
       
       throw error;
     }
   }
 
-  // ✅ Keep all other methods as they were
   async createProduct(productData: FormData): Promise<any> {
     try {
       console.log('🚀 ProductService: Creating product with FormData...');
-      const baseURL = this.getBaseURL();
+      const baseURL = getBaseURL(); // ✅ FIXED - Uses centralized config
       
       const token = await AsyncStorage.getItem('access_token');
       if (!token) {
@@ -247,7 +234,7 @@ class ProductService {
 
   async updateProduct(productId: number, productData: FormData): Promise<any> {
     try {
-      const baseURL = this.getBaseURL();
+      const baseURL = getBaseURL(); // ✅ FIXED - Uses centralized config
       const token = await AsyncStorage.getItem('access_token');
       if (!token) throw new Error('No authentication token found');
 
@@ -302,7 +289,7 @@ class ProductService {
 
   async toggleSubscriptionControl(productId: number, isActive: boolean): Promise<any> {
     try {
-      const baseURL = this.getBaseURL();
+      const baseURL = getBaseURL(); // ✅ FIXED - Uses centralized config
       const token = await AsyncStorage.getItem('access_token');
       if (!token) throw new Error('No authentication token found');
 

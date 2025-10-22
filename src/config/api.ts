@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native'; // ✅ CRITICAL: ADD THIS!
 
 // ✅ Keep your existing interface
 export interface ApiEnvironment {
@@ -8,14 +9,30 @@ export interface ApiEnvironment {
   debug?: boolean;
 }
 
-// ✅ Enhanced API configuration with your existing endpoints
+// ✅ CRITICAL FIX: Dynamic baseURL based on platform
+const getDevelopmentBaseURL = (): string => {
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:8000'; // Android emulator
+  } else if (Platform.OS === 'ios') {
+    // ⚠️ CHANGE THIS TO YOUR PC'S IP ADDRESS!
+    // Run "ipconfig" in PowerShell and find your IPv4 Address
+    return 'http://192.168.1.4:8000'; // ✅ REPLACE WITH YOUR IP!
+  }
+  return 'http://localhost:8000'; // Web fallback
+};
+
+const getDevelopmentWebSocketURL = (): string => {
+  const baseURL = getDevelopmentBaseURL();
+  return baseURL.replace('http://', 'ws://') + '/ws/';
+};
+
+// ✅ Enhanced API configuration with iOS support
 export const API_CONFIG = {
   // Development (your local Django server)
   development: {
-    baseURL: 'http://10.0.2.2:8000',
- // ✅ Updated to your Django server IP
+    baseURL: getDevelopmentBaseURL(), // ✅ NOW DYNAMIC!
     timeout: 15000,
-    websocketURL: 'ws://10.0.2.2:8000/ws/',
+    websocketURL: getDevelopmentWebSocketURL(),
     debug: true,
   } as ApiEnvironment,
   
@@ -27,8 +44,8 @@ export const API_CONFIG = {
     debug: false,
   } as ApiEnvironment,
   
-  // Switch this when going live
-current: 'production' as 'development' | 'production',
+  // ✅ Current environment
+  current: 'development' as 'development' | 'production',
 };
 
 export const getApiConfig = (): ApiEnvironment => {
@@ -40,72 +57,73 @@ export const getBaseURL = (): string => {
   return getApiConfig().baseURL;
 };
 
+// ✅ Helper to get local IP
+export const getLocalIP = (): string => {
+  if (Platform.OS === 'android') {
+    return '10.0.2.2';
+  } else if (Platform.OS === 'ios') {
+    return '192.168.1.4'; // ✅ CHANGE THIS!
+  }
+  return 'localhost';
+};
+
 // ✅ Enhanced endpoints with your existing working ones + new features
 export const ENDPOINTS = {
   // ✅ Your existing working Auth endpoints
-  login: '/user/login/',              // POST - Seller login (Thor A D: 9898989898)
-  register: '/user/register/',        // POST - Seller registration
-  sendOTP: '/user/send-otp/',         // POST - Send OTP for registration
-  dashboard: '/user/dashboard/',      // GET - Seller dashboard
-  testAuth: '/user/test-auth/',       // GET - Test connection
+  login: '/user/login/',
+  register: '/user/register/',
+  sendOTP: '/user/send-otp/',
+  dashboard: '/user/dashboard/',
+  testAuth: '/user/test-auth/',
   
   // ✅ Your existing working Store/Shop endpoints
-  store: '/user/store/',              // Store management
-  storeProfile: '/user/store/profile/', // Store profile - ✅ Your working endpoint
+  store: '/user/store/',
+  storeProfile: '/user/store/profile/',
   
   // ✅ Your existing Profile endpoints
-  profile: '/user/profile/',          // ✅ User profile endpoint (Thor A D)
-  buyerProfile: '/api/buyer/profile/', // Buyer profile (separate)
+  profile: '/user/profile/',
+  buyerProfile: '/api/buyer/profile/',
   
   // ✅ Your existing Product endpoints
-  products: '/api/products/',         // CRUD operations for products
-  categories: '/api/categories/',     // Product categories
+  products: '/api/products/',
+  categories: '/api/categories/',
   
   // ✅ Your existing Orders endpoints
-  orders: '/api/orders/',             // Seller orders
-  userOrders: '/user/orders/',        // User orders endpoint
+  orders: '/api/orders/',
+  userOrders: '/user/orders/',
   
   // ✅ Enhanced endpoints for new features
-  // Analytics & Reports
-  analytics: '/user/analytics/',           // Business analytics for Thor A D
-  salesReport: '/user/analytics/sales/',   // Sales reports
-  revenueReport: '/user/analytics/revenue/', // Revenue data
+  analytics: '/user/analytics/',
+  salesReport: '/user/analytics/sales/',
+  revenueReport: '/user/analytics/revenue/',
   
-  // Inventory & Stock Management
-  stock: '/user/inventory/',               // Stock management
-  stockAlerts: '/user/inventory/alerts/',  // Low stock alerts
-  stockHistory: '/user/inventory/history/', // Stock movement history
+  stock: '/user/inventory/',
+  stockAlerts: '/user/inventory/alerts/',
+  stockHistory: '/user/inventory/history/',
   
-  // Notifications
-  notifications: '/api/notifications/',    // ✅ Your existing endpoint
-  markNotificationRead: '/api/notifications/{id}/read/', // Mark as read
-  notificationSettings: '/api/notifications/settings/', // Settings
+  notifications: '/api/notifications/',
+  markNotificationRead: '/api/notifications/{id}/read/',
+  notificationSettings: '/api/notifications/settings/',
   
-  // Transaction History
-  transactions: '/user/transactions/',     // All transactions
-  transactionHistory: '/user/transactions/history/', // Historical data
-  paymentHistory: '/user/payments/',       // Payment records
+  transactions: '/user/transactions/',
+  transactionHistory: '/user/transactions/history/',
+  paymentHistory: '/user/payments/',
   
-  // Local Billing (New feature for Thor A D)
-  localBills: '/user/billing/',           // Local billing system
-  generateBill: '/user/billing/generate/', // Generate bill for walk-in customers
-  billHistory: '/user/billing/history/',   // Bill history
+  localBills: '/user/billing/',
+  generateBill: '/user/billing/generate/',
+  billHistory: '/user/billing/history/',
   
-  // Subscriptions
-  subscriptions: '/api/subscriptions/',    // ✅ Your existing endpoint
-  subscriptionStatus: '/api/subscriptions/status/', // Current status
-  upgradeSubscription: '/api/subscriptions/upgrade/', // Upgrade plan
+  subscriptions: '/api/subscriptions/',
+  subscriptionStatus: '/api/subscriptions/status/',
+  upgradeSubscription: '/api/subscriptions/upgrade/',
   
-  // Settings
-  settings: '/user/settings/',             // Store settings
-  updateSettings: '/user/settings/',       // Update settings
+  settings: '/user/settings/',
+  updateSettings: '/user/settings/',
   
-  // Media & File Upload
-  uploadImage: '/user/media/upload/',      // Image upload for products
-  deleteImage: '/user/media/delete/',      // Delete images
+  uploadImage: '/user/media/upload/',
+  deleteImage: '/user/media/delete/',
   
-  // Wishlist
-  wishlist: '/api/',                       // ✅ Your existing wishlist endpoint
+  wishlist: '/api/',
 } as const;
 
 // ✅ Enhanced Token Management for Kerala Sellers
@@ -156,7 +174,6 @@ class TokenManager {
     }
   }
 
-  // ✅ Enhanced user data management for Thor A D
   static async getUserData(): Promise<any> {
     try {
       const userData = await AsyncStorage.getItem(this.USER_DATA_KEY);
@@ -178,7 +195,6 @@ class TokenManager {
     }
   }
 
-  // ✅ Enhanced seller data management for Thor A D's shop
   static async getSellerData(): Promise<any> {
     try {
       const sellerData = await AsyncStorage.getItem(this.SELLER_DATA_KEY);
@@ -215,7 +231,7 @@ class TokenManager {
   }
 }
 
-// ✅ Enhanced API Client Class with your existing logic + new features
+// ✅ Enhanced API Client Class
 export class ApiClient {
   private baseURL: string;
   private timeout: number;
@@ -229,22 +245,22 @@ export class ApiClient {
     
     if (this.debug) {
       console.log('🌐 ApiClient initialized for Kerala Sellers');
+      console.log('📱 Platform:', Platform.OS); // ✅ ADDED
       console.log('📡 Base URL:', this.baseURL);
     }
   }
 
-  // Helper method to build full URL
   private buildURL(endpoint: string): string {
     return `${this.baseURL}${endpoint}`;
   }
 
-  // ✅ Enhanced headers with better token management
   private async getHeaders(includeAuth: boolean = false): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
       'X-Client-App': 'Kerala-Sellers-Mobile',
       'X-Client-Version': '1.0.0',
+      'X-Platform': Platform.OS, // ✅ ADDED
     };
 
     if (includeAuth) {
@@ -262,7 +278,6 @@ export class ApiClient {
     return headers;
   }
 
-  // ✅ Enhanced request handler with better error handling
   private async makeRequest(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     endpoint: string,
@@ -289,7 +304,6 @@ export class ApiClient {
         signal: controller.signal,
       };
 
-      // Add body for methods that support it
       if (data && ['POST', 'PUT', 'PATCH'].includes(method)) {
         requestOptions.body = JSON.stringify(data);
       }
@@ -321,7 +335,6 @@ export class ApiClient {
           console.error(`❌ API ${method} Error [${response.status}]:`, errorMessage);
         }
         
-        // ✅ Handle specific error cases
         if (response.status === 401) {
           console.warn('🔐 Unauthorized - clearing tokens');
           await TokenManager.clearAll();
@@ -351,7 +364,6 @@ export class ApiClient {
     }
   }
 
-  // ✅ Your existing HTTP methods
   async get(endpoint: string, includeAuth: boolean = false): Promise<any> {
     return this.makeRequest('GET', endpoint, undefined, includeAuth);
   }
@@ -372,7 +384,6 @@ export class ApiClient {
     return this.makeRequest('DELETE', endpoint, undefined, includeAuth);
   }
 
-  // ✅ Your existing smart update method
   async update(endpoint: string, data?: any, includeAuth: boolean = false): Promise<any> {
     try {
       if (this.debug) {
@@ -385,16 +396,13 @@ export class ApiClient {
       }
       
       if (patchError.message.includes('405') || patchError.message.includes('Method Not Allowed')) {
-        // Method not allowed, try PUT
         return await this.put(endpoint, data, includeAuth);
       }
       
-      // Re-throw if it's not a method-related error
       throw patchError;
     }
   }
 
-  // ✅ Your existing health check
   async healthCheck(): Promise<boolean> {
     try {
       await this.get('/health/', false);
@@ -404,7 +412,6 @@ export class ApiClient {
         console.log('🏥 Health check failed - trying alternative endpoint');
       }
       
-      // Try alternative health check
       try {
         await this.get('/user/dashboard/', true);
         return true;
@@ -414,7 +421,6 @@ export class ApiClient {
     }
   }
 
-  // ✅ Your existing test authentication
   async testAuth(): Promise<any> {
     try {
       return await this.get(ENDPOINTS.testAuth, true);
@@ -426,21 +432,18 @@ export class ApiClient {
     }
   }
 
-  // ✅ Enhanced file upload for product images
   async uploadFile(endpoint: string, file: any, additionalData?: Record<string, any>): Promise<any> {
     const url = this.buildURL(endpoint);
     const token = await TokenManager.getAccessToken();
     
     const formData = new FormData();
     
-    // Add file
     formData.append('file', {
       uri: file.uri,
       type: file.type || 'image/jpeg',
       name: file.name || `upload_${Date.now()}.jpg`,
     } as any);
 
-    // Add additional data
     if (additionalData) {
       Object.keys(additionalData).forEach(key => {
         formData.append(key, additionalData[key]);
@@ -486,9 +489,8 @@ export class ApiClient {
 // Create singleton instance
 export const apiClient = new ApiClient();
 
-// ✅ Enhanced convenience methods for Thor A D's Kerala Sellers app
+// ✅ Enhanced convenience methods
 export const api = {
-  // ✅ Authentication (Your existing working endpoints)
   login: (phone: string, password: string) => {
     console.log('🔐 API: Login attempt for phone:', phone);
     return apiClient.post(ENDPOINTS.login, { phone, password });
@@ -501,13 +503,11 @@ export const api = {
   
   sendOTP: (phone: string) => apiClient.post(ENDPOINTS.sendOTP, { phone }),
   
-  // ✅ Dashboard (Your working endpoint)
   getDashboard: () => {
-    console.log('🏠 API: Fetching dashboard for Thor A D');
+    console.log('🏠 API: Fetching dashboard');
     return apiClient.get(ENDPOINTS.dashboard, true);
   },
   
-  // ✅ Store Profile (Your working endpoint)
   getStoreProfile: () => {
     console.log('🏪 API: Fetching store profile');
     return apiClient.get(ENDPOINTS.storeProfile, true);
@@ -518,11 +518,9 @@ export const api = {
     return apiClient.update(ENDPOINTS.storeProfile, data, true);
   },
   
-  // ✅ User Profile (Your working endpoint)
   getProfile: () => apiClient.get(ENDPOINTS.profile, true),
   updateProfile: (data: any) => apiClient.update(ENDPOINTS.profile, data, true),
   
-  // ✅ Orders (Your existing endpoints)
   getOrders: () => {
     console.log('📋 API: Fetching orders');
     return apiClient.get(ENDPOINTS.orders, true);
@@ -531,7 +529,6 @@ export const api = {
   updateOrderStatus: (id: string, status: string) => 
     apiClient.patch(`${ENDPOINTS.orders}${id}/`, { status }, true),
   
-  // ✅ Products (Your existing endpoints)
   getProducts: () => {
     console.log('📦 API: Fetching products');
     return apiClient.get(ENDPOINTS.products, true);
@@ -541,19 +538,16 @@ export const api = {
   updateProduct: (id: string, data: any) => apiClient.update(`${ENDPOINTS.products}${id}/`, data, true),
   deleteProduct: (id: string) => apiClient.delete(`${ENDPOINTS.products}${id}/`, true),
   
-  // ✅ Enhanced Analytics
   getAnalytics: () => apiClient.get(ENDPOINTS.analytics, true),
   getSalesReport: (params?: any) => apiClient.get(ENDPOINTS.salesReport, true),
   getRevenueReport: (params?: any) => apiClient.get(ENDPOINTS.revenueReport, true),
   
-  // ✅ Enhanced Stock Management
   getStock: () => apiClient.get(ENDPOINTS.stock, true),
   getStockAlerts: () => apiClient.get(ENDPOINTS.stockAlerts, true),
   getStockHistory: () => apiClient.get(ENDPOINTS.stockHistory, true),
   updateStock: (productId: string, quantity: number) => 
     apiClient.patch(`${ENDPOINTS.stock}${productId}/`, { quantity }, true),
   
-  // ✅ Enhanced Notifications
   getNotifications: () => {
     console.log('🔔 API: Fetching notifications');
     return apiClient.get(ENDPOINTS.notifications, true);
@@ -561,7 +555,6 @@ export const api = {
   markNotificationRead: (id: string) => 
     apiClient.patch(ENDPOINTS.markNotificationRead.replace('{id}', id), {}, true),
   
-  // ✅ Enhanced Transaction History
   getTransactionHistory: () => {
     console.log('📜 API: Fetching transaction history');
     return apiClient.get(ENDPOINTS.transactionHistory, true);
@@ -569,7 +562,6 @@ export const api = {
   getTransactions: (params?: any) => apiClient.get(ENDPOINTS.transactions, true),
   getPaymentHistory: () => apiClient.get(ENDPOINTS.paymentHistory, true),
   
-  // ✅ Enhanced Local Billing
   getLocalBills: () => apiClient.get(ENDPOINTS.localBills, true),
   generateBill: (billData: any) => {
     console.log('🧾 API: Generating local bill');
@@ -577,28 +569,22 @@ export const api = {
   },
   getBillHistory: () => apiClient.get(ENDPOINTS.billHistory, true),
   
-  // ✅ Enhanced Subscriptions
   getSubscriptions: () => apiClient.get(ENDPOINTS.subscriptions, true),
   getSubscriptionData: () => apiClient.get(ENDPOINTS.subscriptionStatus, true),
   upgradeSubscription: (planData: any) => apiClient.post(ENDPOINTS.upgradeSubscription, planData, true),
   
-  // ✅ Enhanced Settings
   getSettings: () => apiClient.get(ENDPOINTS.settings, true),
   updateSettings: (data: any) => apiClient.update(ENDPOINTS.updateSettings, data, true),
   
-  // ✅ Enhanced File Upload
   uploadProductImage: (file: any, productData?: any) => 
     apiClient.uploadFile(ENDPOINTS.uploadImage, file, productData),
   
-  // ✅ Test methods (Your existing)
   testConnection: () => apiClient.healthCheck(),
   testAuth: () => apiClient.testAuth(),
   
-  // ✅ Enhanced Token Management
   TokenManager,
 };
 
-// ✅ Your existing environment switching helpers
 export const switchToProduction = () => {
   API_CONFIG.current = 'production';
   console.log('🌍 Switched to Production environment');
@@ -611,25 +597,25 @@ export const switchToDevelopment = () => {
   console.log('🔗 Base URL:', getBaseURL());
 };
 
-// ✅ Your existing environment info
 export const getCurrentEnvironment = () => {
   return {
     current: API_CONFIG.current,
+    platform: Platform.OS, // ✅ ADDED
     baseURL: getBaseURL(),
     timeout: getApiConfig().timeout,
     debug: getApiConfig().debug,
   };
 };
 
-// ✅ Enhanced debug info for Thor A D's app
+// ✅ ENHANCED DEBUG LOG
 if (__DEV__) {
   console.log('🔧 API Configuration Loaded:');
   console.log('Environment:', API_CONFIG.current);
+  console.log('Platform:', Platform.OS); // ✅ ADDED
   console.log('Base URL:', getBaseURL());
   console.log('Timeout:', getApiConfig().timeout);
   console.log('Debug Mode:', getApiConfig().debug);
-  console.log('🏪 Ready for Kerala Sellers - Thor A D\'s Gost namez shop');
+  console.log('🏪 Ready for Kerala Sellers - Local Development Mode');
 }
 
-// ✅ Default export for convenience
 export default api;
