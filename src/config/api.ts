@@ -1,7 +1,8 @@
+// config/api.ts - ✅ AUTO-SWITCHING VERSION
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native'; // ✅ CRITICAL: ADD THIS!
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-// ✅ Keep your existing interface
 export interface ApiEnvironment {
   baseURL: string;
   timeout: number;
@@ -9,124 +10,103 @@ export interface ApiEnvironment {
   debug?: boolean;
 }
 
-// ✅ CRITICAL FIX: Dynamic baseURL based on platform
+// Get production URL from app.json
+const getProductionBaseURL = (): string => {
+  const configUrl = Constants.expoConfig?.extra?.apiBaseUrl;
+  if (configUrl) return configUrl;
+  return 'https://keralaseller-backend.onrender.com';
+};
+
+// Get development URL based on platform
 const getDevelopmentBaseURL = (): string => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:8000'; // Android emulator
-  } else if (Platform.OS === 'ios') {
-    // ⚠️ CHANGE THIS TO YOUR PC'S IP ADDRESS!
-    // Run "ipconfig" in PowerShell and find your IPv4 Address
-    return 'http://192.168.1.4:8000'; // ✅ REPLACE WITH YOUR IP!
-  }
-  return 'http://localhost:8000'; // Web fallback
+  if (Platform.OS === 'android') return 'http://10.0.2.2:8000';
+  if (Platform.OS === 'ios') return 'http://192.168.1.4:8000';
+  return 'http://localhost:8000';
+};
+
+const getProductionWebSocketURL = (): string => {
+  return getProductionBaseURL().replace('https://', 'wss://') + '/ws/';
 };
 
 const getDevelopmentWebSocketURL = (): string => {
-  const baseURL = getDevelopmentBaseURL();
-  return baseURL.replace('http://', 'ws://') + '/ws/';
+  return getDevelopmentBaseURL().replace('http://', 'ws://') + '/ws/';
 };
 
-// ✅ Enhanced API configuration with iOS support
+// ✅ CRITICAL FIX: Auto-detect environment
+const detectEnvironment = (): 'development' | 'production' => {
+  if (__DEV__) {
+    console.log('🔧 Detected: Development mode');
+    return 'development';
+  }
+  console.log('🚀 Detected: Production mode');
+  return 'production';
+};
+
 export const API_CONFIG = {
-  // Development (your local Django server)
   development: {
-    baseURL: getDevelopmentBaseURL(), // ✅ NOW DYNAMIC!
+    baseURL: getDevelopmentBaseURL(),
     timeout: 15000,
     websocketURL: getDevelopmentWebSocketURL(),
     debug: true,
   } as ApiEnvironment,
-  
-  // Production (your deployed backend)
   production: {
-    baseURL: 'https://keralaseller-backend.onrender.com',
+    baseURL: getProductionBaseURL(),
     timeout: 20000,
-    websocketURL: 'wss://keralaseller-backend.onrender.com/ws/',
+    websocketURL: getProductionWebSocketURL(),
     debug: false,
   } as ApiEnvironment,
-  
-  // ✅ Current environment
-  current: 'development' as 'development' | 'production',
+  // ✅ FIXED: Auto-detect instead of hardcoded
+  current: detectEnvironment(),
 };
 
-export const getApiConfig = (): ApiEnvironment => {
-  return API_CONFIG[API_CONFIG.current];
-};
+export const getApiConfig = (): ApiEnvironment => API_CONFIG[API_CONFIG.current];
+export const getBaseURL = (): string => getApiConfig().baseURL;
 
-// Helper function to get base URL
-export const getBaseURL = (): string => {
-  return getApiConfig().baseURL;
-};
-
-// ✅ Helper to get local IP
 export const getLocalIP = (): string => {
-  if (Platform.OS === 'android') {
-    return '10.0.2.2';
-  } else if (Platform.OS === 'ios') {
-    return '192.168.1.4'; // ✅ CHANGE THIS!
-  }
+  if (Platform.OS === 'android') return '10.0.2.2';
+  if (Platform.OS === 'ios') return '192.168.1.4';
   return 'localhost';
 };
 
-// ✅ Enhanced endpoints with your existing working ones + new features
 export const ENDPOINTS = {
-  // ✅ Your existing working Auth endpoints
   login: '/user/login/',
   register: '/user/register/',
   sendOTP: '/user/send-otp/',
   dashboard: '/user/dashboard/',
   testAuth: '/user/test-auth/',
-  
-  // ✅ Your existing working Store/Shop endpoints
   store: '/user/store/',
   storeProfile: '/user/store/profile/',
-  
-  // ✅ Your existing Profile endpoints
   profile: '/user/profile/',
   buyerProfile: '/api/buyer/profile/',
-  
-  // ✅ Your existing Product endpoints
   products: '/api/products/',
   categories: '/api/categories/',
-  
-  // ✅ Your existing Orders endpoints
   orders: '/api/orders/',
   userOrders: '/user/orders/',
-  
-  // ✅ Enhanced endpoints for new features
   analytics: '/user/analytics/',
   salesReport: '/user/analytics/sales/',
   revenueReport: '/user/analytics/revenue/',
-  
   stock: '/user/inventory/',
   stockAlerts: '/user/inventory/alerts/',
   stockHistory: '/user/inventory/history/',
-  
   notifications: '/api/notifications/',
   markNotificationRead: '/api/notifications/{id}/read/',
   notificationSettings: '/api/notifications/settings/',
-  
   transactions: '/user/transactions/',
   transactionHistory: '/user/transactions/history/',
   paymentHistory: '/user/payments/',
-  
   localBills: '/user/billing/',
   generateBill: '/user/billing/generate/',
   billHistory: '/user/billing/history/',
-  
   subscriptions: '/api/subscriptions/',
   subscriptionStatus: '/api/subscriptions/status/',
   upgradeSubscription: '/api/subscriptions/upgrade/',
-  
   settings: '/user/settings/',
   updateSettings: '/user/settings/',
-  
   uploadImage: '/user/media/upload/',
   deleteImage: '/user/media/delete/',
-  
   wishlist: '/api/',
 } as const;
 
-// ✅ Enhanced Token Management for Kerala Sellers
 class TokenManager {
   private static ACCESS_TOKEN_KEY = '@kerala_sellers_access_token';
   private static REFRESH_TOKEN_KEY = '@kerala_sellers_refresh_token';
@@ -136,9 +116,7 @@ class TokenManager {
   static async getAccessToken(): Promise<string | null> {
     try {
       const token = await AsyncStorage.getItem(this.ACCESS_TOKEN_KEY);
-      if (__DEV__ && token) {
-        console.log('🔑 TokenManager: Access token retrieved');
-      }
+      if (__DEV__ && token) console.log('🔑 TokenManager: Access token retrieved');
       return token;
     } catch (error) {
       console.error('❌ TokenManager: Error getting access token:', error);
@@ -149,9 +127,7 @@ class TokenManager {
   static async setAccessToken(token: string): Promise<void> {
     try {
       await AsyncStorage.setItem(this.ACCESS_TOKEN_KEY, token);
-      if (__DEV__) {
-        console.log('🔑 TokenManager: Access token stored');
-      }
+      if (__DEV__) console.log('🔑 TokenManager: Access token stored');
     } catch (error) {
       console.error('❌ TokenManager: Error setting access token:', error);
     }
@@ -187,9 +163,7 @@ class TokenManager {
   static async setUserData(userData: any): Promise<void> {
     try {
       await AsyncStorage.setItem(this.USER_DATA_KEY, JSON.stringify(userData));
-      if (__DEV__) {
-        console.log('👤 TokenManager: User data stored for:', userData?.name || 'User');
-      }
+      if (__DEV__) console.log('👤 TokenManager: User data stored for:', userData?.name || 'User');
     } catch (error) {
       console.error('❌ TokenManager: Error setting user data:', error);
     }
@@ -208,9 +182,7 @@ class TokenManager {
   static async setSellerData(sellerData: any): Promise<void> {
     try {
       await AsyncStorage.setItem(this.SELLER_DATA_KEY, JSON.stringify(sellerData));
-      if (__DEV__) {
-        console.log('🏪 TokenManager: Seller data stored for shop:', sellerData?.shop_name || 'Shop');
-      }
+      if (__DEV__) console.log('🏪 TokenManager: Seller data stored for shop:', sellerData?.shop_name || 'Shop');
     } catch (error) {
       console.error('❌ TokenManager: Error setting seller data:', error);
     }
@@ -231,7 +203,6 @@ class TokenManager {
   }
 }
 
-// ✅ Enhanced API Client Class
 export class ApiClient {
   private baseURL: string;
   private timeout: number;
@@ -245,7 +216,7 @@ export class ApiClient {
     
     if (this.debug) {
       console.log('🌐 ApiClient initialized for Kerala Sellers');
-      console.log('📱 Platform:', Platform.OS); // ✅ ADDED
+      console.log('📱 Platform:', Platform.OS);
       console.log('📡 Base URL:', this.baseURL);
     }
   }
@@ -260,16 +231,14 @@ export class ApiClient {
       'Content-Type': 'application/json',
       'X-Client-App': 'Kerala-Sellers-Mobile',
       'X-Client-Version': '1.0.0',
-      'X-Platform': Platform.OS, // ✅ ADDED
+      'X-Platform': Platform.OS,
     };
 
     if (includeAuth) {
       const token = await TokenManager.getAccessToken();
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
-        if (this.debug) {
-          console.log('🔐 Authorization header added');
-        }
+        if (this.debug) console.log('🔐 Authorization header added');
       } else if (this.debug) {
         console.warn('⚠️ No access token available for authenticated request');
       }
@@ -386,19 +355,13 @@ export class ApiClient {
 
   async update(endpoint: string, data?: any, includeAuth: boolean = false): Promise<any> {
     try {
-      if (this.debug) {
-        console.log('🔄 Smart Update: Trying PATCH first...');
-      }
+      if (this.debug) console.log('🔄 Smart Update: Trying PATCH first...');
       return await this.patch(endpoint, data, includeAuth);
     } catch (patchError: any) {
-      if (this.debug) {
-        console.log('⚠️ PATCH failed, trying PUT...', patchError.message);
-      }
-      
+      if (this.debug) console.log('⚠️ PATCH failed, trying PUT...', patchError.message);
       if (patchError.message.includes('405') || patchError.message.includes('Method Not Allowed')) {
         return await this.put(endpoint, data, includeAuth);
       }
-      
       throw patchError;
     }
   }
@@ -408,10 +371,7 @@ export class ApiClient {
       await this.get('/health/', false);
       return true;
     } catch (error) {
-      if (this.debug) {
-        console.log('🏥 Health check failed - trying alternative endpoint');
-      }
-      
+      if (this.debug) console.log('🏥 Health check failed - trying alternative endpoint');
       try {
         await this.get('/user/dashboard/', true);
         return true;
@@ -425,9 +385,7 @@ export class ApiClient {
     try {
       return await this.get(ENDPOINTS.testAuth, true);
     } catch (error) {
-      if (this.debug) {
-        console.log('🔐 Auth test failed:', error);
-      }
+      if (this.debug) console.log('🔐 Auth test failed:', error);
       throw error;
     }
   }
@@ -437,7 +395,6 @@ export class ApiClient {
     const token = await TokenManager.getAccessToken();
     
     const formData = new FormData();
-    
     formData.append('file', {
       uri: file.uri,
       type: file.type || 'image/jpeg',
@@ -486,41 +443,32 @@ export class ApiClient {
   }
 }
 
-// Create singleton instance
 export const apiClient = new ApiClient();
 
-// ✅ Enhanced convenience methods
 export const api = {
   login: (phone: string, password: string) => {
     console.log('🔐 API: Login attempt for phone:', phone);
     return apiClient.post(ENDPOINTS.login, { phone, password });
   },
-  
   register: (userData: any) => {
     console.log('📝 API: Registration for:', userData.name);
     return apiClient.post(ENDPOINTS.register, userData);
   },
-  
   sendOTP: (phone: string) => apiClient.post(ENDPOINTS.sendOTP, { phone }),
-  
   getDashboard: () => {
     console.log('🏠 API: Fetching dashboard');
     return apiClient.get(ENDPOINTS.dashboard, true);
   },
-  
   getStoreProfile: () => {
     console.log('🏪 API: Fetching store profile');
     return apiClient.get(ENDPOINTS.storeProfile, true);
   },
-  
   updateStoreProfile: (data: any) => {
     console.log('🏪 API: Updating store profile');
     return apiClient.update(ENDPOINTS.storeProfile, data, true);
   },
-  
   getProfile: () => apiClient.get(ENDPOINTS.profile, true),
   updateProfile: (data: any) => apiClient.update(ENDPOINTS.profile, data, true),
-  
   getOrders: () => {
     console.log('📋 API: Fetching orders');
     return apiClient.get(ENDPOINTS.orders, true);
@@ -528,7 +476,6 @@ export const api = {
   getOrder: (id: string) => apiClient.get(`${ENDPOINTS.orders}${id}/`, true),
   updateOrderStatus: (id: string, status: string) => 
     apiClient.patch(`${ENDPOINTS.orders}${id}/`, { status }, true),
-  
   getProducts: () => {
     console.log('📦 API: Fetching products');
     return apiClient.get(ENDPOINTS.products, true);
@@ -537,51 +484,41 @@ export const api = {
   createProduct: (data: any) => apiClient.post(ENDPOINTS.products, data, true),
   updateProduct: (id: string, data: any) => apiClient.update(`${ENDPOINTS.products}${id}/`, data, true),
   deleteProduct: (id: string) => apiClient.delete(`${ENDPOINTS.products}${id}/`, true),
-  
   getAnalytics: () => apiClient.get(ENDPOINTS.analytics, true),
   getSalesReport: (params?: any) => apiClient.get(ENDPOINTS.salesReport, true),
   getRevenueReport: (params?: any) => apiClient.get(ENDPOINTS.revenueReport, true),
-  
   getStock: () => apiClient.get(ENDPOINTS.stock, true),
   getStockAlerts: () => apiClient.get(ENDPOINTS.stockAlerts, true),
   getStockHistory: () => apiClient.get(ENDPOINTS.stockHistory, true),
   updateStock: (productId: string, quantity: number) => 
     apiClient.patch(`${ENDPOINTS.stock}${productId}/`, { quantity }, true),
-  
   getNotifications: () => {
     console.log('🔔 API: Fetching notifications');
     return apiClient.get(ENDPOINTS.notifications, true);
   },
   markNotificationRead: (id: string) => 
     apiClient.patch(ENDPOINTS.markNotificationRead.replace('{id}', id), {}, true),
-  
   getTransactionHistory: () => {
     console.log('📜 API: Fetching transaction history');
     return apiClient.get(ENDPOINTS.transactionHistory, true);
   },
   getTransactions: (params?: any) => apiClient.get(ENDPOINTS.transactions, true),
   getPaymentHistory: () => apiClient.get(ENDPOINTS.paymentHistory, true),
-  
   getLocalBills: () => apiClient.get(ENDPOINTS.localBills, true),
   generateBill: (billData: any) => {
     console.log('🧾 API: Generating local bill');
     return apiClient.post(ENDPOINTS.generateBill, billData, true);
   },
   getBillHistory: () => apiClient.get(ENDPOINTS.billHistory, true),
-  
   getSubscriptions: () => apiClient.get(ENDPOINTS.subscriptions, true),
   getSubscriptionData: () => apiClient.get(ENDPOINTS.subscriptionStatus, true),
   upgradeSubscription: (planData: any) => apiClient.post(ENDPOINTS.upgradeSubscription, planData, true),
-  
   getSettings: () => apiClient.get(ENDPOINTS.settings, true),
   updateSettings: (data: any) => apiClient.update(ENDPOINTS.updateSettings, data, true),
-  
   uploadProductImage: (file: any, productData?: any) => 
     apiClient.uploadFile(ENDPOINTS.uploadImage, file, productData),
-  
   testConnection: () => apiClient.healthCheck(),
   testAuth: () => apiClient.testAuth(),
-  
   TokenManager,
 };
 
@@ -600,22 +537,21 @@ export const switchToDevelopment = () => {
 export const getCurrentEnvironment = () => {
   return {
     current: API_CONFIG.current,
-    platform: Platform.OS, // ✅ ADDED
+    platform: Platform.OS,
     baseURL: getBaseURL(),
     timeout: getApiConfig().timeout,
     debug: getApiConfig().debug,
   };
 };
 
-// ✅ ENHANCED DEBUG LOG
 if (__DEV__) {
   console.log('🔧 API Configuration Loaded:');
   console.log('Environment:', API_CONFIG.current);
-  console.log('Platform:', Platform.OS); // ✅ ADDED
+  console.log('Platform:', Platform.OS);
   console.log('Base URL:', getBaseURL());
   console.log('Timeout:', getApiConfig().timeout);
   console.log('Debug Mode:', getApiConfig().debug);
-  console.log('🏪 Ready for Kerala Sellers - Local Development Mode');
+  console.log('🏪 Ready for Kerala Sellers');
 }
 
 export default api;

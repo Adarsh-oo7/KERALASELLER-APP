@@ -1,6 +1,6 @@
 /**
  * AddProductScreen.tsx
- * ✅ FIXED: Infinite loop resolved + Product creation with Cloudinary
+ * ✅ FIXED: URI cleaning + Network error handling + Cloudinary upload
  * Works perfectly with your Django backend - NO BACKEND CHANGES NEEDED!
  */
 
@@ -111,7 +111,7 @@ const validatePositiveNumber = (value: string, fieldName: string): { isValid: bo
 };
 
 // ============================================================================
-// ✅ CLOUDINARY UPLOAD FUNCTION
+// ✅ CLOUDINARY UPLOAD FUNCTION - FIXED!
 // ============================================================================
 
 const uploadImageToCloudinary = async (
@@ -119,7 +119,9 @@ const uploadImageToCloudinary = async (
   onProgress?: (progress: number) => void,
   imageType: 'main' | 'sub' = 'main'
 ): Promise<{ url: string; public_id: string }> => {
-  console.log(`☁️ Starting Cloudinary upload for ${imageType} image:`, imageUri);
+  // ✅ CRITICAL FIX: Clean the URI to prevent "fiile://" typo
+  const cleanUri = imageUri.trim().replace(/^fiile:\/\//, 'file://');
+  console.log(`☁️ Starting Cloudinary upload for ${imageType} image:`, cleanUri);
   
   const presetsToTry = [
     CLOUDINARY_CONFIG.upload_preset,
@@ -135,8 +137,9 @@ const uploadImageToCloudinary = async (
     try {
       const formData = new FormData();
       
+      // ✅ Use cleaned URI
       formData.append('file', {
-        uri: imageUri,
+        uri: cleanUri,
         type: 'image/jpeg',
         name: `product_${imageType}_${Date.now()}.jpg`,
       } as any);
@@ -166,12 +169,14 @@ const uploadImageToCloudinary = async (
               reject(new Error('Failed to parse Cloudinary response'));
             }
           } else {
-            reject(new Error(`Cloudinary error: ${xhr.status} - ${xhr.statusText}`));
+            // ✅ Better error message
+            const errorText = xhr.responseText || xhr.statusText;
+            reject(new Error(`Cloudinary error: ${xhr.status} - ${errorText}`));
           }
         };
-        xhr.onerror = () => reject(new Error('Network error during upload'));
-        xhr.ontimeout = () => reject(new Error('Upload timeout'));
-        xhr.timeout = 60000;
+        xhr.onerror = () => reject(new Error(`Network error. Check file: ${cleanUri.substring(0, 50)}...`));
+        xhr.ontimeout = () => reject(new Error('Upload timeout after 60s'));
+        xhr.timeout = 60000; // 60 second timeout
         xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloud_name}/image/upload`);
         xhr.send(formData);
       });
@@ -188,7 +193,7 @@ const uploadImageToCloudinary = async (
       
       if (i < presetsToTry.length - 1) {
         console.log('🔄 Retrying with next preset...');
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000)); // ✅ 1 second delay
       }
     }
   }
@@ -235,7 +240,7 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   // ============================================================================
-  // ✅ VALIDATION FUNCTIONS - FIXED TO PREVENT INFINITE LOOP
+  // ✅ VALIDATION FUNCTIONS
   // ============================================================================
 
   const calculateDiscount = () => {
@@ -253,7 +258,6 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
     return null;
   };
 
-  // ✅ FIXED: Don't call setErrors inside this function
   const validateStock = (): boolean => {
     const { total_stock, online_stock } = formData;
     
@@ -268,7 +272,6 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
     return true;
   };
 
-  // ✅ COMPREHENSIVE FORM VALIDATION
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};
 
@@ -297,7 +300,7 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
       }
     }
 
-    // ✅ FIXED: Stock validation logic here
+    // Stock validation
     const { total_stock, online_stock } = formData;
     
     if (online_stock > total_stock) {
@@ -381,7 +384,7 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
   };
 
   // ============================================================================
-  // ✅ SUBMIT HANDLER - FIXED TO WORK WITH YOUR BACKEND!
+  // ✅ SUBMIT HANDLER
   // ============================================================================
 
   const handleSubmit = async (): Promise<void> => {
@@ -412,7 +415,6 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
         console.log('✅ All images uploaded to Cloudinary');
       }
 
-      // ✅ FIXED: Prepare product data WITHOUT undefined values
       const productData: any = {
         name: formData.name.trim(),
         model_name: formData.model_name.trim(),
@@ -426,18 +428,15 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
         attributes: formData.attributes || {},
       };
 
-      // ✅ ONLY add SKU if it has a value
       if (formData.sku && formData.sku.trim()) {
         productData.sku = formData.sku.trim();
       }
 
-      // ✅ Add main image URL
       if (imageUrls.main_image_url) {
         productData.main_image_url = imageUrls.main_image_url;
         console.log('✅ Added main_image_url to product data');
       }
 
-      // ✅ Add sub image URLs (your backend already handles this format!)
       if (imageUrls.sub_image_urls && imageUrls.sub_image_urls.length > 0) {
         productData.sub_image_urls = imageUrls.sub_image_urls;
         console.log(`✅ Added ${imageUrls.sub_image_urls.length} sub_image_urls`);
@@ -445,7 +444,6 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
 
       console.log('📋 Submitting product data:', JSON.stringify(productData, null, 2));
 
-      // ✅ Submit to Django API
       let result;
       if (isEditing) {
         result = await ProductService.updateProductWithoutImages(existingProduct.id, productData);
@@ -455,7 +453,6 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
         console.log('✅ Product created:', result);
       }
 
-      // ✅ Calculate success message with discount info
       const discount = calculateDiscount();
       let successMessage = `Product ${isEditing ? 'updated' : 'created'} successfully!`;
       
@@ -534,7 +531,7 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
   };
 
   // ============================================================================
-  // ✅ STEP NAVIGATION - FIXED
+  // ✅ STEP NAVIGATION
   // ============================================================================
 
   const canGoNext = (): boolean => {
@@ -546,7 +543,6 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
           parseFloat(formData.price) > 0
         );
       case 2:
-        // ✅ FIXED: Just check the values, don't call validateStock()
         return formData.online_stock >= 0 && 
                formData.total_stock >= 0 && 
                formData.online_stock <= formData.total_stock;

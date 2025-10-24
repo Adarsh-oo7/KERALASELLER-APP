@@ -11,7 +11,6 @@ import AuthService from '../../services/AuthService';
 type DashboardScreenProps = {
   navigation: StackNavigationProp<any>;
 };
-
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [storeData, setStoreData] = useState<any>(null);
@@ -24,32 +23,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     try {
       console.log('🔍 Fetching dashboard data...');
       
-      // ✅ Fixed: Use existing working endpoints
       const [storeResponse, ordersResponse, productsResponse, subscriptionResponse] = await Promise.allSettled([
         apiClient.get('/user/store/profile/'),
         apiClient.get('/user/orders/'),
         apiClient.get('/api/products/'),
-      apiClient.get('/api/subscriptions/status/'),   // ✅ Fixed: Use status endpoint
+        apiClient.get('/api/subscriptions/status/'),
       ]);
 
-      // Store data
       if (storeResponse.status === 'fulfilled') {
         const storeProfileData = storeResponse.value.data.store_profile || storeResponse.value.data;
         setStoreData(storeProfileData);
-        console.log('✅ Store data loaded:', storeProfileData);
+        console.log('✅ Store data loaded');
       }
 
-      // Aggregate dashboard data from orders and products
       if (ordersResponse.status === 'fulfilled' && productsResponse.status === 'fulfilled') {
         const orders = ordersResponse.value.data.results || ordersResponse.value.data || [];
         const products = productsResponse.value.data.results || productsResponse.value.data || [];
         
-        // Calculate analytics
         const totalOrders = Array.isArray(orders) ? orders.length : 0;
         const totalProducts = Array.isArray(products) ? products.length : 0;
         const newOrders = Array.isArray(orders) ? orders.filter((o: any) => o.status === 'PENDING').length : 0;
         
-        // Calculate total revenue
         const totalRevenue = Array.isArray(orders) 
           ? orders.reduce((sum: number, order: any) => {
               if (order.status === 'DELIVERED') {
@@ -59,7 +53,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             }, 0)
           : 0;
 
-        // Get top products (if available)
         const topProducts = Array.isArray(products)
           ? products.slice(0, 5).map((p: any) => ({
               product__name: p.name,
@@ -80,7 +73,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
         console.log('✅ Dashboard analytics calculated');
       }
 
-      // Subscription data
       if (subscriptionResponse.status === 'fulfilled') {
         setSubscriptionInfo(subscriptionResponse.value.data);
         console.log('✅ Subscription data loaded');
@@ -195,7 +187,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     );
   }
 
-  // ✅ Extract data with fallbacks
   const hasStoreProfile = Boolean(storeData?.name);
   const analytics = dashboardData?.analytics || {};
   const totalRevenue = analytics.total_revenue || 0;
@@ -214,7 +205,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     >
       {hasStoreProfile ? (
         <>
-          {/* ✅ Welcome Header with Store Info */}
           {storeData?.logo_url && (
             <View style={styles.storeHeader}>
               <Image 
@@ -231,7 +221,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
           )}
 
-          {/* ✅ Statistics Cards */}
           <View style={styles.statsContainer}>
             <View style={styles.statCard}>
               <Text style={styles.statIcon}>💰</Text>
@@ -266,16 +255,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
           </View>
 
-          {/* ✅ Subscription Status */}
           {subscriptionInfo?.is_active ? (
             <View style={styles.subscriptionCard}>
               <Text style={styles.subscriptionIcon}>👑</Text>
               <View style={styles.subscriptionContent}>
                 <Text style={styles.subscriptionTitle}>
-                  {subscriptionInfo.plan.name} Plan Active
+                  {subscriptionInfo?.plan_name || 'Premium'} Plan Active
                 </Text>
                 <Text style={styles.subscriptionDetails}>
-                  {subscriptionInfo.days_remaining} days left • {subscriptionInfo.plan.product_limit || 'Unlimited'} products
+                  {subscriptionInfo?.days_remaining || 0} days left • {subscriptionInfo?.product_limit || 'Unlimited'} products
                 </Text>
               </View>
               <TouchableOpacity 
@@ -301,7 +289,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
           )}
 
-          {/* ✅ Store Link Card */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>🌐 Your Public Storefront</Text>
             <Text style={styles.cardDescription}>
@@ -333,7 +320,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
           </View>
 
-          {/* ✅ Top Products */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>📈 Top Selling Products</Text>
             
@@ -362,7 +348,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             )}
           </View>
           
-          {/* ✅ Quick Actions Grid */}
           <View style={styles.quickActionsContainer}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             
@@ -397,7 +382,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
           </View>
         </>
       ) : (
-        /* ✅ Setup Store Prompt */
         <View style={styles.setupCard}>
           <Text style={styles.setupIcon}>🏪</Text>
           <Text style={styles.setupTitle}>Your Kerala store is not yet active!</Text>
@@ -425,10 +409,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
   );
 };
 
-// ... (same styles - keep all your existing styles)
-
-
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   scrollContent: { paddingBottom: 20 },
@@ -441,7 +421,6 @@ const styles = StyleSheet.create({
   retryButton: { backgroundColor: '#3b82f6', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
   retryButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
   
-  // ✅ NEW: Store Header
   storeHeader: {
     flexDirection: 'row',
     alignItems: 'center',

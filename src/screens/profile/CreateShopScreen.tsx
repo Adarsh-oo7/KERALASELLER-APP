@@ -6,18 +6,26 @@ import {
 import { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../../services/ApiClient';
-import AuthService from '../../services/AuthService';
 
-// ✅ Cloudinary Config (Same as Web)
+// ✅ Cloudinary Config
+// ✅ FIXED: Use the WORKING Cloudinary account
+
 const CLOUDINARY_CONFIG = {
-  cloudName: 'dnmbfeckd',
-  uploadPreset: 'keralasellers_preset',
+  cloudName: 'dnmbfeckd',  // ✅ MUST be dnmbfeckd
+  uploadPreset: 'kerala_sellers_preset',  // ✅ MUST be kerala_sellers_preset
   fallbackPreset: 'ml_default',
   folder: 'kerala-sellers/store-profiles',
 };
 
+
 // ✅ Cloudinary Upload Function
+// ✅ Enhanced Cloudinary Upload Function with detailed error logging
 const uploadToCloudinary = async (fileUri: string, options: any = {}) => {
+  console.log('🔍 Starting Cloudinary upload...');
+  console.log('📋 Cloud Name:', CLOUDINARY_CONFIG.cloudName);
+  console.log('📋 Upload Preset:', CLOUDINARY_CONFIG.uploadPreset);
+  console.log('📋 File URI:', fileUri);
+  
   const presetsToTry = [
     { preset: CLOUDINARY_CONFIG.uploadPreset, name: 'custom' },
     { preset: CLOUDINARY_CONFIG.fallbackPreset, name: 'fallback' },
@@ -25,6 +33,8 @@ const uploadToCloudinary = async (fileUri: string, options: any = {}) => {
 
   for (const { preset, name } of presetsToTry) {
     try {
+      console.log(`🔄 Trying ${name} preset: ${preset}`);
+      
       const formData = new FormData();
       formData.append('file', {
         uri: fileUri,
@@ -39,24 +49,39 @@ const uploadToCloudinary = async (fileUri: string, options: any = {}) => {
       formData.append('quality', 'auto:good');
       formData.append('fetch_format', 'auto');
 
+      console.log('📤 Sending to Cloudinary...');
       const response = await fetch(
         `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`,
         { method: 'POST', body: formData }
       );
 
+      console.log('📡 Response status:', response.status);
+      
       if (!response.ok) {
-        if (name === 'fallback') throw new Error('Upload failed');
+        const errorText = await response.text();
+        console.error(`❌ ${name} preset failed:`, errorText);
+        
+        if (name === 'fallback') {
+          throw new Error(`Upload failed: ${errorText}`);
+        }
         continue;
       }
 
       const result = await response.json();
+      console.log('✅ Upload successful!');
+      console.log('🔗 URL:', result.secure_url);
+      
       return { success: true, url: result.secure_url, publicId: result.public_id };
-    } catch (error) {
-      if (name === 'fallback') return { success: false, error: error.message };
+    } catch (error: any) {
+      console.error(`❌ ${name} preset error:`, error.message);
+      if (name === 'fallback') {
+        return { success: false, error: error.message };
+      }
     }
   }
   return { success: false, error: 'All upload presets failed' };
 };
+
 
 interface StoreFormData {
   name: string;
@@ -109,13 +134,11 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
   const [currentLogoUrl, setCurrentLogoUrl] = useState<string>('');
   const [cloudinaryData, setCloudinaryData] = useState<any>({ logo: null, banner: null });
   
-  // ✅ NEW: Predefined Banners (Like Web)
   const [predefinedBanners, setPredefinedBanners] = useState<any[]>([]);
   const [selectedPredefinedBanners, setSelectedPredefinedBanners] = useState<number[]>([]);
   const [currentBannerUrls, setCurrentBannerUrls] = useState<string[]>([]);
   const [showBannerGallery, setShowBannerGallery] = useState<boolean>(false);
   
-  // ✅ NEW: Cashfree State (Like Web)
   const [cashfreeConnected, setCashfreeConnected] = useState<boolean>(false);
   const [isConnectingCashfree, setIsConnectingCashfree] = useState<boolean>(false);
 
@@ -214,10 +237,13 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
     if (successMessage) setSuccessMessage('');
   };
 
+  // ✅ FIXED: Logo upload with immediate backend save
   const handleFileChange = async (fileType: 'logo' | 'banner', file: any) => {
     if (!file) return;
 
     setIsUploadingImages(true);
+    console.log(`📤 Uploading ${fileType} to Cloudinary...`);
+    
     const result = await uploadToCloudinary(file.uri, {
       folder: `${CLOUDINARY_CONFIG.folder}/${fileType}`,
       width: fileType === 'logo' ? 400 : 1200,
@@ -226,17 +252,48 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
     });
 
     if (result.success) {
+      console.log(`✅ ${fileType} uploaded successfully:`, result.url);
+      
       setCloudinaryData((prev: any) => ({ ...prev, [fileType]: result }));
-      if (fileType === 'logo') setCurrentLogoUrl(result.url);
+      
+      if (fileType === 'logo') {
+        setCurrentLogoUrl(result.url);
+        
+        // ✅ CRITICAL: Save logo to backend immediately
+        try {
+          console.log('💾 Saving logo to backend...');
+          const logoData = {
+            public_id: result.publicId,
+            url: result.url,
+          };
+          
+          await apiClient.patch('/user/store/profile/', {
+            ...store,
+            cloudinary_logo: logoData
+          });
+          
+          console.log('✅ Logo saved to backend successfully');
+          setSuccessMessage('Logo uploaded and saved!');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } catch (saveError) {
+          console.error('❌ Error saving logo:', saveError);
+          setErrorMessage('Logo uploaded but not saved. Click Save Changes to persist.');
+          setTimeout(() => setErrorMessage(''), 3000);
+        }
+      }
+      
       if (fileType === 'banner') {
         setCurrentBannerUrls([result.url]);
         setSelectedPredefinedBanners([]);
+        setSuccessMessage('Banner uploaded successfully!');
+        setTimeout(() => setSuccessMessage(''), 3000);
       }
-      setSuccessMessage(`${fileType} uploaded successfully!`);
-      setTimeout(() => setSuccessMessage(''), 3000);
     } else {
+      console.error(`❌ Failed to upload ${fileType}:`, result.error);
       setErrorMessage(`Failed to upload ${fileType}`);
+      setTimeout(() => setErrorMessage(''), 3000);
     }
+    
     setIsUploadingImages(false);
   };
 
@@ -289,7 +346,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
     try {
       let updatedCloudinaryData = { ...cloudinaryData };
 
-      // Upload new images if selected
       if (logoUri || bannerUri) {
         setIsUploadingImages(true);
         
@@ -341,7 +397,7 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
         } : null,
       };
 
-      const response = await apiClient.patch('/user/store/profile/', requestData);
+      await apiClient.patch('/user/store/profile/', requestData);
       
       setSuccessMessage('✅ Settings updated successfully!');
       Alert.alert('Success', 'Store profile updated successfully!');
@@ -379,8 +435,7 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
     });
 
     if (!result.canceled && result.assets[0]) {
-      if (type === 'logo') setLogoUri(result.assets[0].uri);
-      else setBannerUri(result.assets[0].uri);
+      await handleFileChange(type, result.assets[0]);
     }
   };
 
@@ -393,8 +448,7 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
     });
 
     if (!result.canceled && result.assets[0]) {
-      if (type === 'logo') setLogoUri(result.assets[0].uri);
-      else setBannerUri(result.assets[0].uri);
+      await handleFileChange(type, result.assets[0]);
     }
   };
 
@@ -434,7 +488,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
           </View>
         )}
 
-        {/* Tab Navigation */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'mandatory' && styles.activeTab]}
@@ -455,10 +508,8 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* MANDATORY TAB */}
         {activeTab === 'mandatory' ? (
           <View style={styles.formSection}>
-            {/* Store Images */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>⭐ Store Images</Text>
               
@@ -478,7 +529,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
                 </View>
               </View>
 
-              {/* Banner Gallery Button */}
               <TouchableOpacity
                 onPress={() => setShowBannerGallery(!showBannerGallery)}
                 style={[
@@ -493,7 +543,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
                 </Text>
               </TouchableOpacity>
 
-              {/* Selected Banners Preview */}
               {currentBannerUrls.length > 0 && (
                 <View style={styles.selectedBannersContainer}>
                   <Text style={styles.label}>Selected Banners ({currentBannerUrls.length})</Text>
@@ -511,7 +560,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
               )}
             </View>
 
-            {/* Basic Info */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>🏢 Basic Information</Text>
               
@@ -563,7 +611,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
             </View>
           </View>
         ) : (
-          /* PAYMENT TAB */
           <View style={styles.formSection}>
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>💳 Payment Methods</Text>
@@ -600,7 +647,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
                 </View>
               </View>
 
-              {/* CASHFREE */}
               {store.payment_method === 'CASHFREE' && !cashfreeConnected && (
                 <>
                   <View style={styles.inputGroup}>
@@ -654,7 +700,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
                 </View>
               )}
 
-              {/* UPI */}
               {store.payment_method === 'UPI' && (
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>UPI ID *</Text>
@@ -667,7 +712,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
                 </View>
               )}
 
-              {/* RAZORPAY */}
               {store.payment_method === 'RAZORPAY' && (
                 <>
                   <View style={styles.inputGroup}>
@@ -706,7 +750,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
           </View>
         )}
 
-        {/* Save Button */}
         <TouchableOpacity
           style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
           onPress={handleSubmit}
@@ -718,7 +761,6 @@ const CreateShopScreen: React.FC<CreateShopScreenProps> = ({ navigation }) => {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Banner Gallery Modal */}
       <Modal visible={showBannerGallery} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
