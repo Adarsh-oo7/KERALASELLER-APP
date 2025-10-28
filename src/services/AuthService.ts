@@ -68,13 +68,14 @@ class AuthService {
         
         // ✅ STORE: Seller user data
         const sellerData = {
-          id: loginData.seller.id,
-          name: loginData.seller.name,
-          email: loginData.seller.email,
-          phone: loginData.seller.phone,
-          shop_name: loginData.seller.shop_name,
-          user_type: loginData.user_type || 'seller'
-        };
+  id: loginData.seller.id,
+  name: loginData.seller.name,
+  email: loginData.seller.email,
+  phone: loginData.seller.phone,
+  shop_name: loginData.seller.shop_name,
+  logo_url: loginData.seller.logo_url || null,  // ✅ ADD THIS LINE
+  user_type: loginData.user_type || 'seller'
+};
         
         await AsyncStorage.setItem('user_data', JSON.stringify(sellerData));
         

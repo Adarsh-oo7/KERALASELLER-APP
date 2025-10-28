@@ -42,10 +42,9 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
     }
   };
 
-  // ✅ ENHANCED: Better navigation handling with Stock Management
   const handleNavigation = (screenName: string, params?: any) => {
     console.log('🧭 Sidebar navigation to:', screenName);
-    onClose(); // Close drawer first
+    onClose();
     
     setTimeout(() => {
       try {
@@ -54,7 +53,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
         } else if (screenName === 'Products') {
           navigation.navigate('MainTabs' as never, { screen: 'Products' } as never);
         } else if (screenName === 'AddProduct') {
-          navigation.navigate('MainTabs' as never, { screen: 'AddProduct' } as never);
+          navigation.navigate('MainTabs' as never, { screen: 'AddProduct'} as never);
         } else if (screenName === 'Orders') {
           navigation.navigate('MainTabs' as never, { screen: 'Orders' } as never);
         } else if (screenName === 'History') {
@@ -62,11 +61,9 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
         } else if (screenName === 'Subscription') {
           navigation.navigate('MainTabs' as never, { screen: 'Subscription' } as never);
         } else if (screenName === 'StockManagement') {
-          // ✅ FIXED: Navigate to Stock Management screen
           console.log('📦 Navigating to StockManagement screen...');
           navigation.navigate('StockManagement' as never, params as never);
         } else {
-          // For other stack screens, navigate directly
           navigation.navigate(screenName as never, params as never);
         }
       } catch (error) {
@@ -77,7 +74,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
           [{ text: 'OK' }]
         );
       }
-    }, 250); // Reduced timeout for smoother experience
+    }, 250);
   };
 
   const handleLogout = () => {
@@ -102,7 +99,6 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
     );
   };
 
-  // ✅ Main Menu Items
   const mainMenuItems = [
     {
       id: 'dashboard',
@@ -141,7 +137,6 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
     },
   ];
 
-  // ✅ Business Tools with Stock Management
   const businessTools = [
     {
       id: 'stock-management',
@@ -175,7 +170,6 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
     },
   ];
 
-  // ✅ Support Items
   const supportItems = [
     {
       id: 'help',
@@ -211,15 +205,36 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
 
   return (
     <View style={styles.container}>
-      {/* Header Section */}
+      {/* ✅ COMPACT Header with Logo */}
       <LinearGradient
         colors={['#f8fafc', '#e2e8f0']}
         style={styles.header}
       >
         <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-          <Ionicons name="close" size={26} color="#6b7280" />
+          <Ionicons name="close" size={24} color="#6b7280" />
         </TouchableOpacity>
         
+        {/* ✅ LOGO SECTION */}
+        {/* ✅ SHOP LOGO SECTION - Updated */}
+<View style={styles.logoSection}>
+  {userData?.logo_url ? (
+    /* Show actual shop logo if available */
+    <Image
+      source={{ uri: userData.logo_url }}
+      style={styles.shopLogoImage}
+      resizeMode="contain"
+    />
+  ) : (
+    /* Fallback to text logo */
+    <View style={styles.logoContainer}>
+      <Text style={styles.logoText}>🏪</Text>
+      <Text style={styles.logoTitle}>{userData?.shop_name || 'My Store'}</Text>
+    </View>
+  )}
+</View>
+
+
+        {/* ✅ COMPACT Profile Section */}
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <LinearGradient
@@ -234,27 +249,30 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
           </View>
           
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>
+            <Text style={styles.userName} numberOfLines={1}>
               {userData?.name || 'Kerala Seller'}
             </Text>
-            <Text style={styles.userEmail}>
+            <Text style={styles.userEmail} numberOfLines={1}>
               {userData?.email || 'seller@keralasellers.com'}
             </Text>
-            <View style={styles.storeTag}>
-              <Text style={styles.storeTagText}>
-                🏪 {userData?.shop_name || 'Kerala Store'}
-              </Text>
-            </View>
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={styles.editProfileButton}
-          onPress={() => handleNavigation('CreateShop')}
-        >
-          <Ionicons name="pencil-outline" size={16} color="#3b82f6" />
-          <Text style={styles.editProfileText}>Edit Profile</Text>
-        </TouchableOpacity>
+        {/* ✅ Store Tag & Edit Button Row */}
+        <View style={styles.actionsRow}>
+          <View style={styles.storeTag}>
+            <Text style={styles.storeTagText} numberOfLines={1}>
+              🏪 {userData?.shop_name || 'Kerala Store'}
+            </Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.editProfileButton}
+            onPress={() => handleNavigation('CreateShop')}
+          >
+            <Ionicons name="pencil-outline" size={14} color="#3b82f6" />
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
 
       {/* Scrollable Content */}
@@ -274,19 +292,19 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
                 style={styles.menuItemGradient}
               >
                 <View style={styles.menuItemIcon}>
-                  <Ionicons name={item.icon as any} size={24} color="#374151" />
+                  <Ionicons name={item.icon as any} size={22} color="#374151" />
                 </View>
                 <View style={styles.menuItemContent}>
                   <Text style={styles.menuItemTitle}>{item.title}</Text>
                   <Text style={styles.menuItemDescription}>{item.description}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+                <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
               </LinearGradient>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Business Tools - Enhanced Stock Management */}
+        {/* Business Tools */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Business Tools</Text>
           {businessTools.map((item) => (
@@ -312,7 +330,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
                   styles.businessIcon,
                   item.id === 'stock-management' && styles.stockManagementIcon
                 ]}>
-                  <Ionicons name={item.icon as any} size={24} color={
+                  <Ionicons name={item.icon as any} size={22} color={
                     item.id === 'stock-management' ? '#10b981' : '#3b82f6'
                   } />
                 </View>
@@ -327,13 +345,13 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
                   </View>
                   <Text style={styles.menuItemDescription}>{item.description}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+                <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
               </LinearGradient>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Kerala Sellers Pro Card */}
+        {/* Pro Card */}
         <View style={styles.proCard}>
           <LinearGradient
             colors={['#eff6ff', '#dbeafe']}
@@ -341,7 +359,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
           >
             <Text style={styles.proCardTitle}>🌴 Kerala Sellers Pro</Text>
             <Text style={styles.proCardDescription}>
-              Unlock premium features and boost your sales with our Pro plan
+              Unlock premium features and boost sales
             </Text>
             <TouchableOpacity 
               style={styles.upgradeButton}
@@ -372,12 +390,12 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
                 style={styles.menuItemGradient}
               >
                 <View style={styles.menuItemIcon}>
-                  <Ionicons name={item.icon as any} size={24} color="#6b7280" />
+                  <Ionicons name={item.icon as any} size={22} color="#6b7280" />
                 </View>
                 <View style={styles.menuItemContent}>
                   <Text style={styles.menuItemTitle}>{item.title}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+                <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
               </LinearGradient>
             </TouchableOpacity>
           ))}
@@ -395,7 +413,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
               style={styles.logoutGradient}
             >
               <View style={[styles.menuItemIcon, styles.logoutIcon]}>
-                <Ionicons name="log-out-outline" size={24} color="#ef4444" />
+                <Ionicons name="log-out-outline" size={22} color="#ef4444" />
               </View>
               <View style={styles.menuItemContent}>
                 <Text style={styles.logoutTitle}>Logout</Text>
@@ -421,99 +439,128 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   
-  // Header
+  // ✅ COMPACT Header
   header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 50,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 50 : 40, // ✅ Reduced from 60/50
+    paddingBottom: 16, // ✅ Reduced from 24
+    paddingHorizontal: 20, // ✅ Reduced from 24
   },
   closeButton: {
     alignSelf: 'flex-end',
-    padding: 8,
-    marginBottom: 16,
-    borderRadius: 20,
+    padding: 6, // ✅ Reduced from 8
+    marginBottom: 12, // ✅ Reduced from 16
+    borderRadius: 18,
     backgroundColor: 'rgba(107, 114, 128, 0.1)',
   },
-  profileSection: {
+  
+  // ✅ NEW: Logo Section
+  logoSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16, // ✅ Spacing before profile
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  logoText: {
+    fontSize: 28,
+  },
+  logoTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+    letterSpacing: 0.5,
+  },
+  
+  // ✅ COMPACT Profile Section
+  profileSection: {
+    flexDirection: 'row', // ✅ Horizontal layout
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12, // ✅ Reduced spacing
   },
   avatarContainer: {
     position: 'relative',
-    marginBottom: 16,
   },
   avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 56, // ✅ Reduced from 90
+    height: 56, // ✅ Reduced from 90
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowRadius: 8,
+    elevation: 6,
   },
   avatarText: {
-    fontSize: 36,
+    fontSize: 24, // ✅ Reduced from 36
     fontWeight: 'bold',
     color: '#ffffff',
   },
   statusIndicator: {
     position: 'absolute',
-    bottom: 6,
-    right: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    bottom: 2,
+    right: 2,
+    width: 14, // ✅ Reduced from 18
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#10b981',
-    borderWidth: 3,
+    borderWidth: 2.5,
     borderColor: '#ffffff',
   },
   userInfo: {
-    alignItems: 'center',
-    gap: 6,
+    flex: 1,
+    gap: 2, // ✅ Reduced from 6
   },
   userName: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 17, // ✅ Reduced from 22
+    fontWeight: '700',
     color: '#1f2937',
-    textAlign: 'center',
   },
   userEmail: {
-    fontSize: 14,
+    fontSize: 12, // ✅ Reduced from 14
     color: '#6b7280',
-    textAlign: 'center',
+  },
+  // Add to styles object (around line 520)
+shopLogoImage: {
+  width: 140,
+  height: 50,
+},
+
+  
+  // ✅ NEW: Actions Row (Store Tag + Edit Button)
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   storeTag: {
+    flex: 1,
     backgroundColor: 'rgba(5, 150, 105, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(5, 150, 105, 0.2)',
   },
   storeTagText: {
-    fontSize: 13,
+    fontSize: 12, // ✅ Reduced from 13
     color: '#059669',
     fontWeight: '600',
   },
   editProfileButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 24,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#3b82f6',
     backgroundColor: 'rgba(59, 130, 246, 0.05)',
-  },
-  editProfileText: {
-    fontSize: 14,
-    color: '#3b82f6',
-    fontWeight: '600',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   
   // Content
@@ -521,45 +568,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   section: {
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingHorizontal: 20, // ✅ Reduced from 24
+    paddingVertical: 16, // ✅ Reduced from 20
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14, // ✅ Reduced from 16
     fontWeight: '700',
     color: '#374151',
-    marginBottom: 16,
+    marginBottom: 12, // ✅ Reduced from 16
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   menuItem: {
-    borderRadius: 12,
-    marginBottom: 8,
+    borderRadius: 10, // ✅ Reduced from 12
+    marginBottom: 6, // ✅ Reduced from 8
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
   menuItemGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    paddingVertical: 14, // ✅ Reduced from 18
+    paddingHorizontal: 14, // ✅ Reduced from 16
   },
   menuItemIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40, // ✅ Reduced from 44
+    height: 40, // ✅ Reduced from 44
+    borderRadius: 20,
     backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 12, // ✅ Reduced from 16
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
   businessIcon: {
@@ -569,17 +616,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuItemTitle: {
-    fontSize: 16,
+    fontSize: 15, // ✅ Reduced from 16
     fontWeight: '600',
     color: '#1f2937',
-    marginBottom: 4,
+    marginBottom: 2, // ✅ Reduced from 4
   },
   menuItemDescription: {
-    fontSize: 13,
+    fontSize: 12, // ✅ Reduced from 13
     color: '#6b7280',
   },
 
-  // Stock Management specific styles
   stockManagementItem: {
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.2)',
@@ -590,17 +636,17 @@ const styles = StyleSheet.create({
   menuItemTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   newBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
-    marginLeft: 8,
+    borderRadius: 8,
+    marginLeft: 6,
   },
   newBadgeText: {
     color: '#ffffff',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -608,96 +654,96 @@ const styles = StyleSheet.create({
   
   // Pro Card
   proCard: {
-    marginHorizontal: 24,
-    marginVertical: 12,
-    borderRadius: 16,
+    marginHorizontal: 20,
+    marginVertical: 10,
+    borderRadius: 14,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 4,
   },
   proCardContent: {
-    padding: 24,
+    padding: 18, // ✅ Reduced from 24
     alignItems: 'center',
   },
   proCardTitle: {
-    fontSize: 18,
+    fontSize: 16, // ✅ Reduced from 18
     fontWeight: 'bold',
     color: '#1f2937',
-    marginBottom: 8,
+    marginBottom: 6, // ✅ Reduced from 8
     textAlign: 'center',
   },
   proCardDescription: {
-    fontSize: 14,
+    fontSize: 13, // ✅ Reduced from 14
     color: '#6b7280',
     textAlign: 'center',
-    marginBottom: 16,
-    lineHeight: 20,
+    marginBottom: 12, // ✅ Reduced from 16
+    lineHeight: 18,
   },
   upgradeButton: {
-    borderRadius: 25,
+    borderRadius: 22,
     overflow: 'hidden',
     shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 4,
   },
   upgradeGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 28,
+    paddingVertical: 10, // ✅ Reduced from 12
+    paddingHorizontal: 24, // ✅ Reduced from 28
   },
   upgradeButtonText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13, // ✅ Reduced from 14
     fontWeight: '700',
   },
   
   // Logout
   logoutItem: {
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: 'hidden',
     shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
   logoutGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
   logoutIcon: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
   },
   logoutTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#ef4444',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   logoutDescription: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#dc2626',
   },
   
   // App Info
   appInfo: {
     alignItems: 'center',
-    paddingVertical: 24,
-    paddingBottom: 40,
+    paddingVertical: 20, // ✅ Reduced from 24
+    paddingBottom: 32, // ✅ Reduced from 40
   },
   appVersion: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9ca3af',
     marginBottom: 4,
   },
   appCopyright: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9ca3af',
   },
 });

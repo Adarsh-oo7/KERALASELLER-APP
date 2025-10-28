@@ -1,3 +1,4 @@
+// src/screens/auth/ForgotPasswordScreen.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -16,8 +17,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS } from '../../constants/colors';
-import { getApiConfig, getBaseURL } from '../../config/api';
+import { getBaseURL } from '../../config/api';
 
 interface ForgotPasswordScreenProps {
   navigation: any;
@@ -26,12 +26,14 @@ interface ForgotPasswordScreenProps {
 export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScreenProps) {
   const insets = useSafeAreaInsets();
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(1); // 1: Enter details, 2: Success message
-  const [resetMethod, setResetMethod] = useState<'phone' | 'email'>('phone');
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
@@ -50,78 +52,91 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
     ]).start();
   }, []);
 
-  const validateInput = (): boolean => {
-    if (resetMethod === 'phone') {
-      const phoneClean = phone.replace(/\D/g, '');
-      if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
-        Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number starting with 6-9');
-        return false;
-      }
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        Alert.alert('Invalid Email', 'Please enter a valid email address');
-        return false;
-      }
+  const handleSendOTP = async () => {
+    const phoneClean = phone.replace(/\D/g, '');
+    if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
+      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number starting with 6-9');
+      return;
     }
-    return true;
-  };
-
-  const handleResetPassword = async () => {
-    if (!validateInput()) return;
 
     setLoading(true);
     const API_BASE_URL = getBaseURL();
 
     try {
-      const requestBody = resetMethod === 'phone' 
-        ? { phone: phone.replace(/\D/g, '') }
-        : { email: email.trim() };
+      const response = await fetch(`${API_BASE_URL}/user/seller/password-reset/send-otp/`, {
 
-      console.log('🔄 Password Reset Request:', {
-        method: resetMethod,
-        endpoint: `${API_BASE_URL}/user/forgot-password/`,
-        data: requestBody
-      });
-
-      const response = await fetch(`${API_BASE_URL}/user/forgot-password/`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ phone: phoneClean }),
       });
-
-      console.log('📡 Response Status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Password reset initiated:', data);
-        
-        setStep(2);
-        
-        // Auto redirect after 5 seconds
-        setTimeout(() => {
-          navigation.goBack();
-        }, 5000);
-        
+        console.log('✅ OTP sent:', data);
+        Alert.alert('OTP Sent', 'A 6-digit OTP has been sent to your phone', [
+          { text: 'OK', onPress: () => setStep(2) }
+        ]);
       } else {
-        const errorData = await response.text();
-        console.error('❌ Reset Password Error:', errorData);
-        
-        if (response.status === 404) {
-          Alert.alert(
-            'Account Not Found', 
-            `No account found with this ${resetMethod}. Please check your ${resetMethod} or register a new account.`
-          );
-        } else {
-          Alert.alert('Reset Failed', errorData || 'Failed to send reset instructions. Please try again.');
-        }
+        const errorData = await response.json();
+        Alert.alert('Error', errorData.error || 'Failed to send OTP');
       }
     } catch (error) {
-      console.error('❌ Network Error:', error);
-      Alert.alert('Connection Error', 'Cannot connect to server. Please check your network and try again.');
+      console.error('❌ Send OTP error:', error);
+      Alert.alert('Connection Error', 'Cannot connect to server. Please check your network.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!otp || otp.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP');
+      return;
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      Alert.alert('Weak Password', 'Password must be at least 8 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+    const API_BASE_URL = getBaseURL();
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/user/seller/password-reset/verify/`, {
+
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone: phone.replace(/\D/g, ''),
+          otp: otp,
+          new_password: newPassword,
+          confirm_password: confirmPassword,
+        }),
+      });
+
+      if (response.ok) {
+        console.log('✅ Password reset successful');
+        setStep(3);
+        setTimeout(() => navigation.navigate('Login'), 3000);
+      } else {
+        const errorData = await response.json();
+        Alert.alert('Reset Failed', errorData.error || 'Invalid OTP or password');
+      }
+    } catch (error) {
+      console.error('❌ Reset password error:', error);
+      Alert.alert('Connection Error', 'Cannot connect to server');
     } finally {
       setLoading(false);
     }
@@ -134,42 +149,21 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
     }
   };
 
-  if (step === 2) {
+  // SUCCESS SCREEN
+  if (step === 3) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
         
-        <LinearGradient
-          colors={[COLORS.background, COLORS.surface]}
-          style={styles.backgroundGradient}
-        />
-
         <View style={styles.successContainer}>
-          <View style={styles.successIcon}>
-            <Ionicons name="checkmark-circle" size={80} color={COLORS.success} />
-          </View>
-          
-          <Text style={styles.successTitle}>Reset Instructions Sent!</Text>
+          <Ionicons name="checkmark-circle" size={80} color="#10B981" />
+          <Text style={styles.successTitle}>Password Reset Successfully!</Text>
           <Text style={styles.successMessage}>
-            We've sent password reset instructions to your {resetMethod === 'phone' ? 'phone number' : 'email address'}.
-          </Text>
-          <Text style={styles.successSubMessage}>
-            {resetMethod === 'phone' 
-              ? `Check your SMS messages for the reset link.`
-              : `Please check your email inbox and follow the instructions.`
-            }
+            You can now login with your new password.
           </Text>
 
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.primaryLight]}
-              style={styles.backButtonGradient}
-            >
-              <Text style={styles.backButtonText}>Back to Login</Text>
-            </LinearGradient>
+          <TouchableOpacity style={styles.successButton} onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.successButtonText}>Go to Login</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -181,27 +175,19 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
       style={[styles.container, { paddingTop: insets.top }]} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      
-      <LinearGradient
-        colors={[COLORS.background, COLORS.surface]}
-        style={styles.backgroundGradient}
-      />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
           <TouchableOpacity style={styles.backIcon} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
+            <Ionicons name="arrow-back" size={24} color="#1F2937" />
           </TouchableOpacity>
           
           <View style={styles.logoSection}>
-            <LinearGradient
-              colors={COLORS.gradients.kerala}
-              style={styles.logoGradient}
-            >
+            <View style={styles.logoCircle}>
               <Text style={styles.logoText}>KS</Text>
-            </LinearGradient>
+            </View>
             <Text style={styles.brandTitle}>Kerala Sellers</Text>
             <Text style={styles.brandSubtitle}>Password Recovery</Text>
           </View>
@@ -211,137 +197,148 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
         <Animated.View 
           style={[
             styles.formContainer, 
-            { 
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
           ]}
         >
-          <Text style={styles.formTitle}>Forgot Your Password?</Text>
+          <Text style={styles.formTitle}>
+            {step === 1 ? 'Forgot Your Password?' : 'Reset Your Password'}
+          </Text>
           <Text style={styles.formSubtitle}>
-            No worries! Enter your {resetMethod === 'phone' ? 'phone number' : 'email address'} and we'll send you reset instructions.
+            {step === 1 
+              ? 'Enter your phone number to receive a 6-digit OTP'
+              : 'Enter the OTP and create a new password'
+            }
           </Text>
 
-          {/* Reset Method Toggle */}
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.toggleButton,
-                resetMethod === 'phone' && styles.toggleButtonActive
-              ]}
-              onPress={() => setResetMethod('phone')}
-            >
-              <Ionicons 
-                name="call" 
-                size={16} 
-                color={resetMethod === 'phone' ? COLORS.surface : COLORS.textSecondary} 
-              />
-              <Text style={[
-                styles.toggleText,
-                resetMethod === 'phone' && styles.toggleTextActive
-              ]}>
-                Phone
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.toggleButton,
-                resetMethod === 'email' && styles.toggleButtonActive
-              ]}
-              onPress={() => setResetMethod('email')}
-            >
-              <Ionicons 
-                name="mail" 
-                size={16} 
-                color={resetMethod === 'email' ? COLORS.surface : COLORS.textSecondary} 
-              />
-              <Text style={[
-                styles.toggleText,
-                resetMethod === 'email' && styles.toggleTextActive
-              ]}>
-                Email
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Input Field */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>
-              {resetMethod === 'phone' ? 'Phone Number' : 'Email Address'}
-            </Text>
-            
-            {resetMethod === 'phone' ? (
-              <View style={styles.inputContainer}>
-                <Text style={styles.countryCode}>🇮🇳 +91</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="9876543210"
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={phone}
-                  onChangeText={formatPhoneNumber}
-                  keyboardType="numeric"
-                  maxLength={10}
-                  editable={!loading}
-                />
-              </View>
-            ) : (
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} />
-                <TextInput
-                  style={styles.emailInput}
-                  placeholder="seller@example.com"
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  editable={!loading}
-                />
-              </View>
-            )}
-          </View>
-
-          {/* Reset Button */}
-          <TouchableOpacity 
-            style={[styles.resetButton, loading && styles.buttonDisabled]}
-            onPress={handleResetPassword}
-            disabled={loading}
-          >
-            <LinearGradient
-              colors={loading ? [COLORS.textTertiary, COLORS.textTertiary] : [COLORS.primary, COLORS.primaryLight]}
-              style={styles.resetButtonGradient}
-            >
-              {loading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color="white" />
-                  <Text style={styles.resetButtonText}>Sending...</Text>
+          {step === 1 ? (
+            // STEP 1: Phone Number
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Phone Number</Text>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.countryCode}>🇮🇳 +91</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="9876543210"
+                    placeholderTextColor="#9CA3AF"
+                    value={phone}
+                    onChangeText={formatPhoneNumber}
+                    keyboardType="numeric"
+                    maxLength={10}
+                    editable={!loading}
+                  />
                 </View>
-              ) : (
-                <View style={styles.buttonContent}>
-                  <Ionicons name="paper-plane-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.resetButtonText}>Send Reset Instructions</Text>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.primaryButton, loading && styles.buttonDisabled]} 
+                onPress={handleSendOTP} 
+                disabled={loading}
+              >
+                {loading ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator size="small" color="white" />
+                    <Text style={styles.buttonText}>Sending OTP...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.buttonText}>Send OTP</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            // STEP 2: OTP + New Password
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>6-Digit OTP</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="123456"
+                    placeholderTextColor="#9CA3AF"
+                    value={otp}
+                    onChangeText={(text) => setOtp(text.replace(/\D/g, '').slice(0, 6))}
+                    keyboardType="numeric"
+                    maxLength={6}
+                    editable={!loading}
+                  />
                 </View>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+              </View>
 
-          {/* Back to Login */}
-          <TouchableOpacity 
-            style={styles.loginButton} 
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.loginButtonText}>Back to Login</Text>
-          </TouchableOpacity>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>New Password</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Min 8 characters"
+                    placeholderTextColor="#9CA3AF"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry={!showPassword}
+                    editable={!loading}
+                  />
+                  <TouchableOpacity 
+                    style={styles.eyeButton} 
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons 
+                      name={showPassword ? 'eye-outline' : 'eye-off-outline'} 
+                      size={22} 
+                      color="#6B7280" 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-          {/* Help Text */}
-          <View style={styles.helpSection}>
-            <Text style={styles.helpTitle}>Need Help?</Text>
-            <Text style={styles.helpText}>
-              If you're having trouble resetting your password, contact our support team at support@keralasellers.com
-            </Text>
-          </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Confirm Password</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Re-enter password"
+                    placeholderTextColor="#9CA3AF"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirmPassword}
+                    editable={!loading}
+                  />
+                  <TouchableOpacity 
+                    style={styles.eyeButton} 
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons 
+                      name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'} 
+                      size={22} 
+                      color="#6B7280" 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.primaryButton, loading && styles.buttonDisabled]} 
+                onPress={handleResetPassword} 
+                disabled={loading}
+              >
+                {loading ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator size="small" color="white" />
+                    <Text style={styles.buttonText}>Resetting...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.buttonText}>Reset Password</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => setStep(1)}>
+                <Ionicons name="arrow-back-outline" size={18} color="#3B82F6" />
+                <Text style={styles.secondaryButtonText}>Back to Phone Entry</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <TouchableOpacity style={styles.loginLink} onPress={() => navigation.goBack()}>
+            <Text style={styles.loginLinkText}>Back to Login</Text>
+          </TouchableOpacity>
         </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -351,300 +348,221 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  backgroundGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+    backgroundColor: '#F9FAFB',
   },
   scrollContainer: {
     flex: 1,
   },
-  
-  // Header
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 30,
     alignItems: 'center',
   },
   backIcon: {
     position: 'absolute',
     left: 20,
-    top: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.surface,
+    top: 30,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
-    shadowColor: COLORS.shadowMedium,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    elevation: 3,
   },
   logoSection: {
     alignItems: 'center',
     marginTop: 20,
   },
-  logoGradient: {
+  logoCircle: {
     width: 80,
     height: 80,
     borderRadius: 40,
+    backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
-    elevation: 4,
-    shadowColor: COLORS.shadowColored,
+    shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
+    elevation: 5,
   },
   logoText: {
     fontSize: 32,
     fontWeight: '700',
-    color: COLORS.surface,
+    color: '#FFFFFF',
   },
   brandTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
-    color: COLORS.textPrimary,
+    color: '#1F2937',
     marginBottom: 4,
   },
   brandSubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 15,
+    color: '#6B7280',
     fontWeight: '500',
   },
-
-  // Form
   formContainer: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#FFFFFF',
     marginHorizontal: 20,
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 24,
     marginTop: 20,
-    elevation: 4,
-    shadowColor: COLORS.shadowMedium,
-    shadowOffset: { width: 0, height: 4 },
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 10,
+    shadowRadius: 8,
+    elevation: 4,
   },
   formTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
-    color: COLORS.textPrimary,
+    color: '#1F2937',
     textAlign: 'center',
     marginBottom: 8,
   },
   formSubtitle: {
     fontSize: 15,
-    color: COLORS.textSecondary,
+    color: '#6B7280',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 28,
     lineHeight: 22,
   },
-
-  // Toggle
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.primarySoft,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 24,
-  },
-  toggleButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 8,
-  },
-  toggleButtonActive: {
-    backgroundColor: COLORS.primary,
-    elevation: 2,
-    shadowColor: COLORS.shadowColored,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  toggleTextActive: {
-    color: COLORS.surface,
-  },
-
-  // Input
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.textPrimary,
+    color: '#374151',
     marginBottom: 8,
-    marginLeft: 4,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 4,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    elevation: 1,
-    shadowColor: COLORS.shadowLight,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderColor: '#E5E7EB',
   },
   countryCode: {
-    fontSize: 14,
-    color: COLORS.textPrimary,
+    fontSize: 15,
+    color: '#1F2937',
     fontWeight: '600',
     marginRight: 8,
-    paddingRight: 8,
+    paddingRight: 12,
     borderRightWidth: 1,
-    borderRightColor: COLORS.border,
+    borderRightColor: '#E5E7EB',
   },
   input: {
     flex: 1,
     fontSize: 16,
-    color: COLORS.textPrimary,
-    paddingVertical: 12,
+    color: '#1F2937',
+    paddingVertical: 14,
     fontWeight: '500',
   },
-  emailInput: {
+  passwordInput: {
     flex: 1,
     fontSize: 16,
-    color: COLORS.textPrimary,
-    paddingVertical: 12,
-    paddingLeft: 12,
+    color: '#1F2937',
+    paddingVertical: 14,
     fontWeight: '500',
   },
-
-  // Buttons
-  resetButton: {
-    marginBottom: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: COLORS.shadowColored,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+  eyeButton: {
+    padding: 8,
   },
-  resetButtonGradient: {
+  primaryButton: {
+    backgroundColor: '#3B82F6',
     paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 12,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  resetButtonText: {
+  buttonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.surface,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    color: '#FFFFFF',
   },
   loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  
-  loginButton: {
+  secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 14,
     gap: 8,
+    marginBottom: 8,
   },
-  loginButtonText: {
-    fontSize: 16,
-    color: COLORS.primary,
+  secondaryButtonText: {
+    fontSize: 15,
+    color: '#3B82F6',
     fontWeight: '600',
   },
-
-  // Help
-  helpSection: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: COLORS.primarySoft,
-    borderRadius: 12,
+  loginLink: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
   },
-  helpTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
+  loginLinkText: {
+    fontSize: 15,
+    color: '#6B7280',
+    fontWeight: '500',
   },
-  helpText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-  },
-
-  // Success Screen
   successContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
   },
-  successIcon: {
-    marginBottom: 24,
-  },
   successTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
-    color: COLORS.textPrimary,
+    color: '#1F2937',
     textAlign: 'center',
+    marginTop: 24,
     marginBottom: 12,
   },
   successMessage: {
     fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginBottom: 8,
-    lineHeight: 22,
-  },
-  successSubMessage: {
-    fontSize: 14,
-    color: COLORS.textTertiary,
+    color: '#6B7280',
     textAlign: 'center',
     marginBottom: 32,
-    lineHeight: 20,
+    lineHeight: 24,
   },
-  backButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    minWidth: 200,
-  },
-  backButtonGradient: {
+  successButton: {
+    backgroundColor: '#3B82F6',
     paddingVertical: 16,
-    paddingHorizontal: 32,
-    alignItems: 'center',
+    paddingHorizontal: 48,
+    borderRadius: 12,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  backButtonText: {
+  successButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.surface,
+    color: '#FFFFFF',
   },
 });

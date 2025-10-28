@@ -6,6 +6,7 @@ import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen'; // ✅ ADD THIS
 
 // Main screens
 import CreateShopScreen from '../screens/profile/CreateShopScreen';
@@ -17,11 +18,7 @@ import OrderDetailsScreen from '../screens/orders/OrderDetailsScreen';
 import BillingScreen from '../screens/billing/BillingScreen';
 import HistoryScreen from '../screens/history/HistoryScreen';
 import SubscriptionScreen from '../screens/subscription/SubscriptionScreen';
-
-// ✅ Import NotificationsScreen
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
-
-// ✅ Import StockManagementScreen
 import StockManagementScreen from '../screens/stock/StockManagementScreen';
 
 // Navigation components
@@ -61,7 +58,7 @@ const AppStateContext = React.createContext<AppStateContextType>({
   loadNotificationCount: () => {},
 });
 
-// ✅ FIXED: Create proper component wrappers (NOT inline functions)
+// ✅ Component wrappers
 const CreateShopScreenWrapper: React.FC<any> = (props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -125,7 +122,6 @@ const BillingScreenWrapper: React.FC<any> = (props) => {
   );
 };
 
-// ✅ FIXED: StockManagement wrapper component
 const StockManagementScreenWrapper: React.FC<any> = (props) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -148,7 +144,7 @@ const StockManagementScreenWrapper: React.FC<any> = (props) => {
   );
 };
 
-// ✅ Keep existing tab screen wrappers
+// ✅ Tab screen wrappers
 const DashboardScreenWrapper = (props: any) => {
   const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
   
@@ -254,7 +250,7 @@ const NotificationsScreenWrapper = (props: any) => {
   );
 };
 
-// ✅ Keep existing MainTabNavigator
+// ✅ Main Tab Navigator
 const MainTabNavigator: React.FC = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
@@ -348,7 +344,7 @@ const MainTabNavigator: React.FC = () => {
   );
 };
 
-// ✅ Main AppNavigator with FIXED components
+// ✅ Main AppNavigator
 const AppNavigator: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -357,7 +353,6 @@ const AppNavigator: React.FC = () => {
     checkAuthStatus();
   }, []);
 
-  // ✅ Keep existing auth logic
   useEffect(() => {
     const authCheckInterval = setInterval(async () => {
       try {
@@ -425,7 +420,7 @@ const AppNavigator: React.FC = () => {
           {/* ✅ MAIN APP */}
           <Stack.Screen name="MainTabs" component={MainTabNavigator} />
           
-          {/* ✅ FIXED: Modal screens with proper component references */}
+          {/* ✅ Modal screens */}
           <Stack.Screen name="CreateShop" component={CreateShopScreenWrapper} />
           <Stack.Screen name="OrderDetails" component={OrderDetailsScreenWrapper} />
           <Stack.Screen name="Billing" component={BillingScreenWrapper} />
@@ -443,6 +438,15 @@ const AppNavigator: React.FC = () => {
             )}
           </Stack.Screen>
           <Stack.Screen name="Register" component={RegisterScreen} />
+          {/* ✅ ADD THIS: ForgotPassword screen */}
+          <Stack.Screen 
+            name="ForgotPassword" 
+            component={ForgotPasswordScreen}
+            options={{
+              headerShown: false,
+              animationEnabled: true,
+            }}
+          />
         </>
       )}
     </Stack.Navigator>

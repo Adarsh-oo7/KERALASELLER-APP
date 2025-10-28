@@ -662,14 +662,27 @@ const AddProductScreen: React.FC<AddProductScreenProps> = ({ navigation, route }
         return (
           <View>
             <ImageUploadComponent
-              mainImage={mainImage}
-              subImages={subImages}
-              existingMainImage={existingMainImage}
-              existingSubImages={existingSubImages}
-              onMainImageChange={setMainImage}
-              onSubImagesChange={setSubImages}
-              error={errors.mainImage}
-            />
+  mainImage={mainImage}
+  subImages={subImages}
+  existingMainImage={existingMainImage}
+  existingSubImages={existingSubImages}
+  onMainImageChange={setMainImage}
+  onSubImagesChange={(newSubImages: string[]) => {
+    // ✅ Enforce 4-image limit
+    if (newSubImages.length <= 4) {
+      setSubImages(newSubImages);
+    } else {
+      Alert.alert(
+        '⚠️ Maximum Limit Reached',
+        'You can only upload up to 4 additional images (5 total including main image).',
+        [{ text: 'OK' }]
+      );
+    }
+  }}
+  maxSubImages={4}  // ✅ Pass limit to component
+  error={errors.mainImage}
+/>
+
             {isUploading && (
               <View style={styles.uploadProgressContainer}>
                 <View style={styles.uploadProgressHeader}>
