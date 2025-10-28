@@ -1,5 +1,20 @@
+// services/NotificationService.ts
 import apiClient from './ApiClient';
 
+// ===================================================================
+// ✅ BACKEND TYPES (what Django sends)
+// ===================================================================
+interface BackendNotification {
+  id: number;
+  message: string;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+// ===================================================================
+// ✅ APP TYPES (what your screens expect)
+// ===================================================================
 interface Notification {
   id: string;
   type: 'order' | 'stock' | 'payment' | 'system' | 'marketing';
@@ -23,103 +38,175 @@ interface ActionResponse {
   };
 }
 
+// ===================================================================
+// ✅ HELPER FUNCTIONS - Transform backend data to app format
+// ===================================================================
+class NotificationTransformer {
+  
+  /**
+   * ✅ Parse notification type from message
+   */
+  static parseType(message: string): Notification['type'] {
+    const lower = message.toLowerCase();
+    
+    if (lower.includes('order') || lower.includes('🎉') || lower.includes('📦')) {
+      return 'order';
+    } else if (lower.includes('stock') || lower.includes('⚠️') || lower.includes('low')) {
+      return 'stock';
+    } else if (lower.includes('payment') || lower.includes('₹') || lower.includes('✅')) {
+      return 'payment';
+    } else if (lower.includes('profile') || lower.includes('👤') || lower.includes('subscription')) {
+      return 'system';
+    } else if (lower.includes('boost') || lower.includes('marketing') || lower.includes('📈')) {
+      return 'marketing';
+    }
+    return 'system';
+  }
+
+  /**
+   * ✅ Extract title from message
+   */
+  static extractTitle(message: string): string {
+    // Remove emojis for title extraction
+    const withoutEmojis = message.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
+    
+    // Try splitting by dash
+    if (withoutEmojis.includes(' - ')) {
+      const title = withoutEmojis.split(' - ')[0].trim();
+      return title || withoutEmojis.substring(0, 50);
+    }
+    
+    // Try first sentence
+    const firstSentence = withoutEmojis.split(/[.!]/) [0].trim();
+    if (firstSentence.length > 0 && firstSentence.length < 60) {
+      return firstSentence;
+    }
+    
+    // Fallback: first 50 chars
+    return withoutEmojis.length > 50 
+      ? withoutEmojis.substring(0, 47) + '...' 
+      : withoutEmojis;
+  }
+
+  /**
+   * ✅ Format relative time
+   */
+  static formatTime(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    
+    return date.toLocaleDateString('en-IN', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  }
+
+  /**
+   * ✅ Map backend link to app screen name
+   */
+  static mapLinkToScreen(link: string | null): string | undefined {
+    if (!link) return undefined;
+
+    const lowerLink = link.toLowerCase();
+    
+    if (lowerLink.includes('orders')) return 'Orders';
+    if (lowerLink.includes('products')) return 'Products';
+    if (lowerLink.includes('billing')) return 'Billing';
+    if (lowerLink.includes('subscription')) return 'Subscription';
+    if (lowerLink.includes('dashboard')) return 'Dashboard';
+    if (lowerLink.includes('profile')) return 'Profile';
+    
+    return undefined;
+  }
+
+  /**
+   * ✅ Transform backend notification to app format
+   */
+  static transform(backend: BackendNotification): Notification {
+    const type = this.parseType(backend.message);
+    const title = this.extractTitle(backend.message);
+    const time = this.formatTime(backend.created_at);
+    const action_url = this.mapLinkToScreen(backend.link);
+
+    return {
+      id: backend.id.toString(),
+      type,
+      title,
+      message: backend.message,
+      time,
+      unread: !backend.is_read,
+      actionable: !!action_url,
+      action_url,
+      created_at: backend.created_at,
+    };
+  }
+}
+
+// ===================================================================
+// ✅ NOTIFICATION SERVICE - Fetches REAL DATA from backend
+// ===================================================================
 class NotificationService {
-  // ✅ Get all notifications with realistic Kerala Sellers data
+  
+  /**
+   * ✅ Get all notifications from backend
+   */
   async getNotifications(): Promise<NotificationResponse> {
     try {
-      console.log('🔔 Fetching notifications...');
+      console.log('🔔 NotificationService: Fetching notifications from backend...');
       
-      // ✅ TODO: Replace with real API endpoint
-      // const response = await apiClient.get('/api/notifications/');
-      // return response.data;
+      // ✅ REAL API CALL
+      const response = await apiClient.get<BackendNotification[]>('/api/notifications/');
+      const backendNotifications = response.data || [];
       
-      // ✅ REALISTIC MOCK DATA: Kerala Sellers business notifications
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          type: 'order',
-          title: 'New Order Received! 🎉',
-          message: 'Order #KS1234 from Priya Nair for Samsung Galaxy A54 (₹2,450)',
-          time: '2 minutes ago',
-          unread: true,
-          actionable: true,
-          action_url: 'Orders',
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          type: 'stock',
-          title: 'Low Stock Alert ⚠️',
-          message: 'Samsung Galaxy A54 is running low. Only 3 units left in stock.',
-          time: '1 hour ago',
-          unread: true,
-          actionable: true,
-          action_url: 'Products',
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: '3',
-          type: 'payment',
-          title: 'Payment Received ✅',
-          message: '₹2,450 payment received from customer Priya Nair via UPI',
-          time: '3 hours ago',
-          unread: false,
-          actionable: false,
-          created_at: new Date(Date.now() - 10800000).toISOString(),
-        },
-        {
-          id: '4',
-          type: 'order',
-          title: 'Order Delivered 📦',
-          message: 'Order #KS1233 successfully delivered to Rajesh Kumar in Kochi',
-          time: '5 hours ago',
-          unread: false,
-          actionable: true,
-          action_url: 'Orders',
-          created_at: new Date(Date.now() - 18000000).toISOString(),
-        },
-        {
-          id: '5',
-          type: 'system',
-          title: 'Profile Updated 👤',
-          message: 'Your Kerala Sellers store profile has been successfully updated',
-          time: '1 day ago',
-          unread: false,
-          actionable: false,
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: '6',
-          type: 'marketing',
-          title: 'Boost Your Sales! 📈',
-          message: 'Try our new marketing tools to reach more customers in Kerala',
-          time: '2 days ago',
-          unread: false,
-          actionable: true,
-          action_url: 'Dashboard',
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-        }
-      ];
+      console.log(`📡 Backend returned ${backendNotifications.length} notifications`);
       
-      console.log('✅ Notifications loaded:', mockNotifications.length);
-      return { data: mockNotifications };
+      // ✅ Transform backend data to app format
+      const appNotifications = backendNotifications.map(n => 
+        NotificationTransformer.transform(n)
+      );
       
-    } catch (error) {
-      console.error('❌ Failed to fetch notifications:', error);
-      throw error;
+      console.log(`✅ Transformed ${appNotifications.length} notifications for app`);
+      
+      return { data: appNotifications };
+      
+    } catch (error: any) {
+      console.error('❌ NotificationService: Failed to fetch notifications', error);
+      
+      // ✅ Return empty array (component will show empty state)
+      return { data: [] };
     }
   }
 
-  // ✅ Get unread notification count
+  /**
+   * ✅ Get unread notification count
+   */
   async getUnreadCount(): Promise<number> {
     try {
-      console.log('🔔 Getting unread notification count...');
+      console.log('🔔 NotificationService: Getting unread count...');
       
-      const notifications = await this.getNotifications();
-      const unreadCount = notifications.data.filter(n => n.unread).length;
-      
-      console.log('✅ Unread notifications:', unreadCount);
-      return unreadCount;
+      // ✅ Option 1: Use dedicated count endpoint (if available)
+      try {
+        const response = await apiClient.get<{ unread_count: number }>('/api/notifications/count/');
+        console.log(`✅ Unread count from API: ${response.data.unread_count}`);
+        return response.data.unread_count;
+      } catch (countError) {
+        // ✅ Fallback: Get all notifications and count locally
+        console.log('⚠️ Count endpoint unavailable, counting locally...');
+        const notifications = await this.getNotifications();
+        const unreadCount = notifications.data.filter(n => n.unread).length;
+        console.log(`✅ Unread count (local): ${unreadCount}`);
+        return unreadCount;
+      }
       
     } catch (error) {
       console.error('❌ Failed to get unread count:', error);
@@ -127,18 +214,18 @@ class NotificationService {
     }
   }
 
-  // ✅ Mark notification as read
+  /**
+   * ✅ Mark notification as read
+   */
   async markAsRead(notificationId: string): Promise<ActionResponse> {
     try {
-      console.log('🔔 Marking notification as read:', notificationId);
+      console.log(`🔔 Marking notification ${notificationId} as read...`);
       
-      // ✅ TODO: Replace with real API call
-      // const response = await apiClient.patch(`/api/notifications/${notificationId}/`, {
-      //   unread: false
-      // });
-      // return response.data;
+      // ✅ REAL API CALL
+      await apiClient.patch(`/api/notifications/${notificationId}/mark-as-read/`);
       
-      console.log('✅ Notification marked as read');
+      console.log(`✅ Notification ${notificationId} marked as read`);
+      
       return { 
         data: { 
           success: true, 
@@ -146,22 +233,24 @@ class NotificationService {
         } 
       };
       
-    } catch (error) {
-      console.error('❌ Failed to mark notification as read:', error);
+    } catch (error: any) {
+      console.error(`❌ Failed to mark notification ${notificationId} as read:`, error);
       throw error;
     }
   }
 
-  // ✅ Mark all notifications as read
+  /**
+   * ✅ Mark all notifications as read
+   */
   async markAllAsRead(): Promise<ActionResponse> {
     try {
       console.log('🔔 Marking all notifications as read...');
       
-      // ✅ TODO: Replace with real API call
-      // const response = await apiClient.post('/api/notifications/mark_all_read/');
-      // return response.data;
+      // ✅ REAL API CALL
+      await apiClient.patch('/api/notifications/mark-all-read/');
       
       console.log('✅ All notifications marked as read');
+      
       return { 
         data: { 
           success: true, 
@@ -169,22 +258,24 @@ class NotificationService {
         } 
       };
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to mark all as read:', error);
       throw error;
     }
   }
 
-  // ✅ Clear all notifications
+  /**
+   * ✅ Clear all notifications
+   */
   async clearAll(): Promise<ActionResponse> {
     try {
       console.log('🔔 Clearing all notifications...');
       
-      // ✅ TODO: Replace with real API call
-      // const response = await apiClient.delete('/api/notifications/clear_all/');
-      // return response.data;
+      // ✅ REAL API CALL
+      await apiClient.delete('/api/notifications/clear-all/');
       
       console.log('✅ All notifications cleared');
+      
       return { 
         data: { 
           success: true, 
@@ -192,7 +283,7 @@ class NotificationService {
         } 
       };
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to clear notifications:', error);
       throw error;
     }

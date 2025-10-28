@@ -4,7 +4,7 @@
     "slug": "KeralaSellerApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -14,22 +14,43 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.keralasellers.app"
+      "bundleIdentifier": "com.keralasellers.app",
+      "icon": "./assets/images/logo.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app requires camera access to upload product images.",
+        "NSPhotoLibraryUsageDescription": "This app requires photo library access to select product images."
+      }
     },
     "android": {
+      "icon": "./assets/images/logo.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.keralasellers.app"
+      "package": "com.keralasellers.app",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/images/logo.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Kerala Sellers to access your photos to upload product images.",
+          "cameraPermission": "Allow Kerala Sellers to use your camera to take product photos."
+        }
+      ],
       [
         "expo-splash-screen",
         {

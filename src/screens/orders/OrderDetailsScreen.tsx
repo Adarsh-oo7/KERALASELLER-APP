@@ -1,3 +1,4 @@
+// screens/Orders/OrderDetailsScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -19,6 +20,28 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import OrderService from '../../services/OrderService';
 import { ApiError } from '../../types/api';
+
+// ===================================================================
+// ✅ ENHANCED COLORS - Better contrast and readability
+// ===================================================================
+const COLORS = {
+  primary: '#3b82f6',
+  primaryLight: '#60a5fa',
+  primaryDark: '#2563eb',
+  success: '#10b981',
+  successLight: '#d1fae5',
+  error: '#ef4444',
+  errorLight: '#fee2e2',
+  warning: '#f59e0b',
+  warningLight: '#fef3c7',
+  surface: '#ffffff',
+  background: '#f8fafc',
+  textPrimary: '#1f2937',
+  textSecondary: '#6b7280',
+  textTertiary: '#9ca3af',
+  borderLight: '#e5e7eb',
+  borderMedium: '#d1d5db',
+};
 
 type OrderDetailsScreenProps = {
   navigation: StackNavigationProp<any>;
@@ -51,7 +74,9 @@ interface Order {
   cancel_reason?: string;
 }
 
-// ✅ Order Timeline Component for React Native
+// ===================================================================
+// ✅ ENHANCED ORDER TIMELINE - Better visual design
+// ===================================================================
 const OrderTimeline: React.FC<{ order: Order }> = ({ order }) => {
   const timelineSteps = [
     {
@@ -83,18 +108,25 @@ const OrderTimeline: React.FC<{ order: Order }> = ({ order }) => {
   if (order.status === 'CANCELLED') {
     return (
       <View style={styles.cancelledTimeline}>
-        <View style={styles.cancelledHeader}>
-          <Ionicons name="alert-circle" size={20} color="#ef4444" />
-          <Text style={styles.cancelledText}>
-            Order was cancelled on {new Date(order.updated_at || order.created_at).toLocaleDateString()}
-          </Text>
+        <View style={styles.cancelledIconContainer}>
+          <Ionicons name="alert-circle" size={24} color={COLORS.error} />
         </View>
-        {order.cancel_reason && (
-          <View style={styles.cancelReason}>
-            <Text style={styles.cancelReasonLabel}>Reason:</Text>
-            <Text style={styles.cancelReasonText}>{order.cancel_reason}</Text>
-          </View>
-        )}
+        <View style={styles.cancelledContent}>
+          <Text style={styles.cancelledTitle}>Order Cancelled</Text>
+          <Text style={styles.cancelledDate}>
+            on {new Date(order.updated_at || order.created_at).toLocaleDateString('en-IN', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </Text>
+          {order.cancel_reason && (
+            <View style={styles.cancelReasonBox}>
+              <Text style={styles.cancelReasonLabel}>Reason:</Text>
+              <Text style={styles.cancelReasonText}>{order.cancel_reason}</Text>
+            </View>
+          )}
+        </View>
       </View>
     );
   }
@@ -104,37 +136,53 @@ const OrderTimeline: React.FC<{ order: Order }> = ({ order }) => {
       {timelineSteps.map((step, index) => (
         <View key={step.key} style={styles.timelineStepContainer}>
           <View style={styles.timelineRow}>
+            {/* ✅ Improved icon design */}
             <View style={[
               styles.timelineIcon,
-              { backgroundColor: step.completed ? '#10b981' : '#e5e7eb' }
+              {
+                backgroundColor: step.completed ? COLORS.success : COLORS.background,
+                borderWidth: step.completed ? 0 : 2,
+                borderColor: COLORS.borderMedium,
+              }
             ]}>
               <Ionicons 
                 name={step.icon as any} 
-                size={20} 
-                color={step.completed ? 'white' : '#6b7280'} 
+                size={22} 
+                color={step.completed ? 'white' : COLORS.textTertiary} 
               />
+              {step.key === order.status && (
+                <View style={styles.currentIndicator} />
+              )}
             </View>
             
+            {/* ✅ Better content layout */}
             <View style={styles.timelineContent}>
               <Text style={[
                 styles.timelineLabel,
                 { 
-                  color: step.completed ? '#1f2937' : '#6b7280',
-                  fontWeight: step.completed ? '600' : '400'
+                  color: step.completed ? COLORS.textPrimary : COLORS.textSecondary,
+                  fontWeight: step.key === order.status ? '700' : step.completed ? '600' : '400'
                 }
               ]}>
                 {step.label}
               </Text>
               {step.key === order.status && (
-                <Text style={styles.currentStep}>Current Status</Text>
+                <View style={styles.currentBadge}>
+                  <View style={styles.currentDot} />
+                  <Text style={styles.currentText}>Current Status</Text>
+                </View>
               )}
             </View>
           </View>
           
+          {/* ✅ Improved connector */}
           {index < timelineSteps.length - 1 && (
             <View style={[
               styles.timelineConnector,
-              { backgroundColor: step.completed ? '#10b981' : '#e5e7eb' }
+              { 
+                backgroundColor: step.completed ? COLORS.success : COLORS.borderLight,
+                opacity: step.completed ? 1 : 0.5,
+              }
             ]} />
           )}
         </View>
@@ -143,6 +191,9 @@ const OrderTimeline: React.FC<{ order: Order }> = ({ order }) => {
   );
 };
 
+// ===================================================================
+// ✅ MAIN COMPONENT
+// ===================================================================
 const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, route }) => {
   const { orderId, onRefresh: parentRefresh } = route.params;
   
@@ -197,7 +248,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     fetchOrderDetails();
   };
 
-  // Check if order can be modified
   const canModifyOrder = order?.status !== 'CANCELLED' && order?.status !== 'DELIVERED';
   const isOrderCancelled = order?.status === 'CANCELLED';
   const isOrderDelivered = order?.status === 'DELIVERED';
@@ -332,11 +382,11 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
 
   const getStatusStyle = (status: string) => {
     const statusStyles = {
-      'PENDING': { backgroundColor: '#fef3c7', color: '#92400e' },
+      'PENDING': { backgroundColor: COLORS.warningLight, color: '#92400e' },
       'PROCESSING': { backgroundColor: '#dbeafe', color: '#1e40af' },
-      'SHIPPED': { backgroundColor: '#d1fae5', color: '#065f46' },
-      'DELIVERED': { backgroundColor: '#d1fae5', color: '#065f46' },
-      'CANCELLED': { backgroundColor: '#fee2e2', color: '#991b1b' },
+      'SHIPPED': { backgroundColor: COLORS.successLight, color: '#065f46' },
+      'DELIVERED': { backgroundColor: COLORS.successLight, color: '#065f46' },
+      'CANCELLED': { backgroundColor: COLORS.errorLight, color: '#991b1b' },
     };
     return statusStyles[status as keyof typeof statusStyles] || { backgroundColor: '#f3f4f6', color: '#374151' };
   };
@@ -370,24 +420,39 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     'Other'
   ];
 
+  // ===================================================================
+  // ✅ LOADING STATE
+  // ===================================================================
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading order details...</Text>
       </View>
     );
   }
 
+  // ===================================================================
+  // ✅ ERROR STATE
+  // ===================================================================
   if (error && !order) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={48} color="#ef4444" />
+        <View style={styles.errorIconContainer}>
+          <Ionicons name="alert-circle" size={64} color={COLORS.error} />
+        </View>
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorMessage}>{error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchOrderDetails}>
-          <Ionicons name="refresh" size={18} color="white" />
+          <Ionicons name="refresh" size={20} color="white" />
           <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.backToOrdersButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
+          <Text style={styles.backToOrdersText}>Back to Orders</Text>
         </TouchableOpacity>
       </View>
     );
@@ -396,7 +461,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   if (!order) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="cube-outline" size={48} color="#6b7280" />
+        <Ionicons name="cube-outline" size={64} color={COLORS.textTertiary} />
         <Text style={styles.errorTitle}>Order not found</Text>
         <Text style={styles.errorMessage}>
           The order you're looking for doesn't exist or you don't have permission to view it.
@@ -405,7 +470,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
           style={styles.backButton} 
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={18} color="#3b82f6" />
+          <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
           <Text style={styles.backButtonText}>Back to Orders</Text>
         </TouchableOpacity>
       </View>
@@ -414,47 +479,64 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
 
   const statusStyle = getStatusStyle(order.status);
 
+  // ===================================================================
+  // ✅ MAIN RENDER
+  // ===================================================================
   return (
     <>
       <ScrollView 
         style={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        refreshControl=
+
+{
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
         }
       >
-        {/* Header */}
+        {/* ✅ ENHANCED HEADER */}
         <View style={styles.header}>
           <TouchableOpacity 
-            style={styles.backButton} 
+            style={styles.headerBackButton} 
             onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={20} color="#3b82f6" />
-            <Text style={styles.backButtonText}>Back</Text>
+            <Ionicons name="arrow-back" size={22} color={COLORS.primary} />
+            <Text style={styles.headerBackText}>Back</Text>
           </TouchableOpacity>
           
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconButton} onPress={shareOrderDetails}>
-              <Ionicons name="share-outline" size={20} color="#3b82f6" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity 
+            style={styles.headerShareButton} 
+            onPress={shareOrderDetails}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="share-social" size={22} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
 
-        {/* Order Title */}
+        {/* ✅ ORDER TITLE SECTION */}
         <View style={styles.titleSection}>
-          <Text style={styles.orderTitle}>Order #{order.id}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.orderTitle}>Order #{order.id}</Text>
+            <View style={[styles.statusBadge, statusStyle]}>
+              <Ionicons name={getStatusIcon(order.status) as any} size={16} color={statusStyle.color} />
+              <Text style={[styles.statusText, { color: statusStyle.color }]}>
+                {order.status}
+              </Text>
+            </View>
+          </View>
           <View style={styles.orderMeta}>
-            <Ionicons name="calendar" size={14} color="#6b7280" />
-            <Text style={styles.orderDate}>Placed on {formatDate(order.created_at)}</Text>
+            <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} />
+            <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* ✅ QUICK ACTIONS - Better visual design */}
         <View style={styles.quickActions}>
           <TouchableOpacity 
             style={styles.actionButton} 
             onPress={handleGenerateBill}
+            activeOpacity={0.8}
           >
-            <Ionicons name="document-text" size={16} color="white" />
+            <Ionicons name="document-text-outline" size={20} color="white" />
             <Text style={styles.actionButtonText}>View Bill</Text>
           </TouchableOpacity>
           
@@ -462,8 +544,9 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
             <TouchableOpacity 
               style={styles.primaryActionButton} 
               onPress={() => setShowUpdateModal(true)}
+              activeOpacity={0.8}
             >
-              <Ionicons name="create" size={16} color="white" />
+              <Ionicons name="create-outline" size={20} color="white" />
               <Text style={styles.primaryActionButtonText}>Update Status</Text>
             </TouchableOpacity>
           )}
@@ -472,164 +555,180 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
             <TouchableOpacity 
               style={styles.infoActionButton} 
               onPress={() => setShowUpdateModal(true)}
+              activeOpacity={0.8}
             >
-              <Ionicons name="eye" size={16} color="white" />
+              <Ionicons name="information-circle-outline" size={20} color="white" />
               <Text style={styles.primaryActionButtonText}>View Details</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* ✅ Order Timeline Component */}
+        {/* ✅ ORDER TIMELINE */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="car" size={20} color="#1f2937" />
+            <View style={styles.cardHeaderIcon}>
+              <Ionicons name="navigate-circle" size={22} color={COLORS.primary} />
+            </View>
             <Text style={styles.cardTitle}>Order Progress</Text>
           </View>
           <OrderTimeline order={order} />
         </View>
 
-        {/* Customer Details */}
+        {/* ✅ CUSTOMER DETAILS */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="person" size={20} color="#1f2937" />
+            <View style={styles.cardHeaderIcon}>
+              <Ionicons name="person" size={22} color={COLORS.primary} />
+            </View>
             <Text style={styles.cardTitle}>Customer Details</Text>
           </View>
           
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Name:</Text>
-            <Text style={styles.detailValue}>
-              {order.customer_name || 'Guest Customer'}
-            </Text>
-          </View>
-          
-          {order.customer_phone && (
+          <View style={styles.detailsList}>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Phone:</Text>
-              <Text style={styles.detailValue}>+91 {order.customer_phone}</Text>
-            </View>
-          )}
-          
-          {order.shipping_address && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Address:</Text>
-              <Text style={[styles.detailValue, styles.addressText]}>
-                {order.shipping_address}
+              <Text style={styles.detailLabel}>Name</Text>
+              <Text style={styles.detailValue}>
+                {order.customer_name || 'Guest Customer'}
               </Text>
             </View>
-          )}
-          
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Order Type:</Text>
-            <View style={[
-              styles.orderTypeBadge,
-              {
-                backgroundColor: order.order_type === 'LOCAL' ? '#fef3c7' : '#dbeafe',
-              }
-            ]}>
-              <Text style={[
-                styles.orderTypeText,
-                {
-                  color: order.order_type === 'LOCAL' ? '#92400e' : '#1e40af',
-                }
-              ]}>
-                {order.order_type === 'LOCAL' ? '🏪 Local Bill' : '🛒 Online Order'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Order Status */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Ionicons name="cube" size={20} color="#1f2937" />
-            <Text style={styles.cardTitle}>Order Status</Text>
-          </View>
-          
-          <View style={styles.statusSection}>
-            <View style={[styles.statusBadge, statusStyle]}>
-              <Ionicons name={getStatusIcon(order.status) as any} size={14} color={statusStyle.color} />
-              <Text style={[styles.statusText, { color: statusStyle.color }]}>
-                {order.status}
-              </Text>
-            </View>
-          </View>
-          
-          {order.shipping_provider && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Provider:</Text>
-              <Text style={styles.detailValue}>{order.shipping_provider}</Text>
-            </View>
-          )}
-          
-          {order.tracking_id && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Tracking ID:</Text>
-              <View style={styles.trackingContainer}>
-                <Text style={styles.trackingId}>{order.tracking_id}</Text>
-                <TouchableOpacity 
-                  style={styles.copyButton}
-                  onPress={() => copyTrackingId(order.tracking_id!)}
-                >
-                  <Ionicons name="copy" size={12} color="white" />
-                  <Text style={styles.copyButtonText}>Copy</Text>
-                </TouchableOpacity>
+            
+            {order.customer_phone && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Phone</Text>
+                <Text style={styles.detailValue}>+91 {order.customer_phone}</Text>
               </View>
-            </View>
-          )}
-        </View>
-
-        {/* Payment Details */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Ionicons name={order.payment_method === 'ONLINE' ? 'card' : 'wallet'} size={20} color="#1f2937" />
-            <Text style={styles.cardTitle}>Payment Details</Text>
-          </View>
-          
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Method:</Text>
-            <Text style={styles.detailValue}>
-              {order.payment_method === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery'}
-            </Text>
-          </View>
-          
-          {order.payment_status && (
+            )}
+            
+            {order.shipping_address && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Address</Text>
+                <Text style={[styles.detailValue, styles.addressText]}>
+                  {order.shipping_address}
+                </Text>
+              </View>
+            )}
+            
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Status:</Text>
+              <Text style={styles.detailLabel}>Order Type</Text>
               <View style={[
-                styles.paymentStatusBadge,
+                styles.orderTypeBadge,
                 {
-                  backgroundColor: ['Paid', 'PAID'].includes(order.payment_status) 
-                    ? '#d1fae5' : '#dbeafe',
+                  backgroundColor: order.order_type === 'LOCAL' ? COLORS.warningLight : '#dbeafe',
                 }
               ]}>
                 <Text style={[
-                  styles.paymentStatusText,
+                  styles.orderTypeText,
                   {
-                    color: ['Paid', 'PAID'].includes(order.payment_status) 
-                      ? '#065f46' : '#1e40af',
+                    color: order.order_type === 'LOCAL' ? '#92400e' : '#1e40af',
                   }
                 ]}>
-                  {order.payment_status}
+                  {order.order_type === 'LOCAL' ? '🏪 Local Bill' : '🛒 Online Order'}
                 </Text>
               </View>
             </View>
-          )}
-          
-          <View style={styles.totalAmountRow}>
-            <Text style={styles.totalLabel}>Total Amount:</Text>
-            <Text style={styles.totalAmount}>
-              ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
-            </Text>
           </View>
         </View>
 
-        {/* Order Items */}
+        {/* ✅ SHIPPING DETAILS */}
+        {order.shipping_provider && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderIcon}>
+                <Ionicons name="car" size={22} color={COLORS.primary} />
+              </View>
+              <Text style={styles.cardTitle}>Shipping Details</Text>
+            </View>
+            
+            <View style={styles.detailsList}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Provider</Text>
+                <Text style={styles.detailValue}>{order.shipping_provider}</Text>
+              </View>
+              
+              {order.tracking_id && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Tracking ID</Text>
+                  <View style={styles.trackingContainer}>
+                    <Text style={styles.trackingId}>{order.tracking_id}</Text>
+                    <TouchableOpacity 
+                      style={styles.copyButton}
+                      onPress={() => copyTrackingId(order.tracking_id!)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="copy-outline" size={14} color="white" />
+                      <Text style={styles.copyButtonText}>Copy</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ✅ PAYMENT DETAILS */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="cube" size={20} color="#1f2937" />
-            <Text style={styles.cardTitle}>
-              Items in this Order ({order.items?.length || 0})
-            </Text>
+            <View style={styles.cardHeaderIcon}>
+              <Ionicons 
+                name={order.payment_method === 'ONLINE' ? 'card' : 'wallet'} 
+                size={22} 
+                color={COLORS.primary} 
+              />
+            </View>
+            <Text style={styles.cardTitle}>Payment Details</Text>
+          </View>
+          
+          <View style={styles.detailsList}>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Method</Text>
+              <Text style={styles.detailValue}>
+                {order.payment_method === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery'}
+              </Text>
+            </View>
+            
+            {order.payment_status && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Status</Text>
+                <View style={[
+                  styles.paymentStatusBadge,
+                  {
+                    backgroundColor: ['Paid', 'PAID'].includes(order.payment_status) 
+                      ? COLORS.successLight : '#dbeafe',
+                  }
+                ]}>
+                  <Text style={[
+                    styles.paymentStatusText,
+                    {
+                      color: ['Paid', 'PAID'].includes(order.payment_status) 
+                        ? '#065f46' : '#1e40af',
+                    }
+                  ]}>
+                    {order.payment_status}
+                  </Text>
+                </View>
+              </View>
+            )}
+            
+            <View style={styles.totalAmountRow}>
+              <Text style={styles.totalLabel}>Total Amount</Text>
+              <Text style={styles.totalAmount}>
+                ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ✅ ORDER ITEMS */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderIcon}>
+              <Ionicons name="cube" size={22} color={COLORS.primary} />
+            </View>
+            <View style={styles.cardHeaderContent}>
+              <Text style={styles.cardTitle}>Items in this Order</Text>
+              <View style={styles.itemsCountBadge}>
+                <Text style={styles.itemsCountText}>{order.items?.length || 0}</Text>
+              </View>
+            </View>
           </View>
           
           {order.items && order.items.length > 0 ? (
@@ -637,33 +736,36 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
               {order.items.map((item, index) => (
                 <View key={item.id || index} style={styles.itemCard}>
                   <View style={styles.itemHeader}>
-                    <Text style={styles.itemName}>
-                      {item.product?.name || item.product_name || 'Product'}
-                    </Text>
+                    <View style={styles.itemNameContainer}>
+                      <Text style={styles.itemName}>
+                        {item.product?.name || item.product_name || 'Product'}
+                      </Text>
+                      {item.product?.model_name && (
+                        <Text style={styles.itemModel}>
+                          {item.product.model_name}
+                        </Text>
+                      )}
+                    </View>
                     <Text style={styles.itemSubtotal}>
                       ₹{(parseFloat(item.price || '0') * item.quantity).toLocaleString('en-IN')}
                     </Text>
                   </View>
                   
-                  {item.product?.model_name && (
-                    <Text style={styles.itemModel}>
-                      Model: {item.product.model_name}
-                    </Text>
-                  )}
-                  
                   <View style={styles.itemFooter}>
-                    <View style={styles.quantityBadge}>
-                      <Text style={styles.quantityText}>{item.quantity}x</Text>
+                    <View style={styles.quantityContainer}>
+                      <View style={styles.quantityBadge}>
+                        <Text style={styles.quantityText}>{item.quantity}×</Text>
+                      </View>
+                      <Text style={styles.unitPrice}>
+                        ₹{parseFloat(item.price || '0').toLocaleString('en-IN')} each
+                      </Text>
                     </View>
-                    <Text style={styles.unitPrice}>
-                      ₹{parseFloat(item.price || '0').toLocaleString('en-IN')} each
-                    </Text>
                   </View>
                 </View>
               ))}
               
-              <View style={styles.totalRow}>
-                <Text style={styles.grandTotalLabel}>Grand Total:</Text>
+              <View style={styles.grandTotalRow}>
+                <Text style={styles.grandTotalLabel}>Grand Total</Text>
                 <Text style={styles.grandTotalAmount}>
                   ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
                 </Text>
@@ -671,14 +773,18 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
             </View>
           ) : (
             <View style={styles.emptyItems}>
-              <Ionicons name="cube-outline" size={32} color="#6b7280" />
+              <Ionicons name="cube-outline" size={48} color={COLORS.textTertiary} />
               <Text style={styles.emptyText}>No items found for this order</Text>
             </View>
           )}
         </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ✅ Enhanced Update Status Modal */}
+      {/* ===================================================================
+          ✅ ENHANCED UPDATE STATUS MODAL
+          =================================================================== */}
       <Modal
         visible={showUpdateModal}
         animationType="slide"
@@ -686,103 +792,113 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
         onRequestClose={() => setShowUpdateModal(false)}
       >
         <View style={styles.modalContainer}>
+          {/* Modal Header */}
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {isOrderCancelled ? 'Order Details' : isOrderDelivered ? 'Order Details' : 'Update Order'} #{order.id}
-            </Text>
-            <TouchableOpacity onPress={() => setShowUpdateModal(false)}>
-              <Ionicons name="close" size={24} color="#6b7280" />
+            <View style={styles.modalTitleContainer}>
+              <Ionicons name="create-outline" size={24} color={COLORS.primary} />
+              <Text style={styles.modalTitle}>
+                {isOrderCancelled ? 'Order Details' : isOrderDelivered ? 'Order Details' : 'Update Order'} #{order.id}
+              </Text>
+            </View>
+            <TouchableOpacity 
+              onPress={() => setShowUpdateModal(false)}
+              style={styles.modalCloseButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={28} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalContent}>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
             {/* Cancelled Order Warning */}
             {isOrderCancelled && (
               <View style={styles.cancelledWarning}>
-                <Ionicons name="alert-circle" size={16} color="#991b1b" />
+                <Ionicons name="alert-circle" size={20} color={COLORS.error} />
                 <View style={{ flex: 1 }}>
+                  <Text style={styles.warningTitle}>Order Cancelled</Text>
                   <Text style={styles.warningText}>
                     This order has been cancelled and cannot be modified.
                   </Text>
                   {order.cancel_reason && (
-                    <View style={styles.cancelReasonBox}>
-                      <Text style={styles.cancelReasonLabel}>Cancellation Reason:</Text>
-                      <Text style={styles.cancelReasonText}>{order.cancel_reason}</Text>
+                    <View style={styles.cancelReasonModalBox}>
+                      <Text style={styles.cancelReasonModalLabel}>Reason:</Text>
+                      <Text style={styles.cancelReasonModalText}>{order.cancel_reason}</Text>
                     </View>
                   )}
                 </View>
               </View>
             )}
 
-            {/* Delivered Order Warning */}
+            {/* Delivered Order Info */}
             {isOrderDelivered && (
               <View style={styles.deliveredWarning}>
-                <Ionicons name="checkmark-circle" size={16} color="#065f46" />
-                <Text style={styles.warningText}>
-                  This order has been delivered and cannot be modified further.
-                </Text>
+                <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.successTitle}>Order Delivered</Text>
+                  <Text style={styles.successText}>
+                    This order has been delivered successfully.
+                  </Text>
+                </View>
               </View>
             )}
 
-            {/* Order Info */}
-            <View style={styles.modalOrderInfo}>
-              <Text style={styles.modalOrderId}>Order #{order.id}</Text>
-              <Text style={styles.modalCustomer}>
-                {order.customer_name || 'Guest Customer'}
-              </Text>
-              <Text style={styles.modalAmount}>
-                ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
-              </Text>
+            {/* Order Summary */}
+            <View style={styles.modalOrderSummary}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Customer</Text>
+                <Text style={styles.summaryValue}>{order.customer_name || 'Guest'}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Amount</Text>
+                <Text style={styles.summaryAmount}>
+                  ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
+                </Text>
+              </View>
             </View>
 
             {/* Current Status */}
             <View style={styles.modalSection}>
               <Text style={styles.modalLabel}>Current Status</Text>
-              <View style={[styles.statusBadge, statusStyle]}>
-                <Ionicons name={getStatusIcon(order.status) as any} size={14} color={statusStyle.color} />
-                <Text style={[styles.statusText, { color: statusStyle.color }]}>
+              <View style={[styles.statusBadge, statusStyle, styles.modalStatusBadge]}>
+                <Ionicons name={getStatusIcon(order.status) as any} size={18} color={statusStyle.color} />
+                <Text style={[styles.statusText, { color: statusStyle.color, fontSize: 15 }]}>
                   {order.status}
                 </Text>
               </View>
             </View>
 
-            {/* New Status */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>New Status *</Text>
-              <View style={[
-                styles.pickerContainer,
-                { backgroundColor: !canModifyOrder ? '#f3f4f6' : 'white' }
-              ]}>
-                <Picker
-                  selectedValue={newStatus}
-                  onValueChange={(value) => setNewStatus(value)}
-                  style={styles.picker}
-                  enabled={canModifyOrder && !isUpdating}
-                >
-                  {statusOptions.map((option) => (
-                    <Picker.Item
-                      key={option.value}
-                      label={option.label}
-                      value={option.value}
-                    />
-                  ))}
-                </Picker>
-              </View>
-              {!canModifyOrder && (
-                <Text style={styles.disabledNote}>
-                  Status cannot be changed for {isOrderCancelled ? 'cancelled' : 'delivered'} orders
+            {/* New Status Picker */}
+            {canModifyOrder && (
+              <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>
+                  New Status <Text style={styles.required}>*</Text>
                 </Text>
-              )}
-            </View>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={newStatus}
+                    onValueChange={(value) => setNewStatus(value)}
+                    style={styles.picker}
+                    enabled={!isUpdating}
+                  >
+                    {statusOptions.map((option) => (
+                      <Picker.Item
+                        key={option.value}
+                        label={option.label}
+                        value={option.value}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            )}
 
-            {/* Shipping Details (if SHIPPED and can modify) */}
+            {/* Shipping Details (only when status is SHIPPED) */}
             {newStatus === 'SHIPPED' && canModifyOrder && (
               <>
                 <View style={styles.modalSection}>
-                  <View style={styles.modalLabelRow}>
-                    <Ionicons name="car" size={16} color="#374151" />
-                    <Text style={styles.modalLabel}>Shipping Provider</Text>
-                  </View>
+                  <Text style={styles.modalLabel}>
+                    Shipping Provider <Text style={styles.required}>*</Text>
+                  </Text>
                   <View style={styles.pickerContainer}>
                     <Picker
                       selectedValue={shippingProvider}
@@ -803,15 +919,15 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
                 </View>
 
                 <View style={styles.modalSection}>
-                  <View style={styles.modalLabelRow}>
-                    <Ionicons name="cube" size={16} color="#374151" />
-                    <Text style={styles.modalLabel}>Tracking ID</Text>
-                  </View>
+                  <Text style={styles.modalLabel}>
+                    Tracking ID <Text style={styles.required}>*</Text>
+                  </Text>
                   <TextInput
                     style={styles.textInput}
                     value={trackingId}
                     onChangeText={setTrackingId}
                     placeholder="Enter tracking number"
+                    placeholderTextColor={COLORS.textTertiary}
                     autoCapitalize="characters"
                     editable={!isUpdating}
                   />
@@ -819,47 +935,47 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
               </>
             )}
 
-            {/* Show existing shipping info for cancelled/delivered orders */}
+            {/* Show existing shipping info for non-editable orders */}
             {!canModifyOrder && order.shipping_provider && (
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Shipping Information</Text>
-                <View style={styles.readOnlyInfo}>
-                  <Text style={styles.readOnlyText}>
-                    <Text style={styles.readOnlyLabel}>Provider:</Text> {order.shipping_provider}
-                  </Text>
+                <View style={styles.readOnlyBox}>
+                  <View style={styles.readOnlyRow}>
+                    <Text style={styles.readOnlyLabel}>Provider:</Text>
+                    <Text style={styles.readOnlyValue}>{order.shipping_provider}</Text>
+                  </View>
                   {order.tracking_id && (
-                    <Text style={styles.readOnlyText}>
-                      <Text style={styles.readOnlyLabel}>Tracking ID:</Text> {order.tracking_id}
-                    </Text>
+                    <View style={styles.readOnlyRow}>
+                      <Text style={styles.readOnlyLabel}>Tracking ID:</Text>
+                      <Text style={styles.readOnlyValue}>{order.tracking_id}</Text>
+                    </View>
                   )}
                 </View>
               </View>
             )}
 
-            {/* Notes field */}
+            {/* Notes */}
             <View style={styles.modalSection}>
-              <View style={styles.modalLabelRow}>
-                <Ionicons name="chatbox" size={16} color="#374151" />
-                <Text style={styles.modalLabel}>
-                  {canModifyOrder ? 'Additional Notes (Optional)' : 'Order Notes'}
-                </Text>
-              </View>
+              <Text style={styles.modalLabel}>
+                {canModifyOrder ? 'Additional Notes' : 'Order Notes'}
+              </Text>
               <TextInput
                 style={[
                   styles.textInput,
                   styles.textArea,
-                  { backgroundColor: !canModifyOrder ? '#f3f4f6' : 'white' }
+                  { backgroundColor: !canModifyOrder ? COLORS.background : 'white' }
                 ]}
                 value={notes}
                 onChangeText={setNotes}
                 placeholder={canModifyOrder ? "Add any additional information..." : "No additional notes available"}
+                placeholderTextColor={COLORS.textTertiary}
                 multiline
                 numberOfLines={4}
                 maxLength={500}
                 editable={canModifyOrder && !isUpdating}
               />
               {canModifyOrder && (
-                <Text style={styles.charCount}>{notes.length}/500 characters</Text>
+                <Text style={styles.charCount}>{notes.length}/500</Text>
               )}
             </View>
           </ScrollView>
@@ -870,6 +986,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
               style={styles.modalCancelButton}
               onPress={() => setShowUpdateModal(false)}
               disabled={isUpdating}
+              activeOpacity={0.8}
             >
               <Text style={styles.modalCancelText}>
                 {canModifyOrder ? 'Cancel' : 'Close'}
@@ -881,13 +998,14 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
                 style={[styles.modalUpdateButton, isUpdating && styles.disabledButton]}
                 onPress={handleStatusUpdate}
                 disabled={isUpdating}
+                activeOpacity={0.8}
               >
                 {isUpdating ? (
                   <ActivityIndicator color="white" size="small" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={16} color="white" />
-                    <Text style={styles.modalUpdateText}>Save Status</Text>
+                    <Ionicons name="checkmark-circle" size={20} color="white" />
+                    <Text style={styles.modalUpdateText}>Update Status</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -899,101 +1017,134 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   );
 };
 
+// ===================================================================
+// ✅ ENHANCED STYLES - Better UI/UX
+// ===================================================================
+// ===================================================================
+// ✅ OPTIMIZED STYLES - Proper Spacing & Clean Design
+// ===================================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    gap: 16,
+    backgroundColor: COLORS.background,
+    gap: 20,
   },
   loadingText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: COLORS.textSecondary,
+    fontWeight: '500',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#f8fafc',
-    gap: 16,
+    padding: 32,
+    backgroundColor: COLORS.background,
+    gap: 20,
+  },
+  errorIconContainer: {
+    marginBottom: 8,
   },
   errorTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#ef4444',
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
   },
   errorMessage: {
     fontSize: 16,
-    color: '#6b7280',
+    color: COLORS.textSecondary,
     textAlign: 'center',
+    lineHeight: 24,
   },
   retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    gap: 10,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
   },
   retryButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
+  backToOrdersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  backToOrdersText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
+  // ✅ OPTIMIZED: Compact Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: 'white',
+    paddingTop: 12,           // ✅ Reduced from 60
+    paddingBottom: 12,        // ✅ Reduced from 20
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
   },
-  backButton: {
+  headerBackButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 12,
+    backgroundColor: COLORS.primaryLight + '15',
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: 10,
   },
-  backButtonText: {
-    color: '#3b82f6',
-    fontSize: 16,
-    fontWeight: '500',
+  headerBackText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  iconButton: {
-    backgroundColor: '#f3f4f6',
+  headerShareButton: {
+    backgroundColor: COLORS.primaryLight + '15',
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  
+  // ✅ OPTIMIZED: Compact Title Section
   titleSection: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: 'white',
+    paddingTop: 16,           // ✅ Reduced from 20
+    paddingBottom: 16,        // ✅ Reduced from 20
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.borderLight,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   orderTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 8,
+    fontSize: 24,             // ✅ Reduced from 26
+    fontWeight: '700',
+    color: COLORS.textPrimary,
   },
   orderMeta: {
     flexDirection: 'row',
@@ -1001,17 +1152,19 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   orderDate: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
+  
+  // ✅ OPTIMIZED: Compact Quick Actions
   quickActions: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: 'white',
+    paddingVertical: 14,      // ✅ Reduced from 20
+    backgroundColor: COLORS.surface,
+    gap: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    gap: 12,
+    borderBottomColor: COLORS.borderLight,
   },
   actionButton: {
     flex: 1,
@@ -1019,13 +1172,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#6b7280',
+    backgroundColor: COLORS.textSecondary,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   actionButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   primaryActionButton: {
@@ -1034,13 +1187,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.primary,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   primaryActionButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   infoActionButton: {
@@ -1051,92 +1204,159 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: '#0ea5e9',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
   },
+  
+  // ✅ OPTIMIZED: Cards with less top margin
   card: {
-    backgroundColor: 'white',
+    backgroundColor: COLORS.surface,
     marginHorizontal: 20,
-    marginTop: 16,
-    borderRadius: 12,
+    marginTop: 16,            // ✅ Reduced from 20
+    borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingBottom: 12,
-    marginBottom: 16,
+    borderBottomColor: COLORS.borderLight,
+    paddingBottom: 16,
+    marginBottom: 20,
+  },
+  cardHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: COLORS.primaryLight + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardHeaderContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  itemsCountBadge: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  itemsCountText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '700',
   },
   
-  // ✅ Timeline Styles
+  // Timeline Styles
   timelineContainer: {
-    gap: 16,
+    gap: 0,
   },
   timelineStepContainer: {
-    gap: 8,
+    gap: 0,
   },
   timelineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
+    paddingVertical: 8,
   },
   timelineIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  currentIndicator: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS.warning,
+    borderWidth: 2,
+    borderColor: 'white',
   },
   timelineContent: {
     flex: 1,
+    gap: 4,
   },
   timelineLabel: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
   },
-  currentStep: {
-    fontSize: 12,
-    color: '#3b82f6',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  timelineConnector: {
-    width: 2,
-    height: 20,
-    marginLeft: 19,
-  },
-  cancelledTimeline: {
-    padding: 16,
-    backgroundColor: '#fef2f2',
-    borderRadius: 8,
-    gap: 12,
-  },
-  cancelledHeader: {
+  currentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    marginTop: 2,
   },
-  cancelledText: {
+  currentDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.primary,
+  },
+  currentText: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  timelineConnector: {
+    width: 3,
+    height: 32,
+    marginLeft: 21.5,
+    marginTop: -4,
+    marginBottom: -4,
+  },
+  cancelledTimeline: {
+    flexDirection: 'row',
+    padding: 20,
+    backgroundColor: COLORS.errorLight,
+    borderRadius: 12,
+    gap: 16,
+  },
+  cancelledIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelledContent: {
+    flex: 1,
+    gap: 6,
+  },
+  cancelledTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.error,
+  },
+  cancelledDate: {
     fontSize: 14,
     color: '#991b1b',
-    flex: 1,
   },
-  cancelReason: {
+  cancelReasonBox: {
+    marginTop: 12,
     padding: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderRadius: 4,
+    backgroundColor: 'white',
+    borderRadius: 8,
   },
   cancelReasonLabel: {
     fontSize: 13,
@@ -1147,111 +1367,116 @@ const styles = StyleSheet.create({
   cancelReasonText: {
     fontSize: 13,
     color: '#991b1b',
+    lineHeight: 18,
   },
   
-  // Detail Rows
+  // Details List
+  detailsList: {
+    gap: 16,
+  },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 12,
-    gap: 8,
+    gap: 12,
   },
   detailLabel: {
     fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '500',
-    minWidth: 80,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+    minWidth: 90,
+    paddingTop: 2,
   },
   detailValue: {
-    fontSize: 14,
-    color: '#374151',
+    fontSize: 15,
+    color: COLORS.textPrimary,
     flex: 1,
+    fontWeight: '500',
   },
   addressText: {
-    lineHeight: 20,
+    lineHeight: 22,
   },
   orderTypeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   orderTypeText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-  },
-  statusSection: {
-    marginBottom: 16,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,    // ✅ Reduced from 12
+    paddingVertical: 6,       // ✅ Reduced from 8
+    borderRadius: 8,
     alignSelf: 'flex-start',
   },
   statusText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,             // ✅ Reduced from 13
+    fontWeight: '700',
     textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   trackingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 8,
+    gap: 10,
   },
   trackingId: {
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    fontSize: 12,
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    fontSize: 13,
     fontFamily: 'monospace',
     flex: 1,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
   },
   copyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   copyButtonText: {
     color: 'white',
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
   paymentStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   paymentStatusText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   totalAmountRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 2,
+    borderTopColor: COLORS.borderLight,
   },
   totalLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: COLORS.textSecondary,
   },
   totalAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#059669',
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.success,
   },
   
   // Items List
@@ -1259,105 +1484,127 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   itemCard: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.background,
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.borderLight,
   },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
+    gap: 12,
+  },
+  itemNameContainer: {
+    flex: 1,
   },
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1f2937',
-    flex: 1,
-    marginRight: 8,
-  },
-  itemSubtotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#059669',
+    color: COLORS.textPrimary,
+    marginBottom: 4,
   },
   itemModel: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 8,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  itemSubtotal: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.success,
   },
   itemFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  quantityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   quantityBadge: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   quantityText: {
     color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
   unitPrice: {
-    fontSize: 12,
-    color: '#6b7280',
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
   },
-  totalRow: {
+  grandTotalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: 16,
     marginTop: 16,
     borderTopWidth: 2,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: COLORS.borderMedium,
   },
   grandTotalLabel: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#374151',
+    fontWeight: '700',
+    color: COLORS.textPrimary,
   },
   grandTotalAmount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#059669',
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.success,
   },
   emptyItems: {
     alignItems: 'center',
-    padding: 40,
+    padding: 48,
     gap: 16,
   },
   emptyText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: COLORS.textSecondary,
     textAlign: 'center',
   },
   
-  // Modal Styles
+  // ✅ OPTIMIZED: Modal Styles
   modalContainer: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.background,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: 'white',
+    paddingTop: 16,           // ✅ Reduced from 60
+    paddingBottom: 16,        // ✅ Reduced from 20
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.borderLight,
+  },
+  modalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  modalCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalContent: {
     flex: 1,
@@ -1368,139 +1615,169 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     padding: 16,
-    backgroundColor: '#fef2f2',
-    border: '1px solid #ef4444',
-    borderRadius: 8,
+    backgroundColor: COLORS.errorLight,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+    borderRadius: 12,
     marginBottom: 20,
   },
-  deliveredWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 16,
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#10b981',
-    borderRadius: 8,
-    marginBottom: 20,
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.error,
+    marginBottom: 4,
   },
   warningText: {
     fontSize: 14,
     color: '#991b1b',
-    flex: 1,
+    lineHeight: 20,
   },
-  cancelReasonBox: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderRadius: 4,
-  },
-  modalOrderInfo: {
+  cancelReasonModalBox: {
+    marginTop: 12,
+    padding: 12,
     backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 8,
   },
-  modalOrderId: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
+  cancelReasonModalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#991b1b',
     marginBottom: 4,
   },
-  modalCustomer: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 8,
+  cancelReasonModalText: {
+    fontSize: 13,
+    color: '#991b1b',
+    lineHeight: 18,
   },
-  modalAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#059669',
-  },
-  modalSection: {
+  deliveredWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 16,
+    backgroundColor: COLORS.successLight,
+    borderWidth: 1,
+    borderColor: COLORS.success,
+    borderRadius: 12,
     marginBottom: 20,
   },
-  modalLabel: {
+  successTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 12,
+    fontWeight: '700',
+    color: COLORS.success,
+    marginBottom: 4,
   },
-  modalLabelRow: {
+  successText: {
+    fontSize: 14,
+    color: '#065f46',
+    lineHeight: 20,
+  },
+  modalOrderSummary: {
+    backgroundColor: COLORS.surface,
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 24,
+    gap: 12,
+  },
+  summaryRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  summaryValue: {
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+  },
+  summaryAmount: {
+    fontSize: 18,
+    color: COLORS.success,
+    fontWeight: '700',
+  },
+  modalSection: {
+    marginBottom: 24,
+  },
+  modalLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: 10,
+  },
+  required: {
+    color: COLORS.error,
+  },
+  modalStatusBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   pickerContainer: {
-    backgroundColor: 'white',
-    borderRadius: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: COLORS.borderMedium,
   },
   picker: {
-    height: 50,
+    height: 54,
   },
   textInput: {
-    backgroundColor: 'white',
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderColor: COLORS.borderMedium,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: COLORS.textPrimary,
   },
   textArea: {
-    minHeight: 80,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
-  disabledNote: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  readOnlyInfo: {
-    padding: 12,
-    backgroundColor: '#f8fafc',
+  readOnlyBox: {
+    padding: 16,
+    backgroundColor: COLORS.background,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 6,
-    gap: 8,
+    borderColor: COLORS.borderLight,
+    borderRadius: 12,
+    gap: 12,
   },
-  readOnlyText: {
-    fontSize: 14,
-    color: '#374151',
+  readOnlyRow: {
+    gap: 4,
   },
   readOnlyLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
     fontWeight: '600',
+  },
+  readOnlyValue: {
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
   },
   charCount: {
     fontSize: 12,
-    color: '#6b7280',
-    marginTop: 4,
+    color: COLORS.textSecondary,
+    marginTop: 6,
     textAlign: 'right',
   },
   modalFooter: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: 'white',
+    paddingVertical: 20,
+    backgroundColor: COLORS.surface,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: COLORS.borderLight,
     gap: 12,
   },
   modalCancelButton: {
     flex: 1,
-    paddingVertical: 14,
-    backgroundColor: '#6b7280',
-    borderRadius: 8,
+    paddingVertical: 16,
+    backgroundColor: COLORS.textSecondary,
+    borderRadius: 12,
     alignItems: 'center',
   },
   modalCancelText: {
@@ -1513,18 +1790,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    backgroundColor: '#3b82f6',
-    borderRadius: 8,
+    gap: 10,
+    paddingVertical: 16,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
   },
   modalUpdateText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   disabledButton: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: COLORS.textTertiary,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primaryLight + '15',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  backButtonText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

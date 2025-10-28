@@ -543,6 +543,8 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
   );
 };
 
+// ✅ OPTIMIZED STYLES - Proper Spacing & Better UX
+
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
@@ -598,12 +600,13 @@ const styles = StyleSheet.create({
     fontWeight: '600' 
   },
   
+  // ✅ FIXED: Header with better spacing
   headerInfo: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'center', 
     paddingHorizontal: 16, 
-    paddingVertical: 16, 
+    paddingVertical: 12,  // ✅ Reduced from 16
     backgroundColor: 'white', 
     borderBottomWidth: 1, 
     borderBottomColor: '#e5e7eb' 
@@ -612,13 +615,13 @@ const styles = StyleSheet.create({
     flex: 1 
   },
   title: { 
-    fontSize: 20, 
+    fontSize: 18,  // ✅ Reduced from 20
     fontWeight: '700', 
     color: '#1f2937', 
-    marginBottom: 4 
+    marginBottom: 2  // ✅ Reduced from 4
   },
   subtitle: { 
-    fontSize: 13, 
+    fontSize: 12,  // ✅ Reduced from 13
     color: '#6b7280',
     fontWeight: '500'
   },
@@ -626,35 +629,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     alignItems: 'center', 
     backgroundColor: '#3b82f6', 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
+    paddingHorizontal: 14,  // ✅ Reduced from 16
+    paddingVertical: 9,  // ✅ Reduced from 10
     borderRadius: 10, 
     gap: 6 
   },
   addProductButtonText: { 
     color: 'white', 
-    fontSize: 14, 
+    fontSize: 13,  // ✅ Reduced from 14
     fontWeight: '600' 
   },
   
+  // ✅ FIXED: Analytics cards - more compact
   analyticsContainer: { 
     marginHorizontal: 16, 
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 12,  // ✅ Reduced from 16
   },
   analyticsContent: { 
-    gap: 12, 
+    gap: 10,  // ✅ Reduced from 12
     paddingRight: 16,
   },
   analyticsCard: { 
     backgroundColor: 'white', 
-    paddingVertical: 8,   
-    paddingHorizontal: 16,
+    paddingVertical: 10,  // ✅ Increased from 8 for better touch target
+    paddingHorizontal: 14,  // ✅ Reduced from 16
     borderRadius: 10, 
-    minWidth: 100,
+    minWidth: 95,  // ✅ Reduced from 100
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 4,  // ✅ Increased from 3
     borderWidth: 1, 
     borderColor: '#e5e7eb',
     shadowColor: '#000',
@@ -672,15 +676,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   analyticsValue: { 
-    fontSize: 15,
+    fontSize: 16,  // ✅ Increased from 15 for better readability
     fontWeight: '700', 
     color: '#1f2937',
     textAlign: 'center',
   },
 
+  // ✅ FIXED: Sort button - more compact
   sortButtonContainer: { 
     paddingHorizontal: 16, 
-    paddingVertical: 12, 
+    paddingVertical: 10,  // ✅ Reduced from 12
     backgroundColor: 'white', 
     borderBottomWidth: 1, 
     borderBottomColor: '#e5e7eb', 
@@ -689,23 +694,23 @@ const styles = StyleSheet.create({
   sortButton: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    gap: 8, 
-    paddingVertical: 8, 
-    paddingHorizontal: 12, 
+    gap: 6,  // ✅ Reduced from 8
+    paddingVertical: 7,  // ✅ Reduced from 8
+    paddingHorizontal: 10,  // ✅ Reduced from 12
     backgroundColor: '#f9fafb', 
     borderWidth: 1, 
     borderColor: '#d1d5db', 
-    borderRadius: 10, 
+    borderRadius: 8,  // ✅ Reduced from 10
     alignSelf: 'flex-start' 
   },
   sortButtonText: { 
-    fontSize: 14, 
+    fontSize: 13,  // ✅ Reduced from 14
     color: '#374151', 
     fontWeight: '600' 
   },
   sortMenu: { 
     position: 'absolute', 
-    top: 56, 
+    top: 50,  // ✅ Adjusted for new padding
     left: 16, 
     backgroundColor: 'white', 
     borderRadius: 10, 
@@ -723,8 +728,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'space-between', 
-    paddingVertical: 12, 
-    paddingHorizontal: 16 
+    paddingVertical: 10,  // ✅ Reduced from 12
+    paddingHorizontal: 14  // ✅ Reduced from 16
   },
   sortMenuItemActive: { 
     backgroundColor: '#eff6ff' 
@@ -740,9 +745,10 @@ const styles = StyleSheet.create({
     marginVertical: 4 
   },
   
+  // ✅ FIXED: Search - more compact
   searchContainer: { 
     paddingHorizontal: 16, 
-    paddingVertical: 12,
+    paddingVertical: 10,  // ✅ Reduced from 12
     backgroundColor: 'white', 
     borderBottomWidth: 1, 
     borderBottomColor: '#e5e7eb' 
@@ -755,14 +761,14 @@ const styles = StyleSheet.create({
     borderRadius: 10, 
     backgroundColor: '#f9fafb', 
     paddingHorizontal: 12,
-    height: 44
+    height: 42  // ✅ Reduced from 44
   },
   searchIcon: { 
     marginRight: 8 
   },
   searchInput: { 
     flex: 1, 
-    fontSize: 15, 
+    fontSize: 14,  // ✅ Reduced from 15
     color: '#374151',
     paddingVertical: 0
   },
@@ -770,22 +776,23 @@ const styles = StyleSheet.create({
     padding: 4 
   },
   
+  // ✅ FIXED: Filter tabs - more compact
   filterContainer: { 
     backgroundColor: 'white', 
     borderBottomWidth: 1, 
     borderBottomColor: '#e5e7eb', 
-    paddingVertical: 12 
+    paddingVertical: 10  // ✅ Reduced from 12
   },
   filterScrollContainer: { 
     paddingHorizontal: 16, 
     gap: 8 
   },
   filterTab: { 
-    paddingHorizontal: 16, 
-    paddingVertical: 8, 
+    paddingHorizontal: 14,  // ✅ Reduced from 16
+    paddingVertical: 7,  // ✅ Reduced from 8
     borderRadius: 20, 
     backgroundColor: '#f3f4f6', 
-    minWidth: 80 
+    minWidth: 75  // ✅ Reduced from 80
   },
   activeFilterTab: { 
     backgroundColor: '#3b82f6' 
@@ -800,18 +807,20 @@ const styles = StyleSheet.create({
     color: 'white' 
   },
   
+  // ✅ FIXED: List container spacing
   listContainer: { 
-    padding: 16, 
-    paddingBottom: 32 
+    padding: 14,  // ✅ Reduced from 16
+    paddingBottom: 24  // ✅ Reduced from 32
   },
   emptyListContainer: { 
     flex: 1 
   },
   
+  // ✅ FIXED: Product card - better spacing & no overlap
   productCard: { 
     backgroundColor: 'white', 
     borderRadius: 12, 
-    padding: 14, 
+    padding: 12,  // ✅ Reduced from 14
     marginBottom: 12, 
     shadowColor: '#000', 
     shadowOffset: { width: 0, height: 2 }, 
@@ -823,17 +832,19 @@ const styles = StyleSheet.create({
   },
   productHeader: { 
     flexDirection: 'row', 
-    marginBottom: 12 
+    marginBottom: 10,  // ✅ Reduced from 12
+    gap: 12  // ✅ Added gap instead of marginRight
   },
   
+  // ✅ FIXED: Image container
   imageContainer: { 
     position: 'relative', 
-    marginRight: 14 
+    marginRight: 0  // ✅ Removed (using gap instead)
   },
   productImage: { 
-    width: 72, 
-    height: 72, 
-    borderRadius: 36,
+    width: 64,  // ✅ Reduced from 72
+    height: 64,  // ✅ Reduced from 72
+    borderRadius: 32,  // ✅ Adjusted
     backgroundColor: '#f3f4f6',
     borderWidth: 2,
     borderColor: '#e5e7eb',
@@ -842,9 +853,9 @@ const styles = StyleSheet.create({
     position: 'absolute', 
     bottom: -2, 
     right: -2, 
-    paddingHorizontal: 7, 
-    paddingVertical: 3, 
-    borderRadius: 12,
+    paddingHorizontal: 6,  // ✅ Reduced from 7
+    paddingVertical: 2,  // ✅ Reduced from 3
+    borderRadius: 10,  // ✅ Reduced from 12
     borderWidth: 2,
     borderColor: 'white',
   },
@@ -855,39 +866,46 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3
   },
   
+  // ✅ FIXED: Product info with proper flex
   productInfo: { 
     flex: 1, 
-    justifyContent: 'space-between' 
+    justifyContent: 'space-between',
+    minWidth: 0  // ✅ Added to prevent overflow
   },
   productName: { 
-    fontSize: 16, 
+    fontSize: 15,  // ✅ Reduced from 16
     fontWeight: '600', 
     color: '#1f2937', 
-    marginBottom: 4, 
-    lineHeight: 22 
+    marginBottom: 3,  // ✅ Reduced from 4
+    lineHeight: 20,  // ✅ Reduced from 22
+    flexWrap: 'wrap'  // ✅ Added
   },
   modelName: { 
     fontSize: 12, 
     color: '#6b7280', 
-    marginBottom: 6,
-    fontWeight: '500'
+    marginBottom: 5,  // ✅ Reduced from 6
+    fontWeight: '500',
+    flexShrink: 1  // ✅ Added
   },
   priceRow: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    gap: 8, 
-    marginBottom: 4 
+    gap: 6,  // ✅ Reduced from 8
+    marginBottom: 3,  // ✅ Reduced from 4
+    flexWrap: 'wrap'  // ✅ Added
   },
   price: { 
-    fontSize: 17, 
+    fontSize: 16,  // ✅ Reduced from 17
     fontWeight: '700', 
-    color: '#059669' 
+    color: '#059669',
+    flexShrink: 1  // ✅ Added
   },
   mrp: { 
     fontSize: 12, 
     color: '#9ca3af', 
     textDecorationLine: 'line-through',
-    fontWeight: '500'
+    fontWeight: '500',
+    flexShrink: 1  // ✅ Added
   },
   stockText: { 
     fontSize: 12, 
@@ -895,10 +913,11 @@ const styles = StyleSheet.create({
     fontWeight: '500'
   },
   
+  // ✅ FIXED: Action buttons - better spacing
   actionButtons: { 
     flexDirection: 'row', 
-    gap: 10, 
-    marginTop: 6 
+    gap: 8,  // ✅ Reduced from 10
+    marginTop: 4  // ✅ Reduced from 6
   },
   editButton: { 
     flex: 1, 
@@ -906,13 +925,13 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     justifyContent: 'center', 
     backgroundColor: '#6b7280', 
-    paddingVertical: 10, 
-    borderRadius: 10, 
+    paddingVertical: 9,  // ✅ Reduced from 10
+    borderRadius: 8,  // ✅ Reduced from 10
     gap: 6 
   },
   editButtonText: { 
     color: 'white', 
-    fontSize: 14, 
+    fontSize: 13,  // ✅ Reduced from 14
     fontWeight: '600' 
   },
   deleteButton: { 
@@ -921,8 +940,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     justifyContent: 'center', 
     backgroundColor: '#ef4444', 
-    paddingVertical: 10, 
-    borderRadius: 10, 
+    paddingVertical: 9,  // ✅ Reduced from 10
+    borderRadius: 8,  // ✅ Reduced from 10
     gap: 6 
   },
   deleteButtonDisabled: { 
@@ -930,10 +949,11 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: { 
     color: 'white', 
-    fontSize: 14, 
+    fontSize: 13,  // ✅ Reduced from 14
     fontWeight: '600' 
   },
   
+  // ✅ Empty state (keep same)
   emptyState: { 
     flex: 1, 
     justifyContent: 'center', 
@@ -984,5 +1004,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' 
   },
 });
+
 
 export default ProductsScreen;
