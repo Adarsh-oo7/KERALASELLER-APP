@@ -205,7 +205,6 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
 
   return (
     <View style={styles.container}>
-      {/* ✅ COMPACT Header with Logo */}
       <LinearGradient
         colors={['#f8fafc', '#e2e8f0']}
         style={styles.header}
@@ -214,22 +213,28 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
           <Ionicons name="close" size={24} color="#6b7280" />
         </TouchableOpacity>
         
-        {/* ✅ LOGO SECTION */}
-        {/* ✅ SHOP LOGO SECTION - Updated */}
+        {/* ✅ DUAL BRANDING - Kerala Sellers + Shop Logo */}
+       {/* ✅ KERALA SELLERS LOGO - Use asset module */}
 <View style={styles.logoSection}>
-  {userData?.logo_url ? (
-    /* Show actual shop logo if available */
-    <Image
-      source={{ uri: userData.logo_url }}
-      style={styles.shopLogoImage}
-      resizeMode="contain"
-    />
-  ) : (
-    /* Fallback to text logo */
-    <View style={styles.logoContainer}>
-      <Text style={styles.logoText}>🏪</Text>
-      <Text style={styles.logoTitle}>{userData?.shop_name || 'My Store'}</Text>
+  <Image
+   source={require('../../../assets/icon.png')}  // ✅ Add one more ../
+
+    style={styles.keralaLogo}
+    resizeMode="contain"
+  />
+  
+  {userData?.logo_url && (
+    <View style={styles.shopLogoWrapper}>
+      <Image
+        source={{ uri: userData.logo_url }}
+        style={styles.shopLogoImage}
+        resizeMode="contain"
+      />
     </View>
+  )}
+  
+  {userData?.shop_name && (
+    <Text style={styles.shopNameText}>{userData.shop_name}</Text>
   )}
 </View>
 
@@ -439,53 +444,64 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   
-  // ✅ COMPACT Header
   header: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 40, // ✅ Reduced from 60/50
-    paddingBottom: 16, // ✅ Reduced from 24
-    paddingHorizontal: 20, // ✅ Reduced from 24
+    paddingTop: Platform.OS === 'ios' ? 50 : 40,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
   },
   closeButton: {
     alignSelf: 'flex-end',
-    padding: 6, // ✅ Reduced from 8
-    marginBottom: 12, // ✅ Reduced from 16
+    padding: 6,
+    marginBottom: 12,
     borderRadius: 18,
     backgroundColor: 'rgba(107, 114, 128, 0.1)',
   },
   
-  // ✅ NEW: Logo Section
+  // ✅ Logo Section with dual branding
   logoSection: {
     alignItems: 'center',
-    marginBottom: 16, // ✅ Spacing before profile
+    marginBottom: 16,
+    paddingHorizontal: 10,
   },
-  logoContainer: {
-    flexDirection: 'row',
+  keralaLogo: {
+    width: 140,
+    height: 45,
+    marginBottom: 12,
+  },
+  shopLogoWrapper: {
+    width: '100%',
     alignItems: 'center',
-    gap: 8,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(5, 150, 105, 0.05)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(5, 150, 105, 0.1)',
+    marginBottom: 8,
   },
-  logoText: {
-    fontSize: 28,
+  shopLogoImage: {
+    width: 120,
+    height: 40,
   },
-  logoTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1f2937',
-    letterSpacing: 0.5,
+  shopNameText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#059669',
+    textAlign: 'center',
+    marginTop: 4,
   },
   
-  // ✅ COMPACT Profile Section
   profileSection: {
-    flexDirection: 'row', // ✅ Horizontal layout
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 12, // ✅ Reduced spacing
+    marginBottom: 12,
   },
   avatarContainer: {
     position: 'relative',
   },
   avatar: {
-    width: 56, // ✅ Reduced from 90
-    height: 56, // ✅ Reduced from 90
+    width: 56,
+    height: 56,
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
@@ -496,7 +512,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   avatarText: {
-    fontSize: 24, // ✅ Reduced from 36
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#ffffff',
   },
@@ -504,7 +520,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 14, // ✅ Reduced from 18
+    width: 14,
     height: 14,
     borderRadius: 7,
     backgroundColor: '#10b981',
@@ -513,25 +529,18 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
-    gap: 2, // ✅ Reduced from 6
+    gap: 2,
   },
   userName: {
-    fontSize: 17, // ✅ Reduced from 22
+    fontSize: 17,
     fontWeight: '700',
     color: '#1f2937',
   },
   userEmail: {
-    fontSize: 12, // ✅ Reduced from 14
+    fontSize: 12,
     color: '#6b7280',
   },
-  // Add to styles object (around line 520)
-shopLogoImage: {
-  width: 140,
-  height: 50,
-},
-
   
-  // ✅ NEW: Actions Row (Store Tag + Edit Button)
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -548,7 +557,7 @@ shopLogoImage: {
     borderColor: 'rgba(5, 150, 105, 0.2)',
   },
   storeTagText: {
-    fontSize: 12, // ✅ Reduced from 13
+    fontSize: 12,
     color: '#059669',
     fontWeight: '600',
   },
@@ -563,25 +572,24 @@ shopLogoImage: {
     alignItems: 'center',
   },
   
-  // Content
   content: {
     flex: 1,
   },
   section: {
-    paddingHorizontal: 20, // ✅ Reduced from 24
-    paddingVertical: 16, // ✅ Reduced from 20
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   sectionTitle: {
-    fontSize: 14, // ✅ Reduced from 16
+    fontSize: 14,
     fontWeight: '700',
     color: '#374151',
-    marginBottom: 12, // ✅ Reduced from 16
+    marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   menuItem: {
-    borderRadius: 10, // ✅ Reduced from 12
-    marginBottom: 6, // ✅ Reduced from 8
+    borderRadius: 10,
+    marginBottom: 6,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -592,17 +600,17 @@ shopLogoImage: {
   menuItemGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14, // ✅ Reduced from 18
-    paddingHorizontal: 14, // ✅ Reduced from 16
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
   menuItemIcon: {
-    width: 40, // ✅ Reduced from 44
-    height: 40, // ✅ Reduced from 44
+    width: 40,
+    height: 40,
     borderRadius: 20,
     backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12, // ✅ Reduced from 16
+    marginRight: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -616,13 +624,13 @@ shopLogoImage: {
     flex: 1,
   },
   menuItemTitle: {
-    fontSize: 15, // ✅ Reduced from 16
+    fontSize: 15,
     fontWeight: '600',
     color: '#1f2937',
-    marginBottom: 2, // ✅ Reduced from 4
+    marginBottom: 2,
   },
   menuItemDescription: {
-    fontSize: 12, // ✅ Reduced from 13
+    fontSize: 12,
     color: '#6b7280',
   },
 
@@ -652,7 +660,6 @@ shopLogoImage: {
     letterSpacing: 0.5,
   },
   
-  // Pro Card
   proCard: {
     marginHorizontal: 20,
     marginVertical: 10,
@@ -665,21 +672,21 @@ shopLogoImage: {
     elevation: 4,
   },
   proCardContent: {
-    padding: 18, // ✅ Reduced from 24
+    padding: 18,
     alignItems: 'center',
   },
   proCardTitle: {
-    fontSize: 16, // ✅ Reduced from 18
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#1f2937',
-    marginBottom: 6, // ✅ Reduced from 8
+    marginBottom: 6,
     textAlign: 'center',
   },
   proCardDescription: {
-    fontSize: 13, // ✅ Reduced from 14
+    fontSize: 13,
     color: '#6b7280',
     textAlign: 'center',
-    marginBottom: 12, // ✅ Reduced from 16
+    marginBottom: 12,
     lineHeight: 18,
   },
   upgradeButton: {
@@ -692,16 +699,15 @@ shopLogoImage: {
     elevation: 4,
   },
   upgradeGradient: {
-    paddingVertical: 10, // ✅ Reduced from 12
-    paddingHorizontal: 24, // ✅ Reduced from 28
+    paddingVertical: 10,
+    paddingHorizontal: 24,
   },
   upgradeButtonText: {
     color: '#ffffff',
-    fontSize: 13, // ✅ Reduced from 14
+    fontSize: 13,
     fontWeight: '700',
   },
   
-  // Logout
   logoutItem: {
     borderRadius: 10,
     overflow: 'hidden',
@@ -731,11 +737,10 @@ shopLogoImage: {
     color: '#dc2626',
   },
   
-  // App Info
   appInfo: {
     alignItems: 'center',
-    paddingVertical: 20, // ✅ Reduced from 24
-    paddingBottom: 32, // ✅ Reduced from 40
+    paddingVertical: 20,
+    paddingBottom: 32,
   },
   appVersion: {
     fontSize: 11,

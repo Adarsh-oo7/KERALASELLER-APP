@@ -147,7 +147,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
           keyboardShouldPersistTaps="handled"
         >
           {/* ✅ KERALA SELLERS LOGO IMAGE */}
-          <View style={styles.header}>
+          {/* <View style={styles.header}>
             <Image 
               source={require('../../../assets/images/logo.png')}
               style={styles.logo}
@@ -155,7 +155,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
             />
             <Text style={styles.title}>Kerala Sellers</Text>
             <Text style={styles.subtitle}>Seller Login</Text>
-          </View>
+          </View> */}
 
           {/* Login Form */}
           <View style={styles.formCard}>
