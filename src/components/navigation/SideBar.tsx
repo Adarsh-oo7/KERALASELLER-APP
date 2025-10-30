@@ -216,26 +216,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
         {/* ✅ DUAL BRANDING - Kerala Sellers + Shop Logo */}
        {/* ✅ KERALA SELLERS LOGO - Use asset module */}
 <View style={styles.logoSection}>
-  <Image
-   source={require('../../../assets/icon.png')}  // ✅ Add one more ../
-
-    style={styles.keralaLogo}
-    resizeMode="contain"
-  />
-  
-  {userData?.logo_url && (
-    <View style={styles.shopLogoWrapper}>
-      <Image
-        source={{ uri: userData.logo_url }}
-        style={styles.shopLogoImage}
-        resizeMode="contain"
-      />
-    </View>
-  )}
-  
-  {userData?.shop_name && (
-    <Text style={styles.shopNameText}>{userData.shop_name}</Text>
-  )}
+  <Text style={styles.logoText}>KS</Text>
 </View>
 
 
@@ -751,6 +732,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
   },
+  logoText: {
+  fontSize: 40,
+  fontWeight: 'bold',
+  color: '#FFFFFF',
+},
+
 });
 
 export default SideBar;

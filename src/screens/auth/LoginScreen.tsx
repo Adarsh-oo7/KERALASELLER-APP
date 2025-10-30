@@ -156,7 +156,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
             <Text style={styles.title}>Kerala Sellers</Text>
             <Text style={styles.subtitle}>Seller Login</Text>
           </View> */}
-
+<View style={styles.header}>
+  <Text style={styles.logoText}>KERALA SELLERS</Text>
+</View>
           {/* Login Form */}
           <View style={styles.formCard}>
             {/* Phone Input */}
@@ -339,6 +341,14 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 20,
   },
+  logoText: {
+  fontSize: 28,
+  fontWeight: 'bold',
+  color: '#FFFFFF',
+  letterSpacing: 2,
+  marginBottom: 20,
+},
+
   label: {
     fontSize: 14,
     fontWeight: '600',

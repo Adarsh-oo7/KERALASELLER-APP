@@ -5,18 +5,27 @@
     "owner": "adarsh-090",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.keralasellers.app",
+      "icon": "./assets/images/logo.png",
       "infoPlist": {
         "NSCameraUsageDescription": "This app requires camera access to upload product images.",
         "NSPhotoLibraryUsageDescription": "This app requires photo library access to select product images."
       }
     },
     "android": {
+      "icon": "./assets/images/logo.png",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
@@ -32,6 +41,7 @@
       ]
     },
     "web": {
+      "favicon": "./assets/images/logo.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -42,6 +52,15 @@
           "photosPermission": "Allow Kerala Sellers to access your photos to upload product images.",
           "cameraPermission": "Allow Kerala Sellers to use your camera to take product photos."
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0F172A",
+          "image": "./assets/images/logo.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
       ]
     ],
     "extra": {
@@ -51,4 +70,3 @@
     }
   }
 }
-
