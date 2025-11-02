@@ -7,6 +7,17 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    
+    // ✅ ADD ICON
+    "icon": "./assets/images/icon.png",
+    
+    // ✅ ADD SPLASH SCREEN
+    "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.keralasellers.app",
@@ -15,8 +26,10 @@
         "NSPhotoLibraryUsageDescription": "This app requires photo library access to select product images."
       }
     },
+    
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
@@ -31,9 +44,12 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
+    
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/images/icon.png"
     },
+    
     "plugins": [
       "expo-secure-store",
       [
@@ -42,8 +58,18 @@
           "photosPermission": "Allow Kerala Sellers to access your photos to upload product images.",
           "cameraPermission": "Allow Kerala Sellers to use your camera to take product photos."
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
       ]
     ],
+    
     "extra": {
       "eas": {
         "projectId": "7902f3e1-3552-47d5-9310-31d8542ae468"
@@ -51,4 +77,3 @@
     }
   }
 }
-

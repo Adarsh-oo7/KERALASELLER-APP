@@ -1,4 +1,5 @@
-// config/api.ts - ✅ AUTO-SWITCHING VERSION
+// config/api.ts - ✅ FIXED VERSION WITH PROPER TOKEN HANDLING
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -10,14 +11,12 @@ export interface ApiEnvironment {
   debug?: boolean;
 }
 
-// Get production URL from app.json
 const getProductionBaseURL = (): string => {
   const configUrl = Constants.expoConfig?.extra?.apiBaseUrl;
   if (configUrl) return configUrl;
   return 'https://keralaseller-backend.onrender.com';
 };
 
-// Get development URL based on platform
 const getDevelopmentBaseURL = (): string => {
   if (Platform.OS === 'android') return 'http://10.0.2.2:8000';
   if (Platform.OS === 'ios') return 'http://192.168.1.4:8000';
@@ -32,7 +31,6 @@ const getDevelopmentWebSocketURL = (): string => {
   return getDevelopmentBaseURL().replace('http://', 'ws://') + '/ws/';
 };
 
-// ✅ CRITICAL FIX: Auto-detect environment
 const detectEnvironment = (): 'development' | 'production' => {
   if (__DEV__) {
     console.log('🔧 Detected: Development mode');
@@ -55,7 +53,6 @@ export const API_CONFIG = {
     websocketURL: getProductionWebSocketURL(),
     debug: false,
   } as ApiEnvironment,
-  // ✅ FIXED: Auto-detect instead of hardcoded
   current: detectEnvironment(),
 };
 
@@ -107,16 +104,81 @@ export const ENDPOINTS = {
   wishlist: '/api/',
 } as const;
 
+class CacheManager {
+  private cache = new Map<string, { data: any; timestamp: number }>();
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  set(key: string, data: any): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  get(key: string): any | null {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.timestamp > this.CACHE_DURATION) {
+      this.cache.delete(key);
+      return null;
+    }
+    return cached.data;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  remove(key: string): void {
+    this.cache.delete(key);
+  }
+}
+
+class RequestQueueManager {
+  private queue = new Map<string, Promise<any>>();
+
+  async executeOrQueue(key: string, execute: () => Promise<any>): Promise<any> {
+    if (this.queue.has(key)) {
+      return this.queue.get(key)!;
+    }
+
+    const promise = execute().finally(() => {
+      this.queue.delete(key);
+    });
+
+    this.queue.set(key, promise);
+    return promise;
+  }
+
+  clear(): void {
+    this.queue.clear();
+  }
+}
+
 class TokenManager {
   private static ACCESS_TOKEN_KEY = '@kerala_sellers_access_token';
   private static REFRESH_TOKEN_KEY = '@kerala_sellers_refresh_token';
   private static USER_DATA_KEY = '@kerala_sellers_user_data';
   private static SELLER_DATA_KEY = '@kerala_sellers_seller_data';
 
+  // ✅ Cache token in memory for faster access
+  private static accessTokenCache: string | null = null;
+  private static refreshTokenCache: string | null = null;
+
   static async getAccessToken(): Promise<string | null> {
     try {
+      // ✅ Check memory cache first
+      if (this.accessTokenCache) {
+        if (__DEV__) console.log('🔑 TokenManager: Access token from memory cache');
+        return this.accessTokenCache;
+      }
+
+      // Get from AsyncStorage
       const token = await AsyncStorage.getItem(this.ACCESS_TOKEN_KEY);
-      if (__DEV__ && token) console.log('🔑 TokenManager: Access token retrieved');
+      
+      // ✅ Cache in memory
+      if (token) {
+        this.accessTokenCache = token;
+        if (__DEV__) console.log('🔑 TokenManager: Access token retrieved and cached');
+      }
+      
       return token;
     } catch (error) {
       console.error('❌ TokenManager: Error getting access token:', error);
@@ -126,6 +188,8 @@ class TokenManager {
 
   static async setAccessToken(token: string): Promise<void> {
     try {
+      // ✅ Set both memory and storage
+      this.accessTokenCache = token;
       await AsyncStorage.setItem(this.ACCESS_TOKEN_KEY, token);
       if (__DEV__) console.log('🔑 TokenManager: Access token stored');
     } catch (error) {
@@ -135,7 +199,19 @@ class TokenManager {
 
   static async getRefreshToken(): Promise<string | null> {
     try {
-      return await AsyncStorage.getItem(this.REFRESH_TOKEN_KEY);
+      // ✅ Check memory cache first
+      if (this.refreshTokenCache) {
+        return this.refreshTokenCache;
+      }
+
+      const token = await AsyncStorage.getItem(this.REFRESH_TOKEN_KEY);
+      
+      // ✅ Cache in memory
+      if (token) {
+        this.refreshTokenCache = token;
+      }
+      
+      return token;
     } catch (error) {
       console.error('❌ TokenManager: Error getting refresh token:', error);
       return null;
@@ -144,6 +220,8 @@ class TokenManager {
 
   static async setRefreshToken(token: string): Promise<void> {
     try {
+      // ✅ Set both memory and storage
+      this.refreshTokenCache = token;
       await AsyncStorage.setItem(this.REFRESH_TOKEN_KEY, token);
     } catch (error) {
       console.error('❌ TokenManager: Error setting refresh token:', error);
@@ -190,6 +268,10 @@ class TokenManager {
 
   static async clearAll(): Promise<void> {
     try {
+      // ✅ Clear both memory and storage
+      this.accessTokenCache = null;
+      this.refreshTokenCache = null;
+      
       await AsyncStorage.multiRemove([
         this.ACCESS_TOKEN_KEY,
         this.REFRESH_TOKEN_KEY,
@@ -207,13 +289,15 @@ export class ApiClient {
   private baseURL: string;
   private timeout: number;
   private debug: boolean;
+  private cacheManager = new CacheManager();
+  private requestQueueManager = new RequestQueueManager();
 
   constructor() {
     const config = getApiConfig();
     this.baseURL = config.baseURL;
     this.timeout = config.timeout;
     this.debug = config.debug || false;
-    
+
     if (this.debug) {
       console.log('🌐 ApiClient initialized for Kerala Sellers');
       console.log('📱 Platform:', Platform.OS);
@@ -225,6 +309,7 @@ export class ApiClient {
     return `${this.baseURL}${endpoint}`;
   }
 
+  // ✅ FIXED: Properly get and set headers with token
   private async getHeaders(includeAuth: boolean = false): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Accept': 'application/json',
@@ -236,15 +321,57 @@ export class ApiClient {
 
     if (includeAuth) {
       const token = await TokenManager.getAccessToken();
+      
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
-        if (this.debug) console.log('🔐 Authorization header added');
-      } else if (this.debug) {
-        console.warn('⚠️ No access token available for authenticated request');
+        if (this.debug) {
+          console.log('✅ Token added to headers:', `Bearer ${token.substring(0, 20)}...`);
+        }
+      } else {
+        console.warn('⚠️ NO TOKEN AVAILABLE - Request will be UNAUTHORIZED');
+        if (this.debug) {
+          console.warn('🔍 Auth status:', {
+            hasToken: !!token,
+            tokenLength: token?.length || 0,
+          });
+        }
       }
     }
 
     return headers;
+  }
+
+  // ✅ FIXED: Retry logic with better error handling
+  private async makeRequestWithRetry(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    endpoint: string,
+    data?: any,
+    includeAuth: boolean = false,
+    retries: number = 2
+  ): Promise<any> {
+    try {
+      return await this.makeRequest(method, endpoint, data, includeAuth);
+    } catch (error: any) {
+      // ✅ Don't retry 401 errors - they're auth failures
+      if (error.message?.includes('401')) {
+        console.error('🔐 Authentication failed - not retrying');
+        throw error;
+      }
+
+      const isRetryable =
+        error.message.includes('timeout') ||
+        error.message.includes('503') ||
+        error.message.includes('502') ||
+        error.message.includes('504');
+
+      if (retries > 0 && isRetryable) {
+        const delay = (3 - retries) * 1000;
+        console.warn(`⏳ Retry attempt ${3 - retries}/${2} after ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.makeRequestWithRetry(method, endpoint, data, includeAuth, retries - 1);
+      }
+      throw error;
+    }
   }
 
   private async makeRequest(
@@ -258,6 +385,10 @@ export class ApiClient {
 
     if (this.debug) {
       console.log(`🔍 API ${method}:`, url);
+      console.log('📋 Headers:', {
+        'Authorization': headers['Authorization'] ? `Bearer ${headers['Authorization'].substring(0, 20)}...` : 'NOT SET',
+        'Content-Type': headers['Content-Type'],
+      });
       if (data && method !== 'GET') {
         console.log('📦 Request Data:', JSON.stringify(data, null, 2));
       }
@@ -286,7 +417,7 @@ export class ApiClient {
 
       const responseText = await response.text();
       let responseData;
-      
+
       try {
         responseData = JSON.parse(responseText);
       } catch {
@@ -294,21 +425,26 @@ export class ApiClient {
       }
 
       if (!response.ok) {
-        const errorMessage = responseData?.error || 
-                           responseData?.detail || 
-                           responseData?.message || 
-                           responseData || 
-                           'Request failed';
-        
+        const errorMessage = responseData?.error ||
+          responseData?.detail ||
+          responseData?.message ||
+          responseData ||
+          'Request failed';
+
         if (this.debug) {
           console.error(`❌ API ${method} Error [${response.status}]:`, errorMessage);
         }
-        
+
+        // ✅ FIXED: Handle 401 properly
         if (response.status === 401) {
-          console.warn('🔐 Unauthorized - clearing tokens');
+          console.warn('🔐 Unauthorized - clearing tokens and logging out');
           await TokenManager.clearAll();
+          this.cacheManager.clear();
+          
+          // Optionally trigger logout event here
+          // This would be better handled in your auth context
         }
-        
+
         throw new Error(`HTTP ${response.status}: ${errorMessage}`);
       }
 
@@ -325,7 +461,7 @@ export class ApiClient {
         console.error(`⏰ API ${method} Timeout:`, url);
         throw new Error(`Request timeout after ${this.timeout}ms`);
       }
-      
+
       if (this.debug) {
         console.error(`❌ API ${method} Error:`, error.message);
       }
@@ -333,27 +469,57 @@ export class ApiClient {
     }
   }
 
-  async get(endpoint: string, includeAuth: boolean = false): Promise<any> {
-    return this.makeRequest('GET', endpoint, undefined, includeAuth);
+  async get(
+    endpoint: string,
+    includeAuth: boolean = true, // ✅ DEFAULT TO TRUE
+    options?: { useCache?: boolean; deduplicateKey?: string }
+  ): Promise<any> {
+    const useCache = options?.useCache !== false;
+    const deduplicateKey = options?.deduplicateKey || endpoint;
+
+    if (useCache) {
+      const cached = this.cacheManager.get(endpoint);
+      if (cached) {
+        if (this.debug) console.log('💾 Cache hit:', endpoint);
+        return cached;
+      }
+    }
+
+    const response = await this.requestQueueManager.executeOrQueue(
+      deduplicateKey,
+      async () => {
+        const data = await this.makeRequestWithRetry('GET', endpoint, undefined, includeAuth);
+        if (useCache) {
+          this.cacheManager.set(endpoint, data);
+        }
+        return data;
+      }
+    );
+
+    return response;
   }
 
-  async post(endpoint: string, data?: any, includeAuth: boolean = false): Promise<any> {
-    return this.makeRequest('POST', endpoint, data, includeAuth);
+  async post(endpoint: string, data?: any, includeAuth: boolean = true): Promise<any> { // ✅ DEFAULT TO TRUE
+    this.cacheManager.remove(endpoint);
+    return this.makeRequestWithRetry('POST', endpoint, data, includeAuth);
   }
 
-  async put(endpoint: string, data?: any, includeAuth: boolean = false): Promise<any> {
-    return this.makeRequest('PUT', endpoint, data, includeAuth);
+  async put(endpoint: string, data?: any, includeAuth: boolean = true): Promise<any> { // ✅ DEFAULT TO TRUE
+    this.cacheManager.remove(endpoint);
+    return this.makeRequestWithRetry('PUT', endpoint, data, includeAuth);
   }
 
-  async patch(endpoint: string, data?: any, includeAuth: boolean = false): Promise<any> {
-    return this.makeRequest('PATCH', endpoint, data, includeAuth);
+  async patch(endpoint: string, data?: any, includeAuth: boolean = true): Promise<any> { // ✅ DEFAULT TO TRUE
+    this.cacheManager.remove(endpoint);
+    return this.makeRequestWithRetry('PATCH', endpoint, data, includeAuth);
   }
 
-  async delete(endpoint: string, includeAuth: boolean = false): Promise<any> {
-    return this.makeRequest('DELETE', endpoint, undefined, includeAuth);
+  async delete(endpoint: string, includeAuth: boolean = true): Promise<any> { // ✅ DEFAULT TO TRUE
+    this.cacheManager.remove(endpoint);
+    return this.makeRequestWithRetry('DELETE', endpoint, undefined, includeAuth);
   }
 
-  async update(endpoint: string, data?: any, includeAuth: boolean = false): Promise<any> {
+  async update(endpoint: string, data?: any, includeAuth: boolean = true): Promise<any> { // ✅ DEFAULT TO TRUE
     try {
       if (this.debug) console.log('🔄 Smart Update: Trying PATCH first...');
       return await this.patch(endpoint, data, includeAuth);
@@ -368,12 +534,12 @@ export class ApiClient {
 
   async healthCheck(): Promise<boolean> {
     try {
-      await this.get('/health/', false);
+      await this.get('/health/', false, { useCache: false });
       return true;
     } catch (error) {
       if (this.debug) console.log('🏥 Health check failed - trying alternative endpoint');
       try {
-        await this.get('/user/dashboard/', true);
+        await this.get('/user/dashboard/', true, { useCache: false });
         return true;
       } catch (altError) {
         return false;
@@ -383,7 +549,7 @@ export class ApiClient {
 
   async testAuth(): Promise<any> {
     try {
-      return await this.get(ENDPOINTS.testAuth, true);
+      return await this.get(ENDPOINTS.testAuth, true, { useCache: false });
     } catch (error) {
       if (this.debug) console.log('🔐 Auth test failed:', error);
       throw error;
@@ -393,7 +559,7 @@ export class ApiClient {
   async uploadFile(endpoint: string, file: any, additionalData?: Record<string, any>): Promise<any> {
     const url = this.buildURL(endpoint);
     const token = await TokenManager.getAccessToken();
-    
+
     const formData = new FormData();
     formData.append('file', {
       uri: file.uri,
@@ -412,17 +578,26 @@ export class ApiClient {
       'Content-Type': 'multipart/form-data',
     };
 
+    // ✅ IMPORTANT: Always add token for file uploads
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+      if (this.debug) console.log('✅ Token added to file upload');
+    } else {
+      console.warn('⚠️ NO TOKEN FOR FILE UPLOAD');
     }
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
       const response = await fetch(url, {
         method: 'POST',
         body: formData,
         headers,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       const responseData = await response.json();
 
       if (!response.ok) {
@@ -441,85 +616,99 @@ export class ApiClient {
       throw error;
     }
   }
+
+  clearCache(): void {
+    this.cacheManager.clear();
+    console.log('💾 Cache cleared');
+  }
+
+  clearAll(): void {
+    this.cacheManager.clear();
+    this.requestQueueManager.clear();
+    console.log('🧹 All cache and queues cleared');
+  }
 }
 
 export const apiClient = new ApiClient();
 
+// ✅ FIXED: All methods now default to includeAuth = true
 export const api = {
   login: (phone: string, password: string) => {
     console.log('🔐 API: Login attempt for phone:', phone);
-    return apiClient.post(ENDPOINTS.login, { phone, password });
+    return apiClient.post(ENDPOINTS.login, { phone, password }, false); // ✅ False for login
   },
   register: (userData: any) => {
     console.log('📝 API: Registration for:', userData.name);
-    return apiClient.post(ENDPOINTS.register, userData);
+    return apiClient.post(ENDPOINTS.register, userData, false); // ✅ False for register
   },
-  sendOTP: (phone: string) => apiClient.post(ENDPOINTS.sendOTP, { phone }),
+  sendOTP: (phone: string) => apiClient.post(ENDPOINTS.sendOTP, { phone }, false), // ✅ False for OTP
   getDashboard: () => {
     console.log('🏠 API: Fetching dashboard');
-    return apiClient.get(ENDPOINTS.dashboard, true);
+    return apiClient.get(ENDPOINTS.dashboard); // ✅ Default to true
   },
   getStoreProfile: () => {
     console.log('🏪 API: Fetching store profile');
-    return apiClient.get(ENDPOINTS.storeProfile, true);
+    return apiClient.get(ENDPOINTS.storeProfile); // ✅ Default to true
   },
   updateStoreProfile: (data: any) => {
     console.log('🏪 API: Updating store profile');
-    return apiClient.update(ENDPOINTS.storeProfile, data, true);
+    return apiClient.update(ENDPOINTS.storeProfile, data); // ✅ Default to true
   },
-  getProfile: () => apiClient.get(ENDPOINTS.profile, true),
-  updateProfile: (data: any) => apiClient.update(ENDPOINTS.profile, data, true),
+  getProfile: () => apiClient.get(ENDPOINTS.profile),
+  updateProfile: (data: any) => apiClient.update(ENDPOINTS.profile, data),
   getOrders: () => {
     console.log('📋 API: Fetching orders');
-    return apiClient.get(ENDPOINTS.orders, true);
+    return apiClient.get(ENDPOINTS.orders); // ✅ Default to true
   },
-  getOrder: (id: string) => apiClient.get(`${ENDPOINTS.orders}${id}/`, true),
-  updateOrderStatus: (id: string, status: string) => 
-    apiClient.patch(`${ENDPOINTS.orders}${id}/`, { status }, true),
+  getOrder: (id: string) => apiClient.get(`${ENDPOINTS.orders}${id}/`),
+  updateOrderStatus: (id: string, status: string) =>
+    apiClient.patch(`${ENDPOINTS.orders}${id}/`, { status }),
   getProducts: () => {
     console.log('📦 API: Fetching products');
-    return apiClient.get(ENDPOINTS.products, true);
+    return apiClient.get(ENDPOINTS.products); // ✅ Default to true
   },
-  getProduct: (id: string) => apiClient.get(`${ENDPOINTS.products}${id}/`, true),
-  createProduct: (data: any) => apiClient.post(ENDPOINTS.products, data, true),
-  updateProduct: (id: string, data: any) => apiClient.update(`${ENDPOINTS.products}${id}/`, data, true),
-  deleteProduct: (id: string) => apiClient.delete(`${ENDPOINTS.products}${id}/`, true),
-  getAnalytics: () => apiClient.get(ENDPOINTS.analytics, true),
-  getSalesReport: (params?: any) => apiClient.get(ENDPOINTS.salesReport, true),
-  getRevenueReport: (params?: any) => apiClient.get(ENDPOINTS.revenueReport, true),
-  getStock: () => apiClient.get(ENDPOINTS.stock, true),
-  getStockAlerts: () => apiClient.get(ENDPOINTS.stockAlerts, true),
-  getStockHistory: () => apiClient.get(ENDPOINTS.stockHistory, true),
-  updateStock: (productId: string, quantity: number) => 
-    apiClient.patch(`${ENDPOINTS.stock}${productId}/`, { quantity }, true),
+  getProduct: (id: string) => apiClient.get(`${ENDPOINTS.products}${id}/`),
+  createProduct: (data: any) => apiClient.post(ENDPOINTS.products, data),
+  updateProduct: (id: string, data: any) => apiClient.update(`${ENDPOINTS.products}${id}/`, data),
+  deleteProduct: (id: string) => apiClient.delete(`${ENDPOINTS.products}${id}/`),
+  getAnalytics: () => apiClient.get(ENDPOINTS.analytics),
+  getSalesReport: (params?: any) => apiClient.get(ENDPOINTS.salesReport),
+  getRevenueReport: (params?: any) => apiClient.get(ENDPOINTS.revenueReport),
+  getStock: () => apiClient.get(ENDPOINTS.stock),
+  getStockAlerts: () => apiClient.get(ENDPOINTS.stockAlerts),
+  getStockHistory: () => apiClient.get(ENDPOINTS.stockHistory),
+  updateStock: (productId: string, quantity: number) =>
+    apiClient.patch(`${ENDPOINTS.stock}${productId}/`, { quantity }),
   getNotifications: () => {
     console.log('🔔 API: Fetching notifications');
-    return apiClient.get(ENDPOINTS.notifications, true);
+    return apiClient.get(ENDPOINTS.notifications);
   },
-  markNotificationRead: (id: string) => 
-    apiClient.patch(ENDPOINTS.markNotificationRead.replace('{id}', id), {}, true),
+  markNotificationRead: (id: string) =>
+    apiClient.patch(ENDPOINTS.markNotificationRead.replace('{id}', id), {}),
   getTransactionHistory: () => {
     console.log('📜 API: Fetching transaction history');
-    return apiClient.get(ENDPOINTS.transactionHistory, true);
+    return apiClient.get(ENDPOINTS.transactionHistory);
   },
-  getTransactions: (params?: any) => apiClient.get(ENDPOINTS.transactions, true),
-  getPaymentHistory: () => apiClient.get(ENDPOINTS.paymentHistory, true),
-  getLocalBills: () => apiClient.get(ENDPOINTS.localBills, true),
+  getTransactions: (params?: any) => apiClient.get(ENDPOINTS.transactions),
+  getPaymentHistory: () => apiClient.get(ENDPOINTS.paymentHistory),
+  getLocalBills: () => apiClient.get(ENDPOINTS.localBills),
   generateBill: (billData: any) => {
     console.log('🧾 API: Generating local bill');
-    return apiClient.post(ENDPOINTS.generateBill, billData, true);
+    return apiClient.post(ENDPOINTS.generateBill, billData);
   },
-  getBillHistory: () => apiClient.get(ENDPOINTS.billHistory, true),
-  getSubscriptions: () => apiClient.get(ENDPOINTS.subscriptions, true),
-  getSubscriptionData: () => apiClient.get(ENDPOINTS.subscriptionStatus, true),
-  upgradeSubscription: (planData: any) => apiClient.post(ENDPOINTS.upgradeSubscription, planData, true),
-  getSettings: () => apiClient.get(ENDPOINTS.settings, true),
-  updateSettings: (data: any) => apiClient.update(ENDPOINTS.updateSettings, data, true),
-  uploadProductImage: (file: any, productData?: any) => 
+  getBillHistory: () => apiClient.get(ENDPOINTS.billHistory),
+  getSubscriptions: () => apiClient.get(ENDPOINTS.subscriptions),
+  getSubscriptionData: () => apiClient.get(ENDPOINTS.subscriptionStatus),
+  upgradeSubscription: (planData: any) => apiClient.post(ENDPOINTS.upgradeSubscription, planData),
+  getSettings: () => apiClient.get(ENDPOINTS.settings),
+  updateSettings: (data: any) => apiClient.update(ENDPOINTS.updateSettings, data),
+  uploadProductImage: (file: any, productData?: any) =>
     apiClient.uploadFile(ENDPOINTS.uploadImage, file, productData),
   testConnection: () => apiClient.healthCheck(),
   testAuth: () => apiClient.testAuth(),
   TokenManager,
+  clearCache: () => apiClient.clearCache(),
+  clearAll: () => apiClient.clearAll(),
 };
 
 export const switchToProduction = () => {
@@ -551,6 +740,13 @@ if (__DEV__) {
   console.log('Base URL:', getBaseURL());
   console.log('Timeout:', getApiConfig().timeout);
   console.log('Debug Mode:', getApiConfig().debug);
+  console.log('✅ Features:');
+  console.log('  - ✅ Token included in ALL authenticated requests');
+  console.log('  - ✅ Retry logic (2 attempts, not on 401)');
+  console.log('  - ✅ Request deduplication');
+  console.log('  - ✅ Response caching (5 min)');
+  console.log('  - ✅ Memory token cache');
+  console.log('  - ✅ Auto environment detection');
   console.log('🏪 Ready for Kerala Sellers');
 }
 

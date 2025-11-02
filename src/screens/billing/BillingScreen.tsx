@@ -1,3 +1,4 @@
+// screens/BillingScreen.tsx - ✅ REARRANGED: Current Bill TOP, Add Products BELOW
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -57,7 +58,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Store information (you can fetch this from your API)
   const [storeInfo] = useState({
     name: 'Kerala Sellers Store',
     sellerName: 'Store Owner',
@@ -66,7 +66,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     email: 'store@keralasellers.com'
   });
 
-  // Fetch products
   const fetchProducts = useCallback(async () => {
     try {
       console.log('🔍 Fetching products for billing...');
@@ -94,7 +93,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     }
   }, []);
 
-  // Filter products based on search
   useEffect(() => {
     if (!searchTerm.trim()) {
       setFilteredProducts(products);
@@ -117,7 +115,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     fetchProducts();
   };
 
-  // Add product to bill
   const addToBill = (product: Product) => {
     if (product.total_stock <= 0) {
       setError(`${product.name} is out of stock`);
@@ -145,7 +142,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     setTimeout(() => setSuccess(''), 2000);
   };
 
-  // Update quantity
   const updateQuantity = (productId: number, quantity: number) => {
     const newQty = Math.max(1, quantity);
     const product = products.find(p => p.id === productId);
@@ -161,17 +157,14 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     ));
   };
 
-  // Remove from bill
   const removeFromBill = (productId: number) => {
     setBillItems(prev => prev.filter(item => item.id !== productId));
   };
 
-  // Calculate total
   const calculateTotal = () => {
     return billItems.reduce((total, item) => total + (parseFloat(item.price) * item.quantity), 0);
   };
 
-  // Validate customer info
   const validateCustomerInfo = () => {
     if (customer.phone && customer.phone.length !== 10) {
       setError('Please enter a valid 10-digit phone number');
@@ -180,7 +173,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     return true;
   };
 
-  // Clear bill
   const clearBill = () => {
     setBillItems([]);
     setCustomer({ name: '', phone: '' });
@@ -189,7 +181,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     setTimeout(() => setSuccess(''), 2000);
   };
 
-  // Generate HTML for the bill
   const generateBillHTML = (billData: any) => {
     const currentDate = new Date().toLocaleDateString('en-IN', {
       year: 'numeric',
@@ -509,7 +500,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
 </html>`;
   };
 
-  // Generate and share/download PDF
   const handleGenerateBill = async () => {
     if (billItems.length === 0) {
       setError('Please add items to the bill.');
@@ -524,7 +514,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     setError('');
     
     try {
-      // Generate bill number
       const billNumber = `LB${Date.now()}`;
       
       const billData = {
@@ -537,10 +526,8 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
 
       console.log('🧾 Generating local bill:', billData);
 
-      // Generate HTML
       const htmlContent = generateBillHTML(billData);
 
-      // Generate PDF
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
         base64: false,
@@ -548,7 +535,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
 
       console.log('✅ PDF generated at:', uri);
 
-      // Show options to user
       Alert.alert(
         'Bill Generated Successfully! 🎉',
         `Local bill #${billNumber} has been created.`,
@@ -573,7 +559,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
         ]
       );
 
-      // Reset form
       clearBill();
       
     } catch (error: any) {
@@ -584,7 +569,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     }
   };
 
-  // Share bill via various apps
   const shareBill = async (uri: string, billNumber: string) => {
     try {
       if (await Sharing.isAvailableAsync()) {
@@ -593,7 +577,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
           dialogTitle: `Share Bill #${billNumber}`,
         });
       } else {
-        // Fallback to basic share
         await Share.share({
           url: uri,
           title: `Bill #${billNumber}`,
@@ -606,13 +589,11 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     }
   };
 
-  // Save bill to device storage
   const saveBill = async (uri: string, billNumber: string) => {
     try {
       const fileName = `Kerala_Sellers_Bill_${billNumber}.pdf`;
       const downloadsDir = FileSystem.documentDirectory + 'Downloads/';
       
-      // Create downloads directory if it doesn't exist
       await FileSystem.makeDirectoryAsync(downloadsDir, { intermediates: true });
       
       const newUri = downloadsDir + fileName;
@@ -638,7 +619,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     }
   };
 
-  // Print bill
   const printBill = async (htmlContent: string) => {
     try {
       await Print.printAsync({
@@ -650,7 +630,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     }
   };
 
-  // Render product item
   const renderProduct = ({ item }: { item: Product }) => (
     <TouchableOpacity 
       style={[
@@ -682,7 +661,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
     </TouchableOpacity>
   );
 
-  // Render bill item
   const renderBillItem = ({ item }: { item: BillItem }) => (
     <View style={styles.billItem}>
       <View style={styles.billItemInfo}>
@@ -728,9 +706,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      {/* ✅ REMOVED: Custom header (now handled by TopBar) */}
-      
-      {/* ✅ UPDATED: Header Info Section */}
       <View style={styles.headerInfo}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Local Billing</Text>
@@ -741,7 +716,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
         </View>
       </View>
 
-      {/* Status Messages */}
       {error ? (
         <View style={styles.errorMessage}>
           <Ionicons name="alert-circle" size={16} color="#991b1b" />
@@ -768,7 +742,114 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Product Selection */}
+        {/* ✅ CURRENT BILL SECTION - MOVED TO TOP */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="receipt" size={20} color="#1f2937" />
+            <Text style={styles.sectionTitle}>Current Bill</Text>
+            {billItems.length > 0 && (
+              <TouchableOpacity style={styles.clearButton} onPress={clearBill}>
+                <Ionicons name="trash" size={14} color="white" />
+                <Text style={styles.clearButtonText}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          <View style={styles.customerSection}>
+            <Text style={styles.customerSectionTitle}>Customer Information (Optional)</Text>
+            <View style={styles.customerInputs}>
+              <View style={styles.inputContainer}>
+                <Ionicons name="person" size={16} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.customerInput}
+                  placeholder="Customer Name"
+                  value={customer.name}
+                  onChangeText={(text) => setCustomer({...customer, name: text})}
+                  placeholderTextColor="#9ca3af"
+                />
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Ionicons name="call" size={16} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.customerInput}
+                  placeholder="Phone Number"
+                  value={customer.phone}
+                  onChangeText={(text) => setCustomer({...customer, phone: text.replace(/\D/g, '').slice(0, 10)})}
+                  keyboardType="numeric"
+                  maxLength={10}
+                  placeholderTextColor="#9ca3af"
+                />
+              </View>
+            </View>
+          </View>
+          
+          {billItems.length > 0 ? (
+            <>
+              <FlatList
+                data={billItems}
+                renderItem={renderBillItem}
+                keyExtractor={(item) => item.id.toString()}
+                style={styles.billItemsList}
+                scrollEnabled={false}
+              />
+              
+              <View style={styles.billSummary}>
+                <View style={styles.summaryHeader}>
+                  <Ionicons name="calculator" size={18} color="#059669" />
+                  <Text style={styles.summaryTitle}>Bill Summary</Text>
+                </View>
+                
+                <View style={styles.summaryContent}>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Items:</Text>
+                    <Text style={styles.summaryValue}>{billItems.length}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Total Quantity:</Text>
+                    <Text style={styles.summaryValue}>
+                      {billItems.reduce((sum, item) => sum + item.quantity, 0)}
+                    </Text>
+                  </View>
+                  <View style={styles.summaryDivider} />
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.totalLabel}>Grand Total:</Text>
+                    <Text style={styles.totalValue}>₹{calculateTotal().toFixed(2)}</Text>
+                  </View>
+                </View>
+                
+                <Text style={styles.billType}>📋 Local Bill (In-store purchase)</Text>
+              </View>
+              
+              <TouchableOpacity 
+                style={[styles.generateButton, isProcessing && styles.disabledButton]}
+                onPress={handleGenerateBill}
+                disabled={isProcessing}
+                activeOpacity={0.7}
+              >
+                {isProcessing ? (
+                  <View style={styles.buttonContent}>
+                    <ActivityIndicator size="small" color="white" />
+                    <Text style={styles.buttonText}>Generating Bill...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.buttonContent}>
+                    <Ionicons name="document-text" size={18} color="white" />
+                    <Text style={styles.buttonText}>Generate & Download Bill</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.emptyBill}>
+              <Ionicons name="receipt-outline" size={48} color="#9ca3af" />
+              <Text style={styles.emptyText}>No items in bill</Text>
+              <Text style={styles.emptyHint}>Add products below to create a bill</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ✅ ADD PRODUCTS SECTION - MOVED BELOW */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Ionicons name="cube" size={20} color="#1f2937" />
@@ -825,117 +906,6 @@ const BillingScreen: React.FC<BillingScreenProps> = ({ navigation }) => {
             />
           )}
         </View>
-
-        {/* Current Bill */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="receipt" size={20} color="#1f2937" />
-            <Text style={styles.sectionTitle}>Current Bill</Text>
-            {billItems.length > 0 && (
-              <TouchableOpacity style={styles.clearButton} onPress={clearBill}>
-                <Ionicons name="trash" size={14} color="white" />
-                <Text style={styles.clearButtonText}>Clear All</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          {/* Customer Details */}
-          <View style={styles.customerSection}>
-            <Text style={styles.customerSectionTitle}>Customer Information (Optional)</Text>
-            <View style={styles.customerInputs}>
-              <View style={styles.inputContainer}>
-                <Ionicons name="person" size={16} color="#6b7280" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.customerInput}
-                  placeholder="Customer Name"
-                  value={customer.name}
-                  onChangeText={(text) => setCustomer({...customer, name: text})}
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-              
-              <View style={styles.inputContainer}>
-                <Ionicons name="call" size={16} color="#6b7280" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.customerInput}
-                  placeholder="Phone Number"
-                  value={customer.phone}
-                  onChangeText={(text) => setCustomer({...customer, phone: text.replace(/\D/g, '').slice(0, 10)})}
-                  keyboardType="numeric"
-                  maxLength={10}
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-            </View>
-          </View>
-          
-          {/* Bill Items */}
-          {billItems.length > 0 ? (
-            <>
-              <FlatList
-                data={billItems}
-                renderItem={renderBillItem}
-                keyExtractor={(item) => item.id.toString()}
-                style={styles.billItemsList}
-                scrollEnabled={false}
-              />
-              
-              {/* Bill Summary */}
-              <View style={styles.billSummary}>
-                <View style={styles.summaryHeader}>
-                  <Ionicons name="calculator" size={18} color="#059669" />
-                  <Text style={styles.summaryTitle}>Bill Summary</Text>
-                </View>
-                
-                <View style={styles.summaryContent}>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Items:</Text>
-                    <Text style={styles.summaryValue}>{billItems.length}</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Total Quantity:</Text>
-                    <Text style={styles.summaryValue}>
-                      {billItems.reduce((sum, item) => sum + item.quantity, 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryDivider} />
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.totalLabel}>Grand Total:</Text>
-                    <Text style={styles.totalValue}>₹{calculateTotal().toFixed(2)}</Text>
-                  </View>
-                </View>
-                
-                <Text style={styles.billType}>📋 Local Bill (In-store purchase)</Text>
-              </View>
-              
-              {/* Generate Bill Button */}
-              <TouchableOpacity 
-                style={[styles.generateButton, isProcessing && styles.disabledButton]}
-                onPress={handleGenerateBill}
-                disabled={isProcessing}
-                activeOpacity={0.7}
-              >
-                {isProcessing ? (
-                  <View style={styles.buttonContent}>
-                    <ActivityIndicator size="small" color="white" />
-                    <Text style={styles.buttonText}>Generating Bill...</Text>
-                  </View>
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <Ionicons name="document-text" size={18} color="white" />
-                    <Text style={styles.buttonText}>Generate & Download Bill</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <View style={styles.emptyBill}>
-              <Ionicons name="receipt-outline" size={48} color="#9ca3af" />
-              <Text style={styles.emptyText}>No items in bill</Text>
-              <Text style={styles.emptyHint}>Tap on products above to add them to the bill</Text>
-            </View>
-          )}
-        </View>
       </ScrollView>
     </View>
   );
@@ -947,7 +917,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   
-  // ✅ UPDATED: New header info section (compatible with TopBar)
   headerInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -977,7 +946,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   
-  // ✅ ENHANCED: Status messages with close buttons
   errorMessage: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1023,9 +991,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    marginBottom: 20,
   },
   
-  // ✅ ENHANCED: Section headers
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1067,7 +1035,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   
-  // ✅ ENHANCED: Search with clear button
   searchContainer: {
     position: 'relative',
     marginBottom: 16,
@@ -1106,7 +1073,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   productList: {
-    maxHeight: 300,
+    maxHeight: 400,
   },
   productItem: {
     flexDirection: 'row',
@@ -1156,7 +1123,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   
-  // ✅ ENHANCED: Empty states
   emptyState: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -1180,7 +1146,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   
-  // ✅ ENHANCED: Customer section
   customerSection: {
     marginBottom: 20,
   },
@@ -1287,7 +1252,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   
-  // ✅ ENHANCED: Bill summary
   billSummary: {
     backgroundColor: '#f8fafc',
     borderRadius: 8,
