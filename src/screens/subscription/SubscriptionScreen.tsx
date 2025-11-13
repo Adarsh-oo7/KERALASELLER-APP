@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// ✅ COMPLETE SUBSCRIPTION SCREEN WITH WEBVIEW PAYMENT - FIXED
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  Alert, RefreshControl, Platform, Linking,
+  Alert, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StackNavigationProp } from '@react-navigation/stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../../services/ApiClient';
 import SubscriptionService from '../../services/SubscriptionService';
 import { ApiError } from '../../types/api';
+import RazorpayWebView from '../../components/RazorpayWebView';
 
 // ✅ API Configuration
 const API_BASE_URL = __DEV__ 
-  ? 'http://10.0.2.2:8000'  // Android Emulator
+  ? 'http://10.0.2.2:8000'
   : 'https://keralaseller-backend.onrender.com';
 
 // ✅ Razorpay Key
@@ -79,7 +80,7 @@ const getStatusIcon = (status: string): string => {
   return icons[status] || '❓';
 };
 
-// ✅ ENHANCED CURRENT PLAN CARD (with Store Status)
+// ✅ CURRENT PLAN CARD (unchanged - keeping your existing code)
 const CurrentPlanCard: React.FC<CurrentPlanCardProps> = ({ 
   subscription, 
   isLoading, 
@@ -292,8 +293,17 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
   const [refreshing, setRefreshing] = useState(false);
   const [storeId, setStoreId] = useState<number | null>(null);
   
-  // ✅ NEW: Ref to store polling interval
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // ✅ UPDATED: WebView payment states with planId
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentData, setPaymentData] = useState<{
+    orderId: string;
+    amount: number;
+    planName: string;
+    planId: number;  // ← ADDED
+    userEmail: string;
+    userName: string;
+    userPhone: string;
+  } | null>(null);
 
   useEffect(() => {
     navigation.setOptions({
@@ -304,13 +314,6 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
         </TouchableOpacity>
       ),
     });
-    
-    // ✅ Cleanup polling on unmount
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
   }, [navigation]);
 
   const loadStoreId = useCallback(async () => {
@@ -409,8 +412,8 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
       const orderId = orderResponse.data.order_id;
       const amount = orderResponse.data.amount;
       
-      // ✅ Open payment flow
-      openPaymentFlow(orderId, planName, amount, planId);
+      // ✅ UPDATED: Pass planId to openPaymentFlow
+      await openPaymentFlow(orderId, planName, amount, planId);
       
     } catch (error: any) {
       console.error('❌ Subscription error:', error.response?.data || error);
@@ -427,9 +430,15 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
     }
   };
 
-  // ✅ IMPROVED WEB-BASED PAYMENT FLOW with AUTO POLLING
-  const openPaymentFlow = async (orderId: string, planName: string, amount: number, planId: number) => {
+  // ✅ UPDATED: Add planId parameter
+  const openPaymentFlow = async (
+    orderId: string, 
+    planName: string, 
+    amount: number,
+    planId: number  // ← ADDED
+  ) => {
     try {
+      // Get user details
       const userResponse = await apiClient.get('/user/store/profile/');
       const seller = userResponse.data.seller || {};
       const storeProfile = userResponse.data.store_profile || {};
@@ -438,58 +447,19 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
       const userName = seller.name || storeProfile.owner_name || 'Kerala Seller';
       const userPhone = seller.phone || storeProfile.seller_phone || storeProfile.whatsapp_number || '';
 
-      console.log('👤 User prefill data:', { userEmail, userName, userPhone });
+      console.log('👤 Opening payment for:', { userEmail, userName, userPhone, planId });
 
-      // Create Razorpay Standard Checkout URL
-      const baseUrl = 'https://api.razorpay.com/v1/checkout/embedded';
-      const params = new URLSearchParams({
-        key_id: RAZORPAY_KEY_ID,
-        amount: amount.toString(),
-        currency: 'INR',
-        order_id: orderId,
-        name: 'Kerala Sellers',
-        description: `${planName} Subscription`,
-        'prefill[email]': userEmail,
-        'prefill[contact]': userPhone,
-        'prefill[name]': userName,
-        'theme[color]': '#3b82f6'
+      // ✅ UPDATED: Store planId in paymentData
+      setPaymentData({
+        orderId,
+        amount,
+        planName,
+        planId,  // ← ADDED
+        userEmail,
+        userName,
+        userPhone,
       });
-
-      const razorpayUrl = `${baseUrl}?${params.toString()}`;
-
-      Alert.alert(
-        'Payment',
-        `Complete your ${planName} subscription payment of ₹${(amount / 100).toFixed(2)}`,
-        [
-          {
-            text: 'Continue to Payment',
-            onPress: async () => {
-              try {
-                const supported = await Linking.canOpenURL(razorpayUrl);
-                if (supported) {
-                  await Linking.openURL(razorpayUrl);
-                  
-                  // ✅ START AUTOMATIC STATUS POLLING
-                  startPaymentPolling(orderId, planId, planName);
-                  
-                } else {
-                  Alert.alert('Error', 'Cannot open payment page');
-                  setIsProcessing(null);
-                }
-              } catch (error) {
-                console.error('❌ Error opening link:', error);
-                Alert.alert('Error', 'Failed to open payment page');
-                setIsProcessing(null);
-              }
-            }
-          },
-          { 
-            text: 'Cancel', 
-            style: 'cancel',
-            onPress: () => setIsProcessing(null)
-          }
-        ]
-      );
+      setShowPaymentModal(true);
 
     } catch (error) {
       console.error('❌ Payment flow error:', error);
@@ -498,77 +468,107 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
     }
   };
 
-  // ✅ NEW: Automatic payment status polling
-  const startPaymentPolling = (orderId: string, planId: number, planName: string) => {
-    let pollCount = 0;
-    const maxPolls = 30; // Poll for up to 2 minutes (30 * 4 seconds)
+  // ✅ Payment success handler
+  const handlePaymentSuccess = async (
+    paymentId: string,
+    orderId: string,
+    signature: string
+  ) => {
+    console.log('✅ Payment success received');
+    setShowPaymentModal(false);
     
-    console.log('🔄 Starting automatic payment polling...');
+    await verifyPaymentAndActivate(
+      paymentId,
+      orderId,
+      signature,
+      paymentData?.planName || 'Plan'
+    );
+  };
+
+  // ✅ Payment failure handler
+  const handlePaymentFailure = (error: string) => {
+    console.log('❌ Payment failed:', error);
+    setShowPaymentModal(false);
+    setIsProcessing(null);
     
-    const pollInterval = setInterval(async () => {
-      pollCount++;
+    Alert.alert('Payment Failed', error || 'Payment could not be completed. Please try again.');
+  };
+
+  // ✅ Payment close handler
+  const handlePaymentClose = () => {
+    console.log('⚠️ Payment cancelled by user');
+    setShowPaymentModal(false);
+    setIsProcessing(null);
+    
+    Alert.alert('Payment Cancelled', 'You cancelled the payment');
+  };
+
+  // ✅ FIXED: Payment verification with plan_id and billing_cycle
+  const verifyPaymentAndActivate = async (
+    paymentId: string,
+    orderId: string,
+    signature: string,
+    planName: string
+  ) => {
+    try {
+      console.log('🔐 Verifying payment...');
       
-      try {
-        console.log(`🔍 Checking payment status (attempt ${pollCount}/${maxPolls})...`);
-        
-        // Check if subscription is now active
-        const subscriptionData = await loadSubscriptionData();
-        
-        if (subscriptionData && subscriptionData.is_active) {
-          // ✅ PAYMENT SUCCESSFUL!
-          clearInterval(pollInterval);
-          pollingIntervalRef.current = null;
-          setIsProcessing(null);
-          
-          Alert.alert(
-            'Payment Successful! 🎉',
-            `Your ${planName} subscription is now active! You can now sell products online and access all premium features.`,
-            [{ 
-              text: 'Great!', 
-              onPress: () => {
-                onRefresh(); // Refresh all data
-                navigation.navigate('Dashboard');
-              }
-            }]
-          );
-        } else if (pollCount >= maxPolls) {
-          // ⏱️ Timeout - stop polling
-          clearInterval(pollInterval);
-          pollingIntervalRef.current = null;
-          setIsProcessing(null);
-          
-          Alert.alert(
-            'Payment Status Unknown',
-            'We are still verifying your payment. Please check your subscription status in a few minutes or contact support if money was deducted.',
-            [
-              { 
-                text: 'Check Now', 
-                onPress: () => onRefresh()
-              },
-              { text: 'OK' }
-            ]
-          );
-        }
-      } catch (error: any) {
-        // Still no subscription, continue polling
-        console.log(`⏳ Payment not verified yet (attempt ${pollCount})...`);
-        
-        if (pollCount >= maxPolls) {
-          clearInterval(pollInterval);
-          pollingIntervalRef.current = null;
-          setIsProcessing(null);
-          
-          Alert.alert(
-            'Payment Verification Pending',
-            'Please wait a few moments and refresh to check your subscription status.',
-            [{ text: 'OK' }]
-          );
-        }
+      // ✅ FIX: Check if we have planId in paymentData
+      if (!paymentData?.planId) {
+        throw new Error('Plan ID not found in payment data');
       }
-    }, 4000); // Check every 4 seconds
-    
-    // Store interval ref for cleanup
-    pollingIntervalRef.current = pollInterval;
+      
+      console.log('📤 Sending payment verification data:', {
+        razorpay_payment_id: paymentId,
+        razorpay_order_id: orderId,
+        razorpay_signature: signature,
+        plan_id: paymentData.planId,
+        billing_cycle: billingCycle,
+      });
+      
+      // ✅ FIX: Send all required fields to backend
+      const verifyResponse = await apiClient.post('/api/subscriptions/verify-payment/', {
+        razorpay_payment_id: paymentId,
+        razorpay_order_id: orderId,
+        razorpay_signature: signature,
+        plan_id: paymentData.planId,  // ← ADDED
+        billing_cycle: billingCycle,  // ← ADDED
+      });
+      
+      console.log('✅ Payment verified:', verifyResponse.data);
+      setIsProcessing(null);
+      
+      Alert.alert(
+        '🎉 Payment Successful!',
+        `Your ${planName} subscription is now active! You can now sell products online.`,
+        [
+          {
+            text: 'Great!',
+            onPress: () => {
+              onRefresh();
+              navigation.navigate('Dashboard');
+            },
+          },
+        ]
+      );
+      
+    } catch (error: any) {
+      console.error('❌ Payment verification failed:', error);
+      console.error('❌ Error response:', error.response?.data);
+      
+      setIsProcessing(null);
+      
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.message || 
+                          error.message ||
+                          'Payment verification failed';
+      
+      Alert.alert(
+        'Verification Failed',
+        `${errorMessage}\n\nPayment ID: ${paymentId}\n\nPlease contact support if money was deducted.`,
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   if (isLoading) {
@@ -739,7 +739,7 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
                   {isProcessing === plan.id ? (
                     <View style={styles.buttonContent}>
                       <ActivityIndicator size="small" color="white" />
-                      <Text style={styles.buttonText}>Checking Payment...</Text>
+                      <Text style={[styles.buttonText, { color: 'white' }]}>Processing...</Text>
                     </View>
                   ) : isCurrentPlan ? (
                     <View style={styles.buttonContent}>
@@ -794,11 +794,28 @@ const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({ navigation }) =
           </View>
         </View>
       </ScrollView>
+
+      {/* ✅ WebView Payment Modal */}
+      {showPaymentModal && paymentData && (
+        <RazorpayWebView
+          visible={showPaymentModal}
+          orderId={paymentData.orderId}
+          amount={paymentData.amount}
+          keyId={RAZORPAY_KEY_ID}
+          userEmail={paymentData.userEmail}
+          userName={paymentData.userName}
+          userPhone={paymentData.userPhone}
+          planName={paymentData.planName}
+          onSuccess={handlePaymentSuccess}
+          onFailure={handlePaymentFailure}
+          onClose={handlePaymentClose}
+        />
+      )}
     </View>
   );
 };
 
-// ✅ COMPLETE STYLES (same as before)
+// ✅ STYLES (keeping your existing styles)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   headerRefreshButton: { padding: 8, marginRight: 8 },
@@ -875,7 +892,7 @@ const styles = StyleSheet.create({
   planButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, paddingHorizontal: 24, borderRadius: 12, borderWidth: 2, borderColor: '#3b82f6', backgroundColor: 'white' },
   popularButton: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
   currentPlanButton: { backgroundColor: '#f3f4f6', borderColor: '#d1d5db' },
-  processingButton: { backgroundColor: '#f9fafb', borderColor: '#d1d5db' },
+  processingButton: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
   buttonContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   buttonText: { fontSize: 16, fontWeight: '600', color: '#3b82f6' },
   benefitsSection: { backgroundColor: 'white', marginHorizontal: 20, marginBottom: 20, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: '#e5e7eb' },

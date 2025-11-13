@@ -12,13 +12,11 @@ import {
   Platform,
   ScrollView,
   StatusBar,
-  Image,  // ✅ ADD THIS
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AuthService from '../../services/AuthService';
-import { ApiError } from '../../types/api';
 
 type LoginScreenProps = {
   navigation: StackNavigationProp<any>;
@@ -62,6 +60,28 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
     }
   };
 
+  const getErrorMessage = (error: any): string => {
+    if (error.response?.status === 401) {
+      return 'Invalid phone number or password. Please try again.';
+    }
+    if (error.response?.status === 404) {
+      return 'Account not found. Please register first.';
+    }
+    if (error.response?.status === 429) {
+      return 'Too many login attempts. Please try again later.';
+    }
+    if (error.response?.status >= 500) {
+      return 'Server error. Please try again in a few moments.';
+    }
+    if (error.message === 'Network Error') {
+      return 'No internet connection. Please check your network.';
+    }
+    
+    return error.response?.data?.message 
+      || error.response?.data?.error 
+      || 'Login failed. Please try again.';
+  };
+
   const handleLogin = async (): Promise<void> => {
     setPhoneError('');
     setPasswordError('');
@@ -83,43 +103,49 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
 
     setLoading(true);
     try {
-      console.log('🔍 Attempting login with:', { phone: cleanPhone, password: '***' });
+      console.log('🔍 Attempting login with:', { phone: cleanPhone });
       
       const response = await AuthService.login(cleanPhone, password);
       
-      console.log('✅ Login successful, response:', response);
+      console.log('✅ Login successful');
       
       if (onLoginSuccess) {
         onLoginSuccess();
       }
       
-      Alert.alert(
-        'Welcome Back!', 
-        'Login successful! Redirecting to your dashboard.',
-        [
-          {
+      // Navigate based on store status
+      if (response.store_exists && response.store_profile_complete) {
+        Alert.alert(
+          'Welcome Back!',
+          'Login successful! Redirecting to your dashboard.',
+          [{
             text: 'Continue',
-            onPress: () => {
-              console.log('Navigating to CreateShop...');
-              navigation.navigate('CreateShop');
-            }
-          }
-        ]
-      );
+            onPress: () => navigation.replace('Dashboard')
+          }]
+        );
+      } else if (response.store_exists) {
+        Alert.alert(
+          'Complete Your Profile',
+          'Please complete your store setup.',
+          [{
+            text: 'Continue',
+            onPress: () => navigation.replace('CreateShop')
+          }]
+        );
+      } else {
+        Alert.alert(
+          'Create Your Store',
+          'Let\'s set up your seller account!',
+          [{
+            text: 'Get Started',
+            onPress: () => navigation.replace('CreateShop')
+          }]
+        );
+      }
       
     } catch (error: any) {
       console.error('❌ Login failed:', error);
-      
-      let errorMessage = 'Login failed. Please try again.';
-      
-      if (error.response?.data) {
-        const apiError = error.response.data;
-        errorMessage = apiError.message || apiError.error || 'Invalid phone number or password';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      Alert.alert('Login Failed', errorMessage);
+      Alert.alert('Login Failed', getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -135,7 +161,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
       
       <KeyboardAvoidingView 
         style={styles.keyboardView}
@@ -146,19 +172,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ✅ KERALA SELLERS LOGO IMAGE */}
-          {/* <View style={styles.header}>
-            <Image 
-              source={require('../../../assets/images/logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={styles.title}>Kerala Sellers</Text>
+          {/* Logo Header */}
+          <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.logoText}>KERALA</Text>
+              <Text style={styles.logoTextSecondary}>SELLERS</Text>
+            </View>
             <Text style={styles.subtitle}>Seller Login</Text>
-          </View> */}
-<View style={styles.header}>
-  <Text style={styles.logoText}>KERALA SELLERS</Text>
-</View>
+          </View>
+
           {/* Login Form */}
           <View style={styles.formCard}>
             {/* Phone Input */}
@@ -309,18 +331,34 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     paddingVertical: 40,
+    paddingHorizontal: 20,
   },
-  // ✅ LOGO IMAGE STYLE
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 20,
+  logoContainer: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 30,
+    paddingVertical: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  title: {
-    fontSize: 28,
+  logoText: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 3,
+    textAlign: 'center',
+  },
+  logoTextSecondary: {
+    fontSize: 24,
     fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 4,
+    color: '#DBEAFE',
+    letterSpacing: 4,
+    textAlign: 'center',
+    marginTop: -4,
   },
   subtitle: {
     fontSize: 16,
@@ -341,14 +379,6 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 20,
   },
-  logoText: {
-  fontSize: 28,
-  fontWeight: 'bold',
-  color: '#FFFFFF',
-  letterSpacing: 2,
-  marginBottom: 20,
-},
-
   label: {
     fontSize: 14,
     fontWeight: '600',

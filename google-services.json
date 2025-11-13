@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "658585155781",
+    "project_id": "keralasellers",
+    "storage_bucket": "keralasellers.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:658585155781:android:9cda1790f303cc4f0b18ac",
+        "android_client_info": {
+          "package_name": "keralasellers.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "658585155781-mne8o4pi2pdqhk1laifev3164ljrr6qi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBexLK-lgbvEHsfeVr01xrEcgMVwNaOJGQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "658585155781-mne8o4pi2pdqhk1laifev3164ljrr6qi.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

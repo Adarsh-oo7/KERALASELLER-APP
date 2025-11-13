@@ -866,7 +866,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3
   },
   
-  // ✅ FIXED: Product info with proper flex
   productInfo: { 
     flex: 1, 
     justifyContent: 'space-between',
@@ -949,11 +948,10 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: { 
     color: 'white', 
-    fontSize: 13,  // ✅ Reduced from 14
+    fontSize: 13,  
     fontWeight: '600' 
   },
   
-  // ✅ Empty state (keep same)
   emptyState: { 
     flex: 1, 
     justifyContent: 'center', 

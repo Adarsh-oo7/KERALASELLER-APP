@@ -1,59 +1,69 @@
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// Add to your existing axios api file
 
-// ✅ Correct URL for Android Emulator (10.0.2.2 = localhost)
-const API_BASE_URL = __DEV__ 
-  ? 'http://10.0.2.2:8000'  // Development: Android Emulator
-  : 'https://keralaseller-backend.onrender.com';  // Production
+import api from './axiosApi'; // Your existing axios instance
 
-console.log('🔧 API Base URL:', API_BASE_URL);
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 20000,
-  headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  async (config) => {
-    const token = await AsyncStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+// ✅ Add Payment API Methods
+export const PaymentAPI = {
+  // Get gateway status
+  getGatewayStatus: async () => {
+    try {
+      const response = await api.get('/api/payments/account/gateway_status/');
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return {
+          razorpay: { connected: false, verified: false, status: 'pending' },
+          cashfree: { connected: false, verified: false, status: 'pending' },
+          primary_gateway: null,
+          is_ready: false
+        };
+      }
+      throw error;
     }
-    console.log('🔄 API Request:', `${config.method?.toUpperCase()} ${config.url}`);
-    return config;
   },
-  (error) => {
-    console.error('❌ Request Error:', error);
-    return Promise.reject(error);
-  }
-);
 
-// Response interceptor
-api.interceptors.response.use(
-  (response) => {
-    console.log('✅ API Response:', response.status, response.config.url);
-    return response;
-  },
-  async (error) => {
-    console.error('❌ API Error:', {
-      status: error.response?.status,
-      url: error.config?.url,
-      message: error.message,
-    });
-
-    // Handle 401 errors (token expired)
-    if (error.response?.status === 401) {
-      await AsyncStorage.removeItem('accessToken');
-      // You can add navigation logic here if needed
+  // Get payout history
+  getPayoutHistory: async () => {
+    try {
+      const response = await api.get('/api/payments/payouts/history/');
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return { payouts: [] };
+      }
+      throw error;
     }
+  },
 
-    return Promise.reject(error);
-  }
-);
+  // Connect Razorpay
+  connectRazorpay: async (data: { key_id: string; key_secret: string }) => {
+    try {
+      const response = await api.post('/api/payments/razorpay/connect/', data);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Disconnect Razorpay
+  disconnectRazorpay: async () => {
+    try {
+      const response = await api.delete('/api/payments/razorpay/disconnect/');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Verify Razorpay
+  verifyRazorpayAccount: async () => {
+    try {
+      const response = await api.post('/api/payments/razorpay/verify/', {});
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+};
 
 export default api;

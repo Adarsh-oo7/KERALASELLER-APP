@@ -1,4 +1,4 @@
-// screens/DashboardScreen.tsx - ✅ COMPLETE VERSION WITH TOP 3 PRODUCTS
+// ✅ CLEAN: DashboardScreen without Razorpay check (since it's working)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
@@ -87,10 +87,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             return sum;
           }, 0);
 
-          // ✅ CHANGED: Show only top 3 products
+          // ✅ Show only top 3 products
           const topProducts = products
             .sort((a: any, b: any) => (b.sold_count || 0) - (a.sold_count || 0))
-            .slice(0, 3)  // ✅ CHANGED FROM 5 TO 3
+            .slice(0, 3)
             .map((p: any, index: number) => ({
               id: p.id,
               product__name: p.name || 'Unnamed',
@@ -112,26 +112,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
         } catch (parseError) {
           console.error('❌ Error parsing orders/products:', parseError);
         }
-      } else {
-        console.error('❌ Orders/Products error:');
-        if (ordersResponse.status === 'rejected') {
-          console.error('   Orders:', ordersResponse.reason?.message);
-        }
-        if (productsResponse.status === 'rejected') {
-          console.error('   Products:', productsResponse.reason?.message);
-        }
       }
 
       // ✅ Handle subscription
       if (subscriptionResponse.status === 'fulfilled') {
         try {
           const subData = subscriptionResponse.value?.data || subscriptionResponse.value || {};
-          if (subData?.is_active || subData?.status === 'active') {
-            setSubscriptionInfo(subData);
-            console.log('✅ Subscription data loaded');
-          } else {
-            setSubscriptionInfo(null);
-          }
+          setSubscriptionInfo(subData);
+          console.log('✅ Subscription data loaded:', subData);
         } catch (parseError) {
           console.error('❌ Error parsing subscription:', parseError);
           setSubscriptionInfo(null);
@@ -165,7 +153,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // ✅ Enhanced: Pull-to-refresh
   const onRefresh = useCallback((): void => {
     setRefreshing(true);
     setError('');
@@ -240,6 +227,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
   const totalProducts = useMemo(() => analytics.total_products || 0, [analytics]);
   const newOrders = useMemo(() => analytics.new_orders_count || 0, [analytics]);
   const topProducts = useMemo(() => analytics.top_selling_products || [], [analytics]);
+
+  // ✅ Subscription status logic
+  const hasActiveSubscription = useMemo(() => {
+    return subscriptionInfo?.is_active === true || subscriptionInfo?.has_subscription === true;
+  }, [subscriptionInfo]);
+
+  const isSubscriptionExpiringSoon = useMemo(() => {
+    return hasActiveSubscription && (subscriptionInfo?.days_remaining || 0) <= 7;
+  }, [hasActiveSubscription, subscriptionInfo]);
 
   // ✅ Loading state
   if (isLoading && !refreshing) {
@@ -357,22 +353,41 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
           </View>
 
-          {subscriptionInfo?.is_active ? (
-            <View style={styles.subscriptionCard}>
-              <Text style={styles.subscriptionIcon}>👑</Text>
+          {/* ✅ CLEAN: Subscription Card (no Razorpay check needed) */}
+          {hasActiveSubscription ? (
+            <View style={[
+              styles.subscriptionCard,
+              isSubscriptionExpiringSoon && styles.subscriptionCardExpiring
+            ]}>
+              <Text style={styles.subscriptionIcon}>
+                {isSubscriptionExpiringSoon ? '⚠️' : '👑'}
+              </Text>
               <View style={styles.subscriptionContent}>
                 <Text style={styles.subscriptionTitle}>
                   {subscriptionInfo?.plan_name || 'Premium'} Plan Active
                 </Text>
-                <Text style={styles.subscriptionDetails}>
+                <Text style={[
+                  styles.subscriptionDetails,
+                  isSubscriptionExpiringSoon && styles.subscriptionDetailsExpiring
+                ]}>
                   {subscriptionInfo?.days_remaining || 0} days left • {subscriptionInfo?.product_limit || 'Unlimited'} products
                 </Text>
+                {isSubscriptionExpiringSoon && (
+                  <Text style={styles.subscriptionExpiring}>
+                    ⚠️ Renew soon to avoid interruption
+                  </Text>
+                )}
               </View>
               <TouchableOpacity 
-                style={styles.subscriptionButton}
+                style={[
+                  styles.subscriptionButton,
+                  isSubscriptionExpiringSoon && styles.subscriptionButtonExpiring
+                ]}
                 onPress={() => navigation.navigate('Subscription')}
               >
-                <Text style={styles.subscriptionButtonText}>Manage</Text>
+                <Text style={styles.subscriptionButtonText}>
+                  {isSubscriptionExpiringSoon ? 'Renew' : 'Manage'}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -380,7 +395,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
               <Text style={styles.warningIcon}>⚠️</Text>
               <View style={styles.warningContent}>
                 <Text style={styles.warningTitle}>Get Subscription to Sell Online</Text>
-                <Text style={styles.warningText}>Unlock online selling features</Text>
+                <Text style={styles.warningText}>Unlock online selling features and reach more customers</Text>
               </View>
               <TouchableOpacity 
                 style={styles.getSubscriptionButton}
@@ -539,11 +554,15 @@ const styles = StyleSheet.create({
   statTitle: { fontSize: 12, color: '#6b7280', fontWeight: '500', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 },
   statValue: { fontSize: 18, fontWeight: 'bold', color: '#1f2937' },
   subscriptionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', marginHorizontal: 20, marginBottom: 20, padding: 20, borderRadius: 12, borderWidth: 2, borderColor: '#3b82f6', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  subscriptionCardExpiring: { backgroundColor: '#fef3c7', borderColor: '#f59e0b' },
   subscriptionIcon: { fontSize: 24, marginRight: 12 },
   subscriptionContent: { flex: 1 },
   subscriptionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
   subscriptionDetails: { fontSize: 14, color: '#6b7280' },
+  subscriptionDetailsExpiring: { color: '#92400e' },
+  subscriptionExpiring: { fontSize: 12, color: '#dc2626', fontWeight: '600', marginTop: 4 },
   subscriptionButton: { backgroundColor: '#3b82f6', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  subscriptionButtonExpiring: { backgroundColor: '#f59e0b' },
   subscriptionButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
   subscriptionWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fefce8', marginHorizontal: 20, marginBottom: 20, padding: 20, borderRadius: 12, borderWidth: 2, borderColor: '#f59e0b' },
   warningIcon: { fontSize: 24, marginRight: 12 },

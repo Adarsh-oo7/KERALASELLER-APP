@@ -51,6 +51,11 @@ apiClient.interceptors.request.use(
         dataType: config.data instanceof FormData ? 'FormData' : typeof config.data,
       });
 
+      // ✅ NEW: Log actual request data (critical for debugging)
+      if (config.data && !(config.data instanceof FormData)) {
+        console.log('📤 Request body:', JSON.stringify(config.data, null, 2));
+      }
+
       return config;
     } catch (error) {
       console.error('❌ Request interceptor error:', error);
@@ -84,6 +89,12 @@ apiClient.interceptors.response.use(
       console.error('- Request method:', config?.method?.toUpperCase());
       console.error('- Request headers:', config?.headers);
       console.error('- Request data type:', config?.data instanceof FormData ? 'FormData' : typeof config?.data);
+      
+      // ✅ NEW: Log the actual data that was sent
+      if (config?.data && !(config.data instanceof FormData)) {
+        console.error('- Request body sent:', JSON.stringify(config.data, null, 2));
+      }
+      
       console.error('- Response data:', response.data);
       
       // Try to parse error details

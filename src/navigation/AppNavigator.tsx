@@ -20,6 +20,7 @@ import HistoryScreen from '../screens/history/HistoryScreen';
 import SubscriptionScreen from '../screens/subscription/SubscriptionScreen';
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
 import StockManagementScreen from '../screens/stock/StockManagementScreen';
+import PaymentsScreen from '../screens/payments/PaymentsScreen';
 
 // Navigation components
 import BottomTabs from './BottomTabs';
@@ -425,6 +426,7 @@ const AppNavigator: React.FC = () => {
           <Stack.Screen name="OrderDetails" component={OrderDetailsScreenWrapper} />
           <Stack.Screen name="Billing" component={BillingScreenWrapper} />
           <Stack.Screen name="StockManagement" component={StockManagementScreenWrapper} />
+          <Stack.Screen name="Payments" component={PaymentsScreen} />
         </>
       ) : (
         <>

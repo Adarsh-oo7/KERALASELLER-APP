@@ -43,7 +43,8 @@ interface StoreProfile {
   owner_name: string;
   business_address: string;
   verification_status: 'pending' | 'verified' | 'rejected';
-  cloudinary_logo?: any; // For logo URL
+  cloudinary_logo?: any;
+  cloudinary_banner?: any; // ✅ ADDED
 }
 
 export default function SettingsScreen({ navigation }: { navigation: any }) {
@@ -66,6 +67,10 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
   // ✅ LOGO STATES
   const [logoUri, setLogoUri] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  
+  // ✅ BANNER STATES
+  const [bannerUri, setBannerUri] = useState<string | null>(null);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
 
   const { logout } = useAuth();
 
@@ -102,7 +107,8 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
         owner_name: storeData.owner_name || '',
         business_address: storeData.business_address || '',
         verification_status: storeData.verification_status || 'pending',
-        cloudinary_logo: storeData.cloudinary_logo
+        cloudinary_logo: storeData.cloudinary_logo,
+        cloudinary_banner: storeData.cloudinary_banner // ✅ ADDED
       }));
       
       // Set logo URI if exists
@@ -111,6 +117,14 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
           ? storeData.cloudinary_logo 
           : storeData.cloudinary_logo.url;
         setLogoUri(logoUrl);
+      }
+      
+      // ✅ Set banner URI if exists
+      if (storeData.cloudinary_banner) {
+        const bannerUrl = typeof storeData.cloudinary_banner === 'string' 
+          ? storeData.cloudinary_banner 
+          : storeData.cloudinary_banner.url;
+        setBannerUri(bannerUrl);
       }
       
       calculateProgress(storeData);
@@ -160,7 +174,7 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
     }
   };
 
-  // ✅ CLOUDINARY UPLOAD
+  // ✅ CLOUDINARY LOGO UPLOAD
   const uploadLogoToCloudinary = async (uri: string) => {
     setIsUploadingLogo(true);
     
@@ -195,6 +209,72 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
       Alert.alert('Upload Error', 'Failed to upload logo.');
     } finally {
       setIsUploadingLogo(false);
+    }
+  };
+
+  // ✅ BANNER PICKER
+  const pickBanner = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [3, 1], // Wide banner aspect ratio
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const uri = result.assets[0].uri;
+        setBannerUri(uri);
+        await uploadBannerToCloudinary(uri);
+      }
+    } catch (error) {
+      console.error('❌ Error picking banner:', error);
+      Alert.alert('Error', 'Failed to pick banner');
+    }
+  };
+
+  // ✅ CLOUDINARY BANNER UPLOAD
+  const uploadBannerToCloudinary = async (uri: string) => {
+    setIsUploadingBanner(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri,
+        type: 'image/jpeg',
+        name: 'store_banner.jpg',
+      } as any);
+      formData.append('upload_preset', 'kerala_sellers');
+      formData.append('cloud_name', 'dlqm6dyps');
+      
+      const response = await fetch(
+        'https://api.cloudinary.com/v1_1/dlqm6dyps/image/upload',
+        { method: 'POST', body: formData }
+      );
+      
+      const data = await response.json();
+      
+      if (data.secure_url) {
+        const bannerData = {
+          url: data.secure_url,
+          public_id: data.public_id,
+        };
+        
+        setStore(prev => ({ ...prev, cloudinary_banner: bannerData }));
+        Alert.alert('Success', 'Banner uploaded!');
+      }
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      Alert.alert('Upload Error', 'Failed to upload banner.');
+    } finally {
+      setIsUploadingBanner(false);
     }
   };
 
@@ -326,7 +406,7 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
           <View style={styles.formContainer}>
             {activeTab === 'basic' && (
               <View>
-                {/* Logo Upload */}
+                {/* ✅ Logo Upload */}
                 <View style={styles.sectionCard}>
                   <Text style={styles.sectionTitle}>Store Logo</Text>
                   
@@ -349,6 +429,31 @@ export default function SettingsScreen({ navigation }: { navigation: any }) {
                   </TouchableOpacity>
                   
                   <Text style={styles.helpText}>Square image recommended (400x400px or larger)</Text>
+                </View>
+
+                {/* ✅ Banner Upload */}
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>Store Banner</Text>
+                  
+                  <TouchableOpacity style={styles.bannerUploadContainer} onPress={pickBanner} disabled={isUploadingBanner}>
+                    {bannerUri ? (
+                      <Image source={{ uri: bannerUri }} style={styles.bannerPreview} />
+                    ) : (
+                      <View style={styles.bannerPlaceholder}>
+                        <Ionicons name="images-outline" size={40} color={COLORS.textTertiary} />
+                        <Text style={styles.bannerPlaceholderText}>Tap to upload banner</Text>
+                      </View>
+                    )}
+                    
+                    {isUploadingBanner && (
+                      <View style={styles.uploadOverlay}>
+                        <ActivityIndicator size="large" color={COLORS.primary} />
+                        <Text style={styles.uploadText}>Uploading...</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  
+                  <Text style={styles.helpText}>Wide banner image recommended (1200x400px or larger)</Text>
                 </View>
 
                 {/* Basic Information */}
@@ -708,11 +813,52 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.6 },
   submitGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 12 },
   submitText: { fontSize: 16, fontWeight: '600', color: COLORS.surface },
+  
   // ✅ LOGO UPLOAD STYLES
-  logoUploadContainer: { width: '100%', height: 200, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.primarySoft, overflow: 'hidden' },
+  logoUploadContainer: { 
+    width: '100%', 
+    height: 200, 
+    borderRadius: 12, 
+    borderWidth: 2, 
+    borderStyle: 'dashed', 
+    borderColor: COLORS.border, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: COLORS.primarySoft, 
+    overflow: 'hidden' 
+  },
   logoPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
   logoPlaceholder: { alignItems: 'center', gap: 12 },
   logoPlaceholderText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '500' },
-  uploadOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', gap: 12 },
+  
+  // ✅ BANNER UPLOAD STYLES
+  bannerUploadContainer: { 
+    width: '100%', 
+    height: 150, // Shorter for wide banner
+    borderRadius: 12, 
+    borderWidth: 2, 
+    borderStyle: 'dashed', 
+    borderColor: COLORS.border, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: COLORS.primarySoft, 
+    overflow: 'hidden' 
+  },
+  bannerPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
+  bannerPlaceholder: { alignItems: 'center', gap: 12 },
+  bannerPlaceholderText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '500' },
+  
+  // ✅ SHARED UPLOAD OVERLAY
+  uploadOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    backgroundColor: 'rgba(0,0,0,0.7)', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    gap: 12 
+  },
   uploadText: { color: COLORS.surface, fontSize: 14, fontWeight: '600' },
 });

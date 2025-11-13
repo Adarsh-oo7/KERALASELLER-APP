@@ -63,6 +63,9 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
         } else if (screenName === 'StockManagement') {
           console.log('📦 Navigating to StockManagement screen...');
           navigation.navigate('StockManagement' as never, params as never);
+        } else if (screenName === 'Payments') {
+          console.log('💳 Navigating to Payments screen...');
+          navigation.navigate('Payments' as never, params as never);
         } else {
           navigation.navigate(screenName as never, params as never);
         }
@@ -148,6 +151,15 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
       badgeColor: '#10b981'
     },
     {
+      id: 'payments',
+      title: 'Payment Gateways',
+      icon: 'card-outline',
+      route: 'Payments',
+      description: 'Razorpay & Payouts',
+      badge: 'LIVE',
+      badgeColor: '#3b82f6'
+    },
+    {
       id: 'billing',
       title: 'Local Billing',
       icon: 'receipt-outline',
@@ -213,12 +225,16 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
           <Ionicons name="close" size={24} color="#6b7280" />
         </TouchableOpacity>
         
-        {/* ✅ DUAL BRANDING - Kerala Sellers + Shop Logo */}
-       {/* ✅ KERALA SELLERS LOGO - Use asset module */}
-<View style={styles.logoSection}>
-  <Text style={styles.logoText}>KS</Text>
-</View>
-
+        {/* ✅ KERALA SELLERS LOGO */}
+        <View style={styles.logoSection}>
+          <LinearGradient
+            colors={['#3b82f6', '#1e40af']}
+            style={styles.logoContainer}
+          >
+            <Text style={styles.logoText}>KS</Text>
+          </LinearGradient>
+          <Text style={styles.brandName}>Kerala Sellers</Text>
+        </View>
 
         {/* ✅ COMPACT Profile Section */}
         <View style={styles.profileSection}>
@@ -298,7 +314,7 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
               key={item.id}
               style={[
                 styles.menuItem,
-                item.id === 'stock-management' && styles.stockManagementItem
+                (item.id === 'stock-management' || item.id === 'payments') && styles.highlightedItem
               ]}
               onPress={() => handleNavigation(item.route)}
               activeOpacity={0.7}
@@ -307,6 +323,8 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
                 colors={
                   item.id === 'stock-management' 
                     ? ['rgba(16, 185, 129, 0.05)', 'rgba(16, 185, 129, 0.02)']
+                    : item.id === 'payments'
+                    ? ['rgba(59, 130, 246, 0.05)', 'rgba(59, 130, 246, 0.02)']
                     : ['#ffffff', '#f8fafc']
                 }
                 style={styles.menuItemGradient}
@@ -314,10 +332,13 @@ const SideBar: React.FC<SideBarProps> = ({ onClose, isVisible }) => {
                 <View style={[
                   styles.menuItemIcon, 
                   styles.businessIcon,
-                  item.id === 'stock-management' && styles.stockManagementIcon
+                  item.id === 'stock-management' && styles.stockManagementIcon,
+                  item.id === 'payments' && styles.paymentsIcon
                 ]}>
                   <Ionicons name={item.icon as any} size={22} color={
-                    item.id === 'stock-management' ? '#10b981' : '#3b82f6'
+                    item.id === 'stock-management' ? '#10b981' 
+                    : item.id === 'payments' ? '#3b82f6'
+                    : '#3b82f6'
                   } />
                 </View>
                 <View style={styles.menuItemContent}>
@@ -438,37 +459,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(107, 114, 128, 0.1)',
   },
   
-  // ✅ Logo Section with dual branding
+  // ✅ Logo Section
   logoSection: {
     alignItems: 'center',
     marginBottom: 16,
-    paddingHorizontal: 10,
   },
-  keralaLogo: {
-    width: 140,
-    height: 45,
-    marginBottom: 12,
-  },
-  shopLogoWrapper: {
-    width: '100%',
+  logoContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
-    backgroundColor: 'rgba(5, 150, 105, 0.05)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(5, 150, 105, 0.1)',
     marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  shopLogoImage: {
-    width: 120,
-    height: 40,
+  logoText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#ffffff',
   },
-  shopNameText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#059669',
-    textAlign: 'center',
-    marginTop: 4,
+  brandName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f2937',
   },
   
   profileSection: {
@@ -578,6 +595,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
+  highlightedItem: {
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
   menuItemGradient: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -601,6 +622,12 @@ const styles = StyleSheet.create({
   businessIcon: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
   },
+  stockManagementIcon: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  paymentsIcon: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
   menuItemContent: {
     flex: 1,
   },
@@ -613,14 +640,6 @@ const styles = StyleSheet.create({
   menuItemDescription: {
     fontSize: 12,
     color: '#6b7280',
-  },
-
-  stockManagementItem: {
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
-  stockManagementIcon: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
   },
   menuItemTitleRow: {
     flexDirection: 'row',
@@ -732,12 +751,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
   },
-  logoText: {
-  fontSize: 40,
-  fontWeight: 'bold',
-  color: '#FFFFFF',
-},
-
 });
 
 export default SideBar;

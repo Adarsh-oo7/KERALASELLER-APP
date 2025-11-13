@@ -332,6 +332,146 @@ class AuthService {
     }
   }
 
+async checkSellerExists(phone: string, email: string): Promise<{
+  exists: boolean;
+  field?: string;
+  message?: string;
+}> {
+  try {
+    console.log('🔍 Checking if seller exists...');
+    
+    const cleanPhone = phone.replace(/\D/g, '');
+    
+    const response = await apiClient.post('/user/check-exists/', {
+      phone: cleanPhone,
+      email: email.trim().toLowerCase()
+    });
+    
+    console.log('✅ Check result:', response.data);
+    return response.data;
+    
+  } catch (error: any) {
+    console.error('❌ Check seller exists failed:', error);
+    throw new Error('Failed to verify availability. Please try again.');
+  }
+}
+
+
+// ✅ NEW: Register with Firebase ID Token
+async registerWithFirebase(data: {
+  name: string;
+  shop_name: string;
+  phone: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  firebase_id_token: string;
+}): Promise<any> {
+  try {
+    console.log('📝 AuthService: Starting Firebase-authenticated seller registration...');
+    console.log('📋 Registration data:', { 
+      name: data.name, 
+      shop_name: data.shop_name,
+      phone: data.phone,
+      email: data.email
+    });
+
+    // ✅ VALIDATION: Input validation
+    if (!data.name.trim()) {
+      throw new Error('Name is required');
+    }
+    if (!data.shop_name.trim()) {
+      throw new Error('Shop name is required');
+    }
+    if (!data.email.trim()) {
+      throw new Error('Email is required');
+    }
+    if (!data.phone.trim()) {
+      throw new Error('Phone number is required');
+    }
+    if (!data.password) {
+      throw new Error('Password is required');
+    }
+    if (!data.confirmPassword) {
+      throw new Error('Password confirmation is required');
+    }
+    if (data.password !== data.confirmPassword) {
+      throw new Error('Passwords do not match');
+    }
+    if (!data.firebase_id_token) {
+      throw new Error('Firebase authentication required');
+    }
+
+    // ✅ FORMAT: Clean phone number
+    const cleanPhone = data.phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      throw new Error('Please enter a valid 10-digit phone number');
+    }
+
+    const requestData = {
+      name: data.name.trim(),
+      shop_name: data.shop_name.trim(),
+      phone: cleanPhone,
+      email: data.email.trim(),
+      password: data.password,
+      confirmPassword: data.confirmPassword,
+      firebase_id_token: data.firebase_id_token,
+    };
+
+    console.log('📤 Sending Firebase registration request to: /user/register/');
+    const response = await apiClient.post('/user/register/', requestData);
+
+    console.log('✅ Firebase registration successful:', response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error('❌ AuthService: Firebase registration failed:', {
+      message: error.message,
+      status: error.response?.status,
+      responseData: error.response?.data,
+    });
+
+    // ✅ ENHANCED: Better error handling
+    let errorMessage = 'Registration failed';
+
+    if (error.response?.status === 400) {
+      const responseData = error.response.data;
+      
+      if (responseData?.phone) {
+        errorMessage = Array.isArray(responseData.phone) 
+          ? responseData.phone[0] 
+          : 'Invalid phone number';
+      } else if (responseData?.email) {
+        errorMessage = Array.isArray(responseData.email)
+          ? responseData.email[0]
+          : 'Invalid email address';
+      } else if (responseData?.password) {
+        errorMessage = Array.isArray(responseData.password)
+          ? responseData.password[0]
+          : 'Invalid password';
+      } else if (responseData?.firebase_id_token) {
+        errorMessage = 'Firebase authentication failed. Please try again.';
+      } else if (responseData?.error) {
+        errorMessage = responseData.error;
+      } else if (responseData?.message) {
+        errorMessage = responseData.message;
+      } else if (responseData?.detail) {
+        errorMessage = responseData.detail;
+      }
+    } else if (error.response?.status === 409) {
+      errorMessage = 'An account with this phone number or email already exists.';
+    } else if (error.response?.status === 401) {
+      errorMessage = 'Firebase authentication failed. Please verify your phone number again.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    const enhancedError = new Error(errorMessage);
+    enhancedError.originalError = error;
+    enhancedError.response = error.response;
+    throw enhancedError;
+  }
+}
+
   // ✅ NEW: Register method
   async register(data: {
     name: string;

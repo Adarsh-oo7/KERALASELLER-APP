@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/screens/auth/RegisterScreen.tsx
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,12 +13,10 @@ import {
   Platform
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { app } from '../../config/firebase.config';
+import FirebaseAuthService from '../../services/FirebaseAuthService';
 import AuthService from '../../services/AuthService';
-import { 
-  SellerRegistrationData, 
-  OTPRequest, 
-  ApiError 
-} from '../../types/api';
 
 type RegisterScreenProps = {
   navigation: StackNavigationProp<any>;
@@ -33,14 +32,17 @@ interface ValidationErrors {
 }
 
 const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
+  const recaptchaVerifier = useRef(null);
+  
   const [step, setStep] = useState<1 | 2>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+  const [verificationId, setVerificationId] = useState<string>('');
 
-  const [formData, setFormData] = useState<SellerRegistrationData & { otp: string }>({
+  const [formData, setFormData] = useState({
     name: '',
     shop_name: '',
     phone: '',
@@ -50,7 +52,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     otp: '',
   });
 
-  // Validation functions - exact match to web
+  // Validation functions
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
@@ -109,7 +111,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   };
 
   const handleChange = (name: keyof typeof formData, value: string): void => {
-    // Format phone number to remove non-digits
     if (name === 'phone') {
       const formattedValue = value.replace(/\D/g, '').slice(0, 10);
       setFormData({ ...formData, [name]: formattedValue });
@@ -117,7 +118,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       setFormData({ ...formData, [name]: value });
     }
     
-    // Clear validation error for this field
     if (validationErrors[name as keyof ValidationErrors]) {
       setValidationErrors(prev => ({
         ...prev,
@@ -125,10 +125,10 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       }));
     }
     
-    // Clear general error
     if (error) setError('');
   };
 
+  // 🔥 UPDATED: Check if user exists, then send Firebase OTP
   const handleSendOtp = async (): Promise<void> => {
     setError('');
     
@@ -140,28 +140,62 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     setIsLoading(true);
     
     try {
-      const otpData: OTPRequest = {
-        phone: formData.phone.trim(),
-        name: formData.name.trim(),
-        shop_name: formData.shop_name.trim(),
-        email: formData.email.trim()
-      };
+      // ✅ STEP 1: Check if phone/email already exists
+      console.log('🔍 Step 1: Checking if seller already exists...');
       
-      await AuthService.sendOTP(otpData);
+      const checkResult = await AuthService.checkSellerExists(
+        formData.phone.trim(),
+        formData.email.trim()
+      );
+      
+      if (checkResult.exists) {
+        // ❌ Phone or email already exists
+        console.log('❌ Seller already exists:', checkResult.field);
+        
+        if (checkResult.field === 'phone') {
+          setValidationErrors(prev => ({
+            ...prev,
+            phone: checkResult.message || 'This phone number is already registered'
+          }));
+          setError('This phone number is already registered. Please login instead.');
+        } else if (checkResult.field === 'email') {
+          setValidationErrors(prev => ({
+            ...prev,
+            email: checkResult.message || 'This email is already registered'
+          }));
+          setError('This email is already registered. Please use a different email.');
+        }
+        
+        setIsLoading(false);
+        return;
+      }
+      
+      // ✅ STEP 2: Phone and email are available - Send Firebase OTP
+      console.log('✅ Phone and email available. Sending Firebase OTP...');
+      
+      const verfId = await FirebaseAuthService.sendOTP(
+        formData.phone.trim(),
+        recaptchaVerifier.current
+      );
+      
+      setVerificationId(verfId);
       setStep(2);
+      
+      Alert.alert(
+        '✅ OTP Sent!',
+        `Verification code has been sent to +91 ${formData.phone}`,
+        [{ text: 'OK' }]
+      );
+      
     } catch (err: any) {
-      console.error('OTP send error:', err);
-      const apiError = err.response?.data as ApiError;
-      const errorMessage = apiError?.error || 
-                         apiError?.message ||
-                         apiError?.phone?.[0] ||
-                         'Failed to send OTP. Please try again.';
-      setError(errorMessage);
+      console.error('❌ Send OTP error:', err);
+      setError(err.message || 'Failed to send OTP. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // 🔥 FIREBASE: Verify OTP and Register with Backend
   const handleCompleteRegistration = async (): Promise<void> => {
     setError('');
     
@@ -173,65 +207,63 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     setIsLoading(true);
     
     try {
-      await AuthService.register({
-        name: formData.name.trim(),
-        shop_name: formData.shop_name.trim(),
-        phone: formData.phone.trim(),
-        email: formData.email.trim(),
-        password: formData.password,
-        confirmPassword: formData.confirmPassword,
-        otp: formData.otp.trim(),
-      });
+      console.log('🔥 Step 1: Verifying Firebase OTP...');
+      
+      // Verify OTP with Firebase and get ID token
+      const firebaseResult = await FirebaseAuthService.verifyOTP(
+        verificationId,
+        formData.otp.trim()
+      );
+      
+      console.log('✅ Firebase OTP verified! ID Token received.');
+      console.log('🔥 Step 2: Registering with Django backend...');
+      
+      // Register with backend using Firebase ID token
+  await AuthService.registerWithFirebase({
+  name: formData.name.trim(),
+  shop_name: formData.shop_name.trim(),
+  phone: formData.phone.trim(),
+  email: formData.email.trim(),
+  password: formData.password,
+  confirmPassword: formData.confirmPassword,
+  firebase_id_token: firebaseResult.idToken,
+});
+
+      
+      console.log('✅ Backend registration successful!');
       
       Alert.alert(
-        'Success!', 
-        'Registration successful! Please log in.',
-        [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
+        '🎉 Success!', 
+        'Your seller account has been created successfully!',
+        [{ 
+          text: 'Login Now', 
+          onPress: () => navigation.replace('Login')
+        }]
       );
       
     } catch (err: any) {
-      console.error('Registration error:', err);
-      console.error('Error response:', err.response?.data);
-      
-      const errorData = err.response?.data as ApiError;
-      let errorMessage = 'Registration failed. Please try again.';
-      
-      if (errorData?.phone?.[0]) {
-        errorMessage = errorData.phone[0];
-      } else if (errorData?.confirmPassword?.[0]) {
-        errorMessage = errorData.confirmPassword[0];
-      } else if (errorData?.otp?.[0]) {
-        errorMessage = errorData.otp[0];
-      } else if (errorData?.email?.[0]) {
-        errorMessage = errorData.email[0];
-      } else if (errorData?.error) {
-        errorMessage = errorData.error;
-      } else if (errorData?.message) {
-        errorMessage = errorData.message;
-      }
-      
-      setError(errorMessage);
+      console.error('❌ Registration error:', err);
+      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // 🔥 FIREBASE: Resend OTP
   const handleResendOtp = async (): Promise<void> => {
     setError('');
     setIsLoading(true);
     
     try {
-      const otpData: OTPRequest = {
-        phone: formData.phone.trim(),
-        name: formData.name.trim(),
-        shop_name: formData.shop_name.trim(),
-        email: formData.email.trim()
-      };
+      const verfId = await FirebaseAuthService.sendOTP(
+        formData.phone.trim(),
+        recaptchaVerifier.current
+      );
       
-      await AuthService.sendOTP(otpData);
-      setError('OTP has been resent to your phone');
-    } catch (err) {
-      setError('Failed to resend OTP. Please try again.');
+      setVerificationId(verfId);
+      Alert.alert('✅ Success', 'OTP has been resent to your phone');
+    } catch (err: any) {
+      setError(err.message || 'Failed to resend OTP. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -248,6 +280,13 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* 🔥 Firebase reCAPTCHA Verifier Modal */}
+      <FirebaseRecaptchaVerifierModal
+        ref={recaptchaVerifier}
+        firebaseConfig={app.options}
+        attemptInvisibleVerification={true}
+      />
+      
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
           {/* Header */}
@@ -414,7 +453,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
                 {isLoading ? (
                   <>
                     <ActivityIndicator color="white" size="small" />
-                    <Text style={styles.buttonText}>Sending OTP...</Text>
+                    <Text style={styles.buttonText}>Checking availability...</Text>
                   </>
                 ) : (
                   <Text style={styles.buttonText}>Send Verification OTP</Text>
