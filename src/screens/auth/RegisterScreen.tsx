@@ -1,5 +1,5 @@
 // src/screens/auth/RegisterScreen.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,6 @@ import {
   Platform
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { app } from '../../config/firebase.config';
 import FirebaseAuthService from '../../services/FirebaseAuthService';
 import AuthService from '../../services/AuthService';
 
@@ -32,15 +30,13 @@ interface ValidationErrors {
 }
 
 const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
-  const recaptchaVerifier = useRef(null);
-  
   const [step, setStep] = useState<1 | 2>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
-  const [verificationId, setVerificationId] = useState<string>('');
+  const [verificationId, setVerificationId] = useState<any>(null); // ✅ Store confirmation object
 
   const [formData, setFormData] = useState({
     name: '',
@@ -128,7 +124,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     if (error) setError('');
   };
 
-  // 🔥 UPDATED: Check if user exists, then send Firebase OTP
   const handleSendOtp = async (): Promise<void> => {
     setError('');
     
@@ -140,7 +135,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     setIsLoading(true);
     
     try {
-      // ✅ STEP 1: Check if phone/email already exists
       console.log('🔍 Step 1: Checking if seller already exists...');
       
       const checkResult = await AuthService.checkSellerExists(
@@ -149,7 +143,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       );
       
       if (checkResult.exists) {
-        // ❌ Phone or email already exists
         console.log('❌ Seller already exists:', checkResult.field);
         
         if (checkResult.field === 'phone') {
@@ -170,15 +163,14 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
         return;
       }
       
-      // ✅ STEP 2: Phone and email are available - Send Firebase OTP
       console.log('✅ Phone and email available. Sending Firebase OTP...');
       
-      const verfId = await FirebaseAuthService.sendOTP(
-        formData.phone.trim(),
-        recaptchaVerifier.current
+      // ✅ React Native Firebase - No recaptchaVerifier needed!
+      const confirmation = await FirebaseAuthService.sendOTP(
+        formData.phone.trim()
       );
       
-      setVerificationId(verfId);
+      setVerificationId(confirmation); // Store confirmation object
       setStep(2);
       
       Alert.alert(
@@ -195,7 +187,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     }
   };
 
-  // 🔥 FIREBASE: Verify OTP and Register with Backend
   const handleCompleteRegistration = async (): Promise<void> => {
     setError('');
     
@@ -209,7 +200,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     try {
       console.log('🔥 Step 1: Verifying Firebase OTP...');
       
-      // Verify OTP with Firebase and get ID token
+      // ✅ Pass confirmation object and OTP
       const firebaseResult = await FirebaseAuthService.verifyOTP(
         verificationId,
         formData.otp.trim()
@@ -218,17 +209,15 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       console.log('✅ Firebase OTP verified! ID Token received.');
       console.log('🔥 Step 2: Registering with Django backend...');
       
-      // Register with backend using Firebase ID token
-  await AuthService.registerWithFirebase({
-  name: formData.name.trim(),
-  shop_name: formData.shop_name.trim(),
-  phone: formData.phone.trim(),
-  email: formData.email.trim(),
-  password: formData.password,
-  confirmPassword: formData.confirmPassword,
-  firebase_id_token: firebaseResult.idToken,
-});
-
+      await AuthService.registerWithFirebase({
+        name: formData.name.trim(),
+        shop_name: formData.shop_name.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        firebase_id_token: firebaseResult.idToken,
+      });
       
       console.log('✅ Backend registration successful!');
       
@@ -249,18 +238,17 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     }
   };
 
-  // 🔥 FIREBASE: Resend OTP
   const handleResendOtp = async (): Promise<void> => {
     setError('');
     setIsLoading(true);
     
     try {
-      const verfId = await FirebaseAuthService.sendOTP(
-        formData.phone.trim(),
-        recaptchaVerifier.current
+      // ✅ React Native Firebase - No recaptchaVerifier needed!
+      const confirmation = await FirebaseAuthService.sendOTP(
+        formData.phone.trim()
       );
       
-      setVerificationId(verfId);
+      setVerificationId(confirmation);
       Alert.alert('✅ Success', 'OTP has been resent to your phone');
     } catch (err: any) {
       setError(err.message || 'Failed to resend OTP. Please try again.');
@@ -280,13 +268,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* 🔥 Firebase reCAPTCHA Verifier Modal */}
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={app.options}
-        attemptInvisibleVerification={true}
-      />
-      
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
           {/* Header */}

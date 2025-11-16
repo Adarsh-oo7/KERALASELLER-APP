@@ -1,19 +1,13 @@
 // src/services/FirebaseAuthService.ts
-import { 
-  PhoneAuthProvider, 
-  signInWithCredential,
-  signOut as firebaseSignOut
-} from 'firebase/auth';
-import { auth } from '../config/firebase.config';
+import auth from '@react-native-firebase/auth';
 
 class FirebaseAuthService {
   /**
    * Send OTP via Firebase Phone Auth
+   * @param phoneNumber - Phone number to send OTP to
+   * @returns Firebase confirmation object
    */
-  async sendOTP(
-    phoneNumber: string, 
-    recaptchaVerifier: any
-  ): Promise<string> {
+  async sendOTP(phoneNumber: string): Promise<any> {
     try {
       console.log('📤 Sending Firebase OTP to:', phoneNumber);
       
@@ -22,27 +16,32 @@ class FirebaseAuthService {
         ? phoneNumber 
         : `+91${phoneNumber}`;
 
-      const phoneProvider = new PhoneAuthProvider(auth);
+      // Send OTP via Firebase - returns confirmation object
+      const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
       
-      // Send OTP via Firebase
-      const verificationId = await phoneProvider.verifyPhoneNumber(
-        formattedPhone,
-        recaptchaVerifier
-      );
-
-      console.log('✅ Firebase OTP sent! Verification ID:', verificationId);
-      return verificationId;
+      console.log('✅ Firebase OTP sent successfully!');
+      return confirmation;
       
     } catch (error: any) {
       console.error('❌ Firebase OTP send failed:', error);
+      
+      if (error.code === 'auth/too-many-requests') {
+        throw new Error('Too many requests. Please try again later.');
+      } else if (error.code === 'auth/invalid-phone-number') {
+        throw new Error('Invalid phone number format.');
+      }
+      
       throw new Error(error.message || 'Failed to send OTP via Firebase');
     }
   }
 
   /**
    * Verify OTP and get Firebase ID token
+   * @param confirmation - Firebase confirmation object from sendOTP
+   * @param code - 6-digit OTP code
+   * @returns User data with Firebase ID token
    */
-  async verifyOTP(verificationId: string, code: string): Promise<{
+  async verifyOTP(confirmation: any, code: string): Promise<{
     user: any;
     idToken: string;
     phoneNumber: string;
@@ -51,11 +50,8 @@ class FirebaseAuthService {
     try {
       console.log('🔍 Verifying Firebase OTP...');
       
-      // Create credential with verification ID and OTP code
-      const credential = PhoneAuthProvider.credential(verificationId, code);
-      
-      // Sign in with credential
-      const userCredential = await signInWithCredential(auth, credential);
+      // Confirm the OTP code
+      const userCredential = await confirmation.confirm(code);
       
       console.log('✅ Firebase OTP verified! User:', userCredential.user.uid);
       
@@ -76,6 +72,8 @@ class FirebaseAuthService {
         throw new Error('Invalid OTP code. Please try again.');
       } else if (error.code === 'auth/code-expired') {
         throw new Error('OTP code has expired. Please request a new one.');
+      } else if (error.code === 'auth/session-expired') {
+        throw new Error('Session expired. Please request a new OTP.');
       }
       
       throw new Error(error.message || 'Invalid OTP');
@@ -86,14 +84,14 @@ class FirebaseAuthService {
    * Get current Firebase user
    */
   getCurrentUser() {
-    return auth.currentUser;
+    return auth().currentUser;
   }
 
   /**
-   * Get Firebase ID token
+   * Get Firebase ID token for current user
    */
   async getIdToken(): Promise<string | null> {
-    const user = auth.currentUser;
+    const user = auth().currentUser;
     if (user) {
       return await user.getIdToken();
     }
@@ -105,12 +103,19 @@ class FirebaseAuthService {
    */
   async signOut() {
     try {
-      await firebaseSignOut(auth);
+      await auth().signOut();
       console.log('✅ Signed out from Firebase');
     } catch (error) {
       console.error('❌ Firebase sign out failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Listen to auth state changes
+   */
+  onAuthStateChanged(callback: (user: any) => void) {
+    return auth().onAuthStateChanged(callback);
   }
 }
 
