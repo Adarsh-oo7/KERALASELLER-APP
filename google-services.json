@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:658585155781:android:9cda1790f303cc4f0b18ac",
+        "mobilesdk_app_id": "1:658585155781:android:38bb834445c271540b18ac",
         "android_client_info": {
-          "package_name": "keralasellers.app"
+          "package_name": "com.keralasellers.app"
         }
       },
       "oauth_client": [
