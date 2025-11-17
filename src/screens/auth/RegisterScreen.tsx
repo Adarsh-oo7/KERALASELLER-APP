@@ -167,8 +167,9 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       
       // ✅ React Native Firebase - No recaptchaVerifier needed!
       const confirmation = await FirebaseAuthService.sendOTP(
-        formData.phone.trim()
-      );
+  `+91${formData.phone.trim()}`  // ✅ Correct
+);
+
       
       setVerificationId(confirmation); // Store confirmation object
       setStep(2);
