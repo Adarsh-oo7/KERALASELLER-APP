@@ -3,8 +3,8 @@ import { CommonActions } from '@react-navigation/native';
 import apiClient from './ApiClient';
 
 const API_BASE_URL = __DEV__ 
-  ? 'http://10.0.2.2:8000'  // ✅ CORRECT for Android Emulator
-  : 'https://keralaseller-backend.onrender.com';
+  ? 'http://10.0.2.2:8000'  // Dev only
+  : 'https://api.keralasellers.in';  // ✅ YOUR LIVE SERVER!
 
 class AuthService {
   private navigationRef: any = null;

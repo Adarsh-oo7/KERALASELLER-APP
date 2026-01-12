@@ -1,5 +1,4 @@
-// config/api.ts - ✅ COMPLETE VERSION WITH RAZORPAY INTEGRATION
-
+// config/api.ts - ✅ COMPLETE VERSION WITH LIVE RAZORPAY ENDPOINTS + getTransactions
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -12,9 +11,19 @@ export interface ApiEnvironment {
 }
 
 const getProductionBaseURL = (): string => {
+  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
+    console.log('🌐 Using ENV variable:', process.env.EXPO_PUBLIC_API_BASE_URL);
+    return process.env.EXPO_PUBLIC_API_BASE_URL;
+  }
+  
   const configUrl = Constants.expoConfig?.extra?.apiBaseUrl;
-  if (configUrl) return configUrl;
-  return 'https://keralaseller-backend.onrender.com';
+  if (configUrl) {
+    console.log('🌐 Using Expo config:', configUrl);
+    return configUrl;
+  }
+  
+  console.log('🌐 Using default LIVE server: api.keralasellers.in');
+  return 'https://api.keralasellers.in';
 };
 
 const getDevelopmentBaseURL = (): string => {
@@ -32,11 +41,8 @@ const getDevelopmentWebSocketURL = (): string => {
 };
 
 const detectEnvironment = (): 'development' | 'production' => {
-  if (__DEV__) {
-    console.log('🔧 Detected: Development mode');
-    return 'development';
-  }
-  console.log('🚀 Detected: Production mode');
+  console.log('🚀 FORCED: Production mode (LIVE SERVER)');
+  console.log('📡 Will connect to:', getProductionBaseURL());
   return 'production';
 };
 
@@ -88,9 +94,6 @@ export const ENDPOINTS = {
   notifications: '/api/notifications/',
   markNotificationRead: '/api/notifications/{id}/read/',
   notificationSettings: '/api/notifications/settings/',
-  transactions: '/user/transactions/',
-  transactionHistory: '/user/transactions/history/',
-  paymentHistory: '/user/payments/',
   localBills: '/user/billing/',
   generateBill: '/user/billing/generate/',
   billHistory: '/user/billing/history/',
@@ -103,22 +106,25 @@ export const ENDPOINTS = {
   deleteImage: '/user/media/delete/',
   wishlist: '/api/',
   
-  // ✅ FIXED - Payment Gateway Endpoints (matching Django backend & web app)
   gatewayStatus: '/api/payments/account/gateway_status/',
-  payoutHistory: '/api/payments/payouts/history/',
-  razorpayConnect: '/api/payments/account/connect_razorpay/',  // ← FIXED!
-  razorpayKeys: '/api/payments/account/razorpay_keys/',         // ← ADDED
-  setPrimaryGateway: '/api/payments/account/set_primary_gateway/', // ← ADDED
-  createSubscriptionOrder: '/api/subscriptions/create-order/',
-  verifySubscriptionPayment: '/api/subscriptions/verify-payment/',
+  razorpayConnect: '/api/payments/account/connect_razorpay/',
+  razorpayKeys: '/api/payments/account/razorpay_keys/',
+  setPrimaryGateway: '/api/payments/account/set_primary_gateway/',
   razorpayConfig: '/api/payments/razorpay-config/',
+  
   subscriptionPlans: '/api/subscriptions/plans/',
   currentSubscription: '/api/subscriptions/current/',
+  createSubscriptionOrder: '/api/subscriptions/create-order/',
+  verifySubscriptionPayment: '/api/subscriptions/verify-payment/',
+  
+  liveTransactions: '/api/payments/payouts/live_transactions/',
+  liveSettlements: '/api/payments/payouts/live_settlements/',
+  payoutHistory: '/api/payments/payouts/history/',
 } as const;
 
 class CacheManager {
   private cache = new Map<string, { data: any; timestamp: number }>();
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private readonly CACHE_DURATION = 5 * 60 * 1000;
 
   set(key: string, data: any): void {
     this.cache.set(key, { data, timestamp: Date.now() });
@@ -165,8 +171,8 @@ class RequestQueueManager {
 }
 
 class TokenManager {
-  private static ACCESS_TOKEN_KEY = 'access_token';  // ✅ FIXED - matches ApiClient.ts
-  private static REFRESH_TOKEN_KEY = 'refresh_token'; // ✅ FIXED - matches ApiClient.ts
+  private static ACCESS_TOKEN_KEY = 'access_token';
+  private static REFRESH_TOKEN_KEY = 'refresh_token';
   private static USER_DATA_KEY = '@kerala_sellers_user_data';
   private static SELLER_DATA_KEY = '@kerala_sellers_seller_data';
 
@@ -626,9 +632,7 @@ export class ApiClient {
 
 export const apiClient = new ApiClient();
 
-// ✅ COMPLETE API OBJECT WITH ALL METHODS INCLUDING RAZORPAY
 export const api = {
-  // Authentication methods
   login: (phone: string, password: string) => {
     console.log('🔐 API: Login attempt for phone:', phone);
     return apiClient.post(ENDPOINTS.login, { phone, password }, false);
@@ -639,7 +643,6 @@ export const api = {
   },
   sendOTP: (phone: string) => apiClient.post(ENDPOINTS.sendOTP, { phone }, false),
   
-  // Dashboard & Profile methods
   getDashboard: () => {
     console.log('🏠 API: Fetching dashboard');
     return apiClient.get(ENDPOINTS.dashboard);
@@ -655,7 +658,6 @@ export const api = {
   getProfile: () => apiClient.get(ENDPOINTS.profile),
   updateProfile: (data: any) => apiClient.update(ENDPOINTS.profile, data),
   
-  // Order methods
   getOrders: () => {
     console.log('📋 API: Fetching orders');
     return apiClient.get(ENDPOINTS.orders);
@@ -664,7 +666,6 @@ export const api = {
   updateOrderStatus: (id: string, status: string) =>
     apiClient.patch(`${ENDPOINTS.orders}${id}/`, { status }),
   
-  // Product methods
   getProducts: () => {
     console.log('📦 API: Fetching products');
     return apiClient.get(ENDPOINTS.products);
@@ -674,19 +675,16 @@ export const api = {
   updateProduct: (id: string, data: any) => apiClient.update(`${ENDPOINTS.products}${id}/`, data),
   deleteProduct: (id: string) => apiClient.delete(`${ENDPOINTS.products}${id}/`),
   
-  // Analytics methods
   getAnalytics: () => apiClient.get(ENDPOINTS.analytics),
   getSalesReport: (params?: any) => apiClient.get(ENDPOINTS.salesReport),
   getRevenueReport: (params?: any) => apiClient.get(ENDPOINTS.revenueReport),
   
-  // Stock/Inventory methods
   getStock: () => apiClient.get(ENDPOINTS.stock),
   getStockAlerts: () => apiClient.get(ENDPOINTS.stockAlerts),
   getStockHistory: () => apiClient.get(ENDPOINTS.stockHistory),
   updateStock: (productId: string, quantity: number) =>
     apiClient.patch(`${ENDPOINTS.stock}${productId}/`, { quantity }),
   
-  // Notification methods
   getNotifications: () => {
     console.log('🔔 API: Fetching notifications');
     return apiClient.get(ENDPOINTS.notifications);
@@ -694,15 +692,6 @@ export const api = {
   markNotificationRead: (id: string) =>
     apiClient.patch(ENDPOINTS.markNotificationRead.replace('{id}', id), {}),
   
-  // Transaction methods
-  getTransactionHistory: () => {
-    console.log('📜 API: Fetching transaction history');
-    return apiClient.get(ENDPOINTS.transactionHistory);
-  },
-  getTransactions: (params?: any) => apiClient.get(ENDPOINTS.transactions),
-  getPaymentHistory: () => apiClient.get(ENDPOINTS.paymentHistory),
-  
-  // Billing methods
   getLocalBills: () => apiClient.get(ENDPOINTS.localBills),
   generateBill: (billData: any) => {
     console.log('🧾 API: Generating local bill');
@@ -710,81 +699,90 @@ export const api = {
   },
   getBillHistory: () => apiClient.get(ENDPOINTS.billHistory),
   
-  // Subscription methods
   getSubscriptions: () => apiClient.get(ENDPOINTS.subscriptions),
   getSubscriptionData: () => apiClient.get(ENDPOINTS.subscriptionStatus),
   upgradeSubscription: (planData: any) => apiClient.post(ENDPOINTS.upgradeSubscription, planData),
-  
-  // Settings methods
-  getSettings: () => apiClient.get(ENDPOINTS.settings),
-  updateSettings: (data: any) => apiClient.update(ENDPOINTS.updateSettings, data),
-  
-  // Media upload methods
-  uploadProductImage: (file: any, productData?: any) =>
-    apiClient.uploadFile(ENDPOINTS.uploadImage, file, productData),
-  
-  // ✅ PAYMENT GATEWAY METHODS (RAZORPAY) - FIXED ENDPOINTS
-  getGatewayStatus: () => {
-    console.log('💳 API: Fetching gateway status');
-    return apiClient.get(ENDPOINTS.gatewayStatus, true, { useCache: false });
-  },
-  
-  getPayoutHistory: () => {
-    console.log('📜 API: Fetching payout history');
-    return apiClient.get(ENDPOINTS.payoutHistory, true, { useCache: false });
-  },
-  
-  connectRazorpay: (data: { key_id: string; key_secret: string }) => {
-    console.log('🔗 API: Connecting Razorpay');
-    console.log('📋 Data:', { key_id: data.key_id.substring(0, 10) + '...', key_secret: '***' });
-    return apiClient.post(ENDPOINTS.razorpayConnect, data, true);
-  },
   getSubscriptionPlans: () => {
     console.log('📋 API: Fetching subscription plans');
     return apiClient.get(ENDPOINTS.subscriptionPlans, true, { useCache: false });
   },
-  
   getCurrentSubscription: () => {
     console.log('👑 API: Fetching current subscription');
     return apiClient.get(ENDPOINTS.currentSubscription, true, { useCache: false });
   },
-  
   createSubscriptionOrder: (planId: number) => {
     console.log('💳 API: Creating subscription order for plan:', planId);
     return apiClient.post(ENDPOINTS.createSubscriptionOrder, { plan_id: planId }, true);
   },
-  
   verifySubscriptionPayment: (data: any) => {
     console.log('🔐 API: Verifying subscription payment');
     return apiClient.post(ENDPOINTS.verifySubscriptionPayment, data, true);
   },
   
+  getSettings: () => apiClient.get(ENDPOINTS.settings),
+  updateSettings: (data: any) => apiClient.update(ENDPOINTS.updateSettings, data),
+  
+  uploadProductImage: (file: any, productData?: any) =>
+    apiClient.uploadFile(ENDPOINTS.uploadImage, file, productData),
+  
+  getGatewayStatus: () => {
+    console.log('💳 API: Fetching gateway status');
+    return apiClient.get(ENDPOINTS.gatewayStatus, true, { useCache: false });
+  },
+  connectRazorpay: (data: { key_id: string; key_secret: string }) => {
+    console.log('🔗 API: Connecting Razorpay');
+    console.log('📋 Data:', { key_id: data.key_id.substring(0, 10) + '...', key_secret: '***' });
+    return apiClient.post(ENDPOINTS.razorpayConnect, data, true);
+  },
   getRazorpayConfig: () => {
     console.log('🔑 API: Getting Razorpay config');
     return apiClient.get(ENDPOINTS.razorpayConfig, true, { useCache: true });
   },
-  
   getRazorpayKeys: () => {
     console.log('🔑 API: Getting Razorpay keys');
     return apiClient.get(ENDPOINTS.razorpayKeys, true, { useCache: false });
   },
-  
   updateRazorpayKeys: (data: { key_id: string; key_secret: string }) => {
     console.log('🔄 API: Updating Razorpay keys');
     return apiClient.put(ENDPOINTS.razorpayKeys, data, true);
   },
-  
   deleteRazorpayKeys: () => {
     console.log('🗑️ API: Deleting Razorpay keys');
     return apiClient.delete(ENDPOINTS.razorpayKeys, true);
   },
-  
   setPrimaryGateway: (gateway: string) => {
     console.log('⭐ API: Setting primary gateway:', gateway);
     return apiClient.post(ENDPOINTS.setPrimaryGateway, { gateway }, true);
   },
   
-  // Testing & utility methods
+  // ✅ LIVE RAZORPAY DATA METHODS
+  getLiveTransactions: () => {
+    console.log('💳 API: Fetching LIVE transactions from Razorpay');
+    return apiClient.get(ENDPOINTS.liveTransactions, true, { useCache: false });
+  },
+  
+  getLiveSettlements: () => {
+    console.log('🏦 API: Fetching LIVE settlements from Razorpay');
+    return apiClient.get(ENDPOINTS.liveSettlements, true, { useCache: false });
+  },
+  
+  getPayoutHistory: () => {
+    console.log('💸 API: Fetching payout history');
+    return apiClient.get(ENDPOINTS.payoutHistory, true, { useCache: false });
+  },
+  
+  // ✅✅✅ ADDED - BACKWARD COMPATIBILITY ALIASES ✅✅✅
+  getTransactions: () => {
+    console.log('📊 API: getTransactions (alias) → calling getLiveTransactions');
+    return apiClient.get(ENDPOINTS.liveTransactions, true, { useCache: false });
+  },
+  
+  getSettlements: () => {
+    console.log('🏦 API: getSettlements (alias) → calling getLiveSettlements');
+    return apiClient.get(ENDPOINTS.liveSettlements, true, { useCache: false });
+  },
+  // ✅✅✅ END OF NEW METHODS ✅✅✅
+  
   testConnection: () => apiClient.healthCheck(),
   testAuth: () => apiClient.testAuth(),
   TokenManager,
@@ -829,6 +827,8 @@ if (__DEV__) {
   console.log('  - ✅ Memory token cache');
   console.log('  - ✅ Auto environment detection');
   console.log('  - ✅ Razorpay payment integration');
+  console.log('  - ✅ LIVE Razorpay transactions & settlements');
+  console.log('  - ✅ Backward compatible aliases for getTransactions');
   console.log('🏪 Ready for Kerala Sellers');
 }
 

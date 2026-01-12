@@ -72,7 +72,7 @@ class RazorpayService {
       
       const razorpayOptions = {
         description: options.description,
-        image: 'https://keralaseller-backend.onrender.com/static/logo.png', // Your logo URL
+        image: 'https://api.keralasellers.in/static/logo.png', // Your logo URL
         currency: options.currency,
         key: options.keyId,
         amount: options.amount, // Amount in paise (₹99 = 9900 paise)

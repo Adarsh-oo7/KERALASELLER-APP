@@ -39,9 +39,26 @@ interface Payout {
   gateway_used: string;
   status: string;
   status_display?: string;
+  order_id?: string;
+  utr_number?: string;
+  bank_reference?: string;
+  description?: string;
+}
+
+interface Transaction {
+  id: number;
+  order_id: string;
+  amount: string;
+  commission: string;
+  net_amount: string;
+  gateway: string;
+  status: string;
+  created_at: string;
+  settlement_status?: string;
 }
 
 export default function PaymentsScreen({ navigation }: { navigation: any }) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'settlements'>('overview');
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>({
     razorpay: { connected: false, verified: false, status: 'pending' },
     cashfree: { connected: false, verified: false, status: 'pending' },
@@ -49,6 +66,7 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
     is_ready: false
   });
   const [payoutHistory, setPayoutHistory] = useState<Payout[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -56,44 +74,60 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
   const [razorpayModalOpen, setRazorpayModalOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
-  const fetchPaymentData = useCallback(async () => {
-    try {
-      setRefreshing(true);
-      
-      // ✅ FIXED: Using API methods instead of direct .get()
-      const [statusRes, payoutRes] = await Promise.allSettled([
-        api.getGatewayStatus(),
-        api.getPayoutHistory()
-      ]);
+const fetchPaymentData = useCallback(async () => {
+  try {
+    setRefreshing(true);
+    console.log('🔄 Fetching payment data...');
+    
+    const [statusRes, settlementsRes, transactionsRes] = await Promise.allSettled([
+      api.getGatewayStatus(),
+      api.getLiveSettlements(),    // ✅ CHANGED from getPayoutHistory
+      api.getTransactions()
+    ]);
 
-      if (statusRes.status === 'fulfilled') {
-        setGatewayStatus(statusRes.value);  // ✅ Removed .data
-      } else {
-        console.log('Gateway status fetch failed:', statusRes.reason);
-        setGatewayStatus({
-          razorpay: { connected: false, verified: false, status: 'pending' },
-          cashfree: { connected: false, verified: false, status: 'pending' },
-          primary_gateway: null,
-          is_ready: false
-        });
-      }
-
-      if (payoutRes.status === 'fulfilled') {
-        setPayoutHistory(payoutRes.value.payouts || []);  // ✅ Removed .data
-      } else {
-        console.log('Payout history fetch failed:', payoutRes.reason);
-        setPayoutHistory([]);
-      }
-
-      setErrorMsg('');
-    } catch (error: any) {
-      console.error('Error fetching payment data:', error);
-      setErrorMsg('Failed to load payment data');
-    } finally {
-      setRefreshing(false);
-      setLoading(false);
+    if (statusRes.status === 'fulfilled') {
+      setGatewayStatus(statusRes.value);
+    } else {
+      setGatewayStatus({
+        razorpay: { connected: false, verified: false, status: 'pending' },
+        cashfree: { connected: false, verified: false, status: 'pending' },
+        primary_gateway: null,
+        is_ready: false
+      });
     }
-  }, []);
+
+    if (settlementsRes.status === 'fulfilled') {
+      // Handle multiple possible response formats
+      const settlements = settlementsRes.value?.settlements || 
+                         settlementsRes.value?.items || 
+                         settlementsRes.value?.payouts || 
+                         settlementsRes.value || 
+                         [];
+      setPayoutHistory(Array.isArray(settlements) ? settlements : []);
+    } else {
+      setPayoutHistory([]);
+    }
+
+    if (transactionsRes.status === 'fulfilled') {
+      const txns = transactionsRes.value?.transactions || 
+                   transactionsRes.value?.items ||
+                   transactionsRes.value || 
+                   [];
+      setTransactions(Array.isArray(txns) ? txns : []);
+    } else {
+      setTransactions([]);
+    }
+
+    setErrorMsg('');
+  } catch (error: any) {
+    console.error('Error fetching payment data:', error);
+    setErrorMsg('Failed to load payment data');
+  } finally {
+    setRefreshing(false);
+    setLoading(false);
+  }
+}, []);
+
 
   useEffect(() => {
     fetchPaymentData();
@@ -132,14 +166,31 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
   const payoutSummary = useMemo(() => {
     const successful = payoutHistory.filter(p => p.status === 'success');
     const pending = payoutHistory.filter(p => p.status === 'pending');
+    const failed = payoutHistory.filter(p => p.status === 'failed');
     
     return {
       successCount: successful.length,
       successAmount: successful.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0),
       pendingCount: pending.length,
-      pendingAmount: pending.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0)
+      pendingAmount: pending.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0),
+      failedCount: failed.length,
+      failedAmount: failed.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0),
+      totalAmount: payoutHistory.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0)
     };
   }, [payoutHistory]);
+
+  const transactionSummary = useMemo(() => {
+    const total = transactions.reduce((sum, t) => sum + parseFloat(t.amount || '0'), 0);
+    const commission = transactions.reduce((sum, t) => sum + parseFloat(t.commission || '0'), 0);
+    const netAmount = transactions.reduce((sum, t) => sum + parseFloat(t.net_amount || '0'), 0);
+
+    return {
+      totalSales: total,
+      totalCommission: commission,
+      netEarnings: netAmount,
+      transactionCount: transactions.length
+    };
+  }, [transactions]);
 
   if (loading) {
     return (
@@ -175,7 +226,7 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
         <LinearGradient colors={['#667eea', '#764ba2']} style={styles.headerGradient}>
           <Ionicons name="card" size={40} color={COLORS.surface} />
           <Text style={styles.headerTitle}>💰 Payment Gateways</Text>
-          <Text style={styles.headerSubtitle}>Manage your payment methods & receive instant payouts</Text>
+          <Text style={styles.headerSubtitle}>Manage payments, transactions & settlements</Text>
         </LinearGradient>
 
         {/* Success/Error Messages */}
@@ -193,227 +244,373 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
           </View>
         ) : null}
 
-        {/* Gateway Cards */}
-        <View style={styles.gatewaysContainer}>
-          {/* Razorpay Card */}
-          <View style={styles.gatewayCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardHeaderLeft}>
-                <Ionicons name="card" size={24} color="#3b82f6" />
-                <Text style={styles.cardTitle}>🔵 Razorpay</Text>
-              </View>
-              {gatewayStatus.razorpay?.verified && (
-                <View style={[styles.badge, { backgroundColor: COLORS.success }]}>
-                  <Text style={styles.badgeText}>✅ Live</Text>
-                </View>
-              )}
-            </View>
+        {/* Tab Navigation */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'overview' && styles.activeTab]}
+            onPress={() => setActiveTab('overview')}
+          >
+            <Ionicons 
+              name="home" 
+              size={20} 
+              color={activeTab === 'overview' ? COLORS.primary : COLORS.textSecondary} 
+            />
+            <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
+              Overview
+            </Text>
+          </TouchableOpacity>
 
-            <View style={styles.cardContent}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoLabel}>STATUS</Text>
-                <Text
-                  style={[
-                    styles.infoValue,
-                    { color: gatewayStatus.razorpay?.verified ? COLORS.success : COLORS.warning }
-                  ]}
-                >
-                  {gatewayStatus.razorpay?.status?.toUpperCase() || 'PENDING'}
-                </Text>
-              </View>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'transactions' && styles.activeTab]}
+            onPress={() => setActiveTab('transactions')}
+          >
+            <Ionicons 
+              name="swap-horizontal" 
+              size={20} 
+              color={activeTab === 'transactions' ? COLORS.primary : COLORS.textSecondary} 
+            />
+            <Text style={[styles.tabText, activeTab === 'transactions' && styles.activeTabText]}>
+              Transactions
+            </Text>
+          </TouchableOpacity>
 
-              {gatewayStatus.razorpay?.account_id && (
-                <View style={styles.infoBox}>
-                  <Text style={styles.infoLabel}>ACCOUNT ID</Text>
-                  <Text style={styles.infoValue}>{gatewayStatus.razorpay.account_id}</Text>
-                </View>
-              )}
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'settlements' && styles.activeTab]}
+            onPress={() => setActiveTab('settlements')}
+          >
+            <Ionicons 
+              name="wallet" 
+              size={20} 
+              color={activeTab === 'settlements' ? COLORS.primary : COLORS.textSecondary} 
+            />
+            <Text style={[styles.tabText, activeTab === 'settlements' && styles.activeTabText]}>
+              Settlements
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-              {!gatewayStatus.razorpay?.connected ? (
-                <TouchableOpacity style={styles.connectButton} onPress={handleRazorpayClick}>
-                  <LinearGradient colors={['#3b82f6', '#1d4ed8']} style={styles.buttonGradient}>
-                    <Ionicons name="link" size={16} color={COLORS.surface} />
-                    <Text style={styles.buttonText}>Connect Razorpay</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity style={[styles.connectButton, { flex: 1 }]} onPress={handleEditRazorpay}>
-                    <View style={[styles.buttonGradient, { backgroundColor: COLORS.warning }]}>
-                      <Ionicons name="create" size={16} color={COLORS.surface} />
-                      <Text style={styles.buttonText}>Edit Keys</Text>
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <>
+            {/* Gateway Cards */}
+            <View style={styles.gatewaysContainer}>
+              {/* Razorpay Card */}
+              <View style={styles.gatewayCard}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Ionicons name="card" size={24} color="#3b82f6" />
+                    <Text style={styles.cardTitle}>🔵 Razorpay</Text>
+                  </View>
+                  {gatewayStatus.razorpay?.verified && (
+                    <View style={[styles.badge, { backgroundColor: COLORS.success }]}>
+                      <Text style={styles.badgeText}>✅ Live</Text>
                     </View>
-                  </TouchableOpacity>
-                  <View style={[styles.connectButton, { flex: 1, opacity: 0.6 }]}>
-                    <View style={[styles.buttonGradient, { backgroundColor: COLORS.success }]}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.surface} />
-                      <Text style={styles.buttonText}>Connected</Text>
+                  )}
+                </View>
+
+                <View style={styles.cardContent}>
+                  <View style={styles.infoBox}>
+                    <Text style={styles.infoLabel}>STATUS</Text>
+                    <Text
+                      style={[
+                        styles.infoValue,
+                        { color: gatewayStatus.razorpay?.verified ? COLORS.success : COLORS.warning }
+                      ]}
+                    >
+                      {gatewayStatus.razorpay?.status?.toUpperCase() || 'PENDING'}
+                    </Text>
+                  </View>
+
+                  {gatewayStatus.razorpay?.account_id && (
+                    <View style={styles.infoBox}>
+                      <Text style={styles.infoLabel}>ACCOUNT ID</Text>
+                      <Text style={styles.infoValue}>{gatewayStatus.razorpay.account_id}</Text>
+                    </View>
+                  )}
+
+                  {!gatewayStatus.razorpay?.connected ? (
+                    <TouchableOpacity style={styles.connectButton} onPress={handleRazorpayClick}>
+                      <LinearGradient colors={['#3b82f6', '#1d4ed8']} style={styles.buttonGradient}>
+                        <Ionicons name="link" size={16} color={COLORS.surface} />
+                        <Text style={styles.buttonText}>Connect Razorpay</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.buttonRow}>
+                      <TouchableOpacity style={[styles.connectButton, { flex: 1 }]} onPress={handleEditRazorpay}>
+                        <View style={[styles.buttonGradient, { backgroundColor: COLORS.warning }]}>
+                          <Ionicons name="create" size={16} color={COLORS.surface} />
+                          <Text style={styles.buttonText}>Edit Keys</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <View style={[styles.connectButton, { flex: 1, opacity: 0.6 }]}>
+                        <View style={[styles.buttonGradient, { backgroundColor: COLORS.success }]}>
+                          <Ionicons name="checkmark-circle" size={16} color={COLORS.surface} />
+                          <Text style={styles.buttonText}>Connected</Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Cashfree Card (Coming Soon) */}
+              <View style={[styles.gatewayCard, { opacity: 0.6 }]}>
+                <View style={styles.comingSoonBadge}>
+                  <Ionicons name="time" size={14} color="#92400e" />
+                  <Text style={styles.comingSoonText}>Coming Soon</Text>
+                </View>
+
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Ionicons name="card" size={24} color="#10b981" />
+                    <Text style={styles.cardTitle}>🟢 Cashfree</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardContent}>
+                  <View style={styles.infoBox}>
+                    <Text style={styles.infoLabel}>STATUS</Text>
+                    <Text style={[styles.infoValue, { color: COLORS.textTertiary }]}>COMING SOON</Text>
+                  </View>
+
+                  <Text style={styles.comingSoonDesc}>
+                    💡 Cashfree payout integration is launching soon! Connect your bank account and get automatic
+                    weekly payouts.
+                  </Text>
+
+                  <View style={[styles.connectButton, { opacity: 0.5 }]}>
+                    <View style={[styles.buttonGradient, { backgroundColor: COLORS.border }]}>
+                      <Ionicons name="hourglass" size={16} color={COLORS.textTertiary} />
+                      <Text style={[styles.buttonText, { color: COLORS.textTertiary }]}>Coming Soon</Text>
                     </View>
                   </View>
                 </View>
-              )}
-            </View>
-          </View>
-
-          {/* Cashfree Card (Coming Soon) */}
-          <View style={[styles.gatewayCard, { opacity: 0.6 }]}>
-            <View style={styles.comingSoonBadge}>
-              <Ionicons name="time" size={14} color="#92400e" />
-              <Text style={styles.comingSoonText}>Coming Soon</Text>
-            </View>
-
-            <View style={styles.cardHeader}>
-              <View style={styles.cardHeaderLeft}>
-                <Ionicons name="card" size={24} color="#10b981" />
-                <Text style={styles.cardTitle}>🟢 Cashfree</Text>
               </View>
             </View>
 
-            <View style={styles.cardContent}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoLabel}>STATUS</Text>
-                <Text style={[styles.infoValue, { color: COLORS.textTertiary }]}>COMING SOON</Text>
+            {/* Summary Cards */}
+            <View style={styles.summaryContainer}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>💰 TOTAL SALES</Text>
+                <Text style={[styles.summaryAmount, { color: COLORS.primary }]}>
+                  ₹{transactionSummary.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.summaryCount}>{transactionSummary.transactionCount} orders</Text>
               </View>
 
-              <Text style={styles.comingSoonDesc}>
-                💡 Cashfree payout integration is launching soon! Connect your bank account and get automatic
-                weekly payouts.
-              </Text>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>✅ NET EARNINGS</Text>
+                <Text style={[styles.summaryAmount, { color: COLORS.success }]}>
+                  ₹{transactionSummary.netEarnings.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.summaryCount}>After commission</Text>
+              </View>
+            </View>
+          </>
+        )}
 
-              <View style={[styles.connectButton, { opacity: 0.5 }]}>
-                <View style={[styles.buttonGradient, { backgroundColor: COLORS.border }]}>
-                  <Ionicons name="hourglass" size={16} color={COLORS.textTertiary} />
-                  <Text style={[styles.buttonText, { color: COLORS.textTertiary }]}>Coming Soon</Text>
+        {/* Transactions Tab */}
+        {activeTab === 'transactions' && (
+          <View style={styles.historyCard}>
+            <Text style={styles.historyTitle}>📊 Transaction History</Text>
+
+            {transactions.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.tableContainer}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.tableHeaderText, { width: 100 }]}>Date</Text>
+                    <Text style={[styles.tableHeaderText, { width: 120 }]}>Order ID</Text>
+                    <Text style={[styles.tableHeaderText, { width: 100 }]}>Amount</Text>
+                    <Text style={[styles.tableHeaderText, { width: 90 }]}>Commission</Text>
+                    <Text style={[styles.tableHeaderText, { width: 100 }]}>Net Amount</Text>
+                    <Text style={[styles.tableHeaderText, { width: 100 }]}>Gateway</Text>
+                    <Text style={[styles.tableHeaderText, { width: 80 }]}>Status</Text>
+                  </View>
+
+                  {transactions.map((transaction) => (
+                    <View key={transaction.id} style={styles.tableRow}>
+                      <Text style={[styles.tableCell, { width: 100 }]}>
+                        {new Date(transaction.created_at).toLocaleDateString('en-IN')}
+                      </Text>
+                      <Text style={[styles.tableCell, { width: 120 }]} numberOfLines={1}>
+                        #{transaction.order_id.slice(0, 12)}...
+                      </Text>
+                      <Text style={[styles.tableCell, { width: 100, fontWeight: '600' }]}>
+                        ₹{parseFloat(transaction.amount).toLocaleString('en-IN')}
+                      </Text>
+                      <Text style={[styles.tableCell, { width: 90, color: COLORS.error }]}>
+                        -₹{parseFloat(transaction.commission).toLocaleString('en-IN')}
+                      </Text>
+                      <Text style={[styles.tableCell, { width: 100, fontWeight: '700', color: COLORS.success }]}>
+                        ₹{parseFloat(transaction.net_amount).toLocaleString('en-IN')}
+                      </Text>
+                      <Text style={[styles.tableCell, { width: 100 }]}>
+                        {transaction.gateway}
+                      </Text>
+                      <View style={{ width: 80 }}>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: transaction.status === 'success' ? '#d1fae5' : '#fef3c7',
+                              borderColor: transaction.status === 'success' ? '#10b981' : '#f59e0b'
+                            }
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              { color: transaction.status === 'success' ? '#065f46' : '#92400e' }
+                            ]}
+                          >
+                            {transaction.status}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
                 </View>
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="receipt-outline" size={40} color={COLORS.border} />
+                <Text style={styles.emptyTitle}>No transactions yet</Text>
+                <Text style={styles.emptyText}>Your sales transactions will appear here</Text>
               </View>
-            </View>
-          </View>
-
-          {/* Stripe Card (Q1 2026) */}
-          <View style={[styles.gatewayCard, { opacity: 0.6 }]}>
-            <View style={styles.comingSoonBadge}>
-              <Ionicons name="time" size={14} color="#92400e" />
-              <Text style={styles.comingSoonText}>Q1 2026</Text>
-            </View>
-
-            <View style={styles.cardHeader}>
-              <View style={styles.cardHeaderLeft}>
-                <Ionicons name="card" size={24} color="#6366f1" />
-                <Text style={styles.cardTitle}>🟣 Stripe</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardContent}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoLabel}>STATUS</Text>
-                <Text style={[styles.infoValue, { color: COLORS.textTertiary }]}>COMING Q1 2026</Text>
-              </View>
-
-              <Text style={styles.comingSoonDesc}>
-                🌍 International payments & global payouts with Stripe. Coming in Q1 2026.
-              </Text>
-
-              <View style={[styles.connectButton, { opacity: 0.5 }]}>
-                <View style={[styles.buttonGradient, { backgroundColor: COLORS.border }]}>
-                  <Ionicons name="calendar" size={16} color={COLORS.textTertiary} />
-                  <Text style={[styles.buttonText, { color: COLORS.textTertiary }]}>Q1 2026</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Payout Summary */}
-        {payoutHistory.length > 0 && (
-          <View style={styles.summaryContainer}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>✅ SUCCESSFUL</Text>
-              <Text style={[styles.summaryAmount, { color: COLORS.success }]}>
-                ₹{payoutSummary.successAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-              </Text>
-              <Text style={styles.summaryCount}>{payoutSummary.successCount} payouts</Text>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>⏳ PENDING</Text>
-              <Text style={[styles.summaryAmount, { color: COLORS.warning }]}>
-                ₹{payoutSummary.pendingAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-              </Text>
-              <Text style={styles.summaryCount}>{payoutSummary.pendingCount} payouts</Text>
-            </View>
+            )}
           </View>
         )}
 
-        {/* Payout History */}
-        <View style={styles.historyCard}>
-          <Text style={styles.historyTitle}>📊 Payout History</Text>
-
-          {payoutHistory.length > 0 ? (
-            <View style={styles.tableContainer}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Date</Text>
-                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Amount</Text>
-                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Gateway</Text>
-                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Status</Text>
+        {/* Settlements Tab */}
+        {activeTab === 'settlements' && (
+          <>
+            {/* Settlement Summary */}
+            <View style={styles.summaryContainer}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>✅ SETTLED</Text>
+                <Text style={[styles.summaryAmount, { color: COLORS.success }]}>
+                  ₹{payoutSummary.successAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.summaryCount}>{payoutSummary.successCount} payouts</Text>
               </View>
 
-              {payoutHistory.map((payout) => (
-                <View key={payout.id} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { flex: 2 }]}>
-                    {new Date(payout.created_at).toLocaleDateString()}
-                  </Text>
-                  <Text style={[styles.tableCell, { flex: 2, fontWeight: '700', color: COLORS.success }]}>
-                    ₹{parseFloat(payout.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </Text>
-                  <Text style={[styles.tableCell, { flex: 2 }]}>
-                    {payout.gateway_display || payout.gateway_used}
-                  </Text>
-                  <View style={{ flex: 2 }}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor: payout.status === 'success' ? '#d1fae5' : '#fef3c7',
-                          borderColor: payout.status === 'success' ? '#10b981' : '#f59e0b'
-                        }
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          { color: payout.status === 'success' ? '#065f46' : '#92400e' }
-                        ]}
-                      >
-                        {payout.status_display || payout.status}
-                      </Text>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>⏳ PENDING</Text>
+                <Text style={[styles.summaryAmount, { color: COLORS.warning }]}>
+                  ₹{payoutSummary.pendingAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.summaryCount}>{payoutSummary.pendingCount} payouts</Text>
+              </View>
+            </View>
+
+            {/* Settlement History */}
+            <View style={styles.historyCard}>
+              <Text style={styles.historyTitle}>💸 Settlement History</Text>
+
+              {payoutHistory.length > 0 ? (
+                <View style={styles.tableContainer}>
+                  {payoutHistory.map((payout) => (
+                    <View key={payout.id} style={styles.settlementCard}>
+                      <View style={styles.settlementHeader}>
+                        <View style={styles.settlementLeft}>
+                          <Text style={styles.settlementAmount}>
+                            ₹{parseFloat(payout.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </Text>
+                          <Text style={styles.settlementDate}>
+                            {new Date(payout.created_at).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: 
+                                payout.status === 'success' ? '#d1fae5' : 
+                                payout.status === 'pending' ? '#fef3c7' : '#fee2e2',
+                              borderColor: 
+                                payout.status === 'success' ? '#10b981' : 
+                                payout.status === 'pending' ? '#f59e0b' : '#ef4444'
+                            }
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              { 
+                                color: 
+                                  payout.status === 'success' ? '#065f46' : 
+                                  payout.status === 'pending' ? '#92400e' : '#991b1b'
+                              }
+                            ]}
+                          >
+                            {payout.status_display || payout.status}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.settlementDetails}>
+                        <View style={styles.settlementRow}>
+                          <Text style={styles.settlementLabel}>Gateway:</Text>
+                          <Text style={styles.settlementValue}>
+                            {payout.gateway_display || payout.gateway_used}
+                          </Text>
+                        </View>
+
+                        {payout.utr_number && (
+                          <View style={styles.settlementRow}>
+                            <Text style={styles.settlementLabel}>UTR:</Text>
+                            <Text style={styles.settlementValue}>{payout.utr_number}</Text>
+                          </View>
+                        )}
+
+                        {payout.bank_reference && (
+                          <View style={styles.settlementRow}>
+                            <Text style={styles.settlementLabel}>Bank Ref:</Text>
+                            <Text style={styles.settlementValue}>{payout.bank_reference}</Text>
+                          </View>
+                        )}
+
+                        {payout.description && (
+                          <View style={styles.settlementRow}>
+                            <Text style={styles.settlementLabel}>Note:</Text>
+                            <Text style={[styles.settlementValue, { flex: 1 }]} numberOfLines={2}>
+                              {payout.description}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  </View>
+                  ))}
                 </View>
-              ))}
+              ) : (
+                <View style={styles.emptyState}>
+                  <Ionicons name="time-outline" size={40} color={COLORS.border} />
+                  <Text style={styles.emptyTitle}>No settlements yet</Text>
+                  <Text style={styles.emptyText}>Your payouts will appear here once processed</Text>
+                </View>
+              )}
             </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="time-outline" size={40} color={COLORS.border} />
-              <Text style={styles.emptyTitle}>No payouts yet</Text>
-              <Text style={styles.emptyText}>Your payouts will appear here once processed</Text>
-            </View>
-          )}
-        </View>
+          </>
+        )}
 
         {/* Info Box */}
         <View style={styles.infoCard}>
           <View style={styles.infoCardHeader}>
             <Ionicons name="information-circle" size={20} color={COLORS.success} />
-            <Text style={styles.infoCardTitle}>💡 Multiple Payment Methods Coming Soon</Text>
+            <Text style={styles.infoCardTitle}>💡 How Settlements Work</Text>
           </View>
 
           <View style={styles.infoList}>
-            <Text style={styles.infoListItem}>✅ <Text style={styles.bold}>Razorpay</Text> - Live now! Connect your Razorpay account</Text>
-            <Text style={styles.infoListItem}>⏳ <Text style={styles.bold}>Cashfree</Text> - Launching next (automatic bank payouts)</Text>
-            <Text style={styles.infoListItem}>📅 <Text style={styles.bold}>Stripe</Text> - Q1 2026 (international support)</Text>
-            <Text style={styles.infoListItem}>🔜 <Text style={styles.bold}>PayPal</Text> - Coming soon</Text>
-            <Text style={styles.infoListItem}>✅ 0% Commission - You keep 100% of all sales</Text>
-            <Text style={styles.infoListItem}>✅ Instant payouts - Get paid as soon as customers pay</Text>
+            <Text style={styles.infoListItem}>✅ <Text style={styles.bold}>Instant Payouts</Text> - Get paid directly to your account</Text>
+            <Text style={styles.infoListItem}>💰 <Text style={styles.bold}>0% Commission</Text> - Keep 100% of your sales</Text>
+            <Text style={styles.infoListItem}>📊 <Text style={styles.bold}>Real-time Tracking</Text> - Monitor all transactions & settlements</Text>
+            <Text style={styles.infoListItem}>🔒 <Text style={styles.bold}>Secure & Safe</Text> - Bank-grade security</Text>
+            <Text style={styles.infoListItem}>📱 <Text style={styles.bold}>Mobile First</Text> - Manage payments on the go</Text>
           </View>
         </View>
 
@@ -442,7 +639,7 @@ const styles = StyleSheet.create({
   headerGradient: {
     padding: 24,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 0,
   },
   headerTitle: {
     fontSize: 24,
@@ -490,8 +687,39 @@ const styles = StyleSheet.create({
     color: '#991b1b',
     fontWeight: '600',
   },
+  tabContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.background,
+  },
+  activeTab: {
+    backgroundColor: COLORS.primarySoft,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  activeTabText: {
+    color: COLORS.primary,
+  },
   gatewaysContainer: {
     paddingHorizontal: 16,
+    paddingTop: 16,
     gap: 16,
   },
   gatewayCard: {
@@ -657,6 +885,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    alignItems: 'center',
   },
   tableCell: {
     fontSize: 13,
@@ -671,6 +900,54 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 11,
+    fontWeight: '600',
+  },
+  settlementCard: {
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  settlementHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  settlementLeft: {
+    gap: 4,
+  },
+  settlementAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.success,
+  },
+  settlementDate: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  settlementDetails: {
+    gap: 8,
+  },
+  settlementRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  settlementLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    marginRight: 12,
+  },
+  settlementValue: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
     fontWeight: '600',
   },
   emptyState: {

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = __DEV__ 
   ? 'http://192.168.1.4:8000'  // Your local Django server
-  : 'https://your-render-url.onrender.com';
+  : 'https://api.keralasellers.in';
 
 class DashboardService {
   private async getAuthHeaders() {

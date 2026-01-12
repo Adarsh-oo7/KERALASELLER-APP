@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+// src/context/AuthContext.tsx - ✅ COMPLETE FIXED VERSION
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// ✅ CORRECT:
 import NetInfo from '@react-native-community/netinfo';
 import { AppState, AppStateStatus } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -130,7 +130,6 @@ const secureStorage = {
       await SecureStore.setItemAsync(key, value);
     } catch (error) {
       console.error('❌ Secure storage set failed:', error);
-      // Fallback to AsyncStorage for non-critical data
       await AsyncStorage.setItem(`secure_${key}`, value);
     }
   },
@@ -140,7 +139,6 @@ const secureStorage = {
       return await SecureStore.getItemAsync(key);
     } catch (error) {
       console.error('❌ Secure storage get failed:', error);
-      // Fallback to AsyncStorage
       return await AsyncStorage.getItem(`secure_${key}`);
     }
   },
@@ -185,6 +183,11 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     apiResponseTime: 0,
     lastSyncTime: null,
   });
+
+  // ✅ NEW: Refs to prevent auth check spam
+  const lastAuthCheckTime = useRef<number>(0);
+  const AUTH_CHECK_COOLDOWN = 5000; // 5 seconds between checks
+  const isCheckingAuth = useRef<boolean>(false);
 
   // ✅ Performance tracking
   const trackPerformance = useCallback((operation: string, startTime: number) => {
@@ -276,7 +279,6 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const payload = JSON.parse(atob(parts[1]));
         const currentTime = Math.floor(Date.now() / 1000);
         
-        // Check if token expires within the next 5 minutes
         const bufferTime = 5 * 60;
         const isExpiring = payload.exp < (currentTime + bufferTime);
         
@@ -419,9 +421,19 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [seller?.id, isAuthenticated]);
 
-  // ✅ Enhanced check auth status
+  // ✅ FIXED: Enhanced check auth status with cooldown
   const checkAuthStatus = useCallback(async (): Promise<void> => {
+    // ✅ PREVENT SPAM: Check cooldown and concurrent execution
+    const now = Date.now();
+    if (isCheckingAuth.current || (now - lastAuthCheckTime.current < AUTH_CHECK_COOLDOWN)) {
+      console.log('⏭️ AuthContext: Skipping auth check (cooldown or already checking)');
+      return;
+    }
+
     try {
+      isCheckingAuth.current = true;
+      lastAuthCheckTime.current = now;
+      
       console.log('🔍 AuthContext: Checking authentication status...');
       setConnectionStatus('checking');
       const startTime = Date.now();
@@ -458,7 +470,6 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const sellerData: SellerData = JSON.parse(storedSellerData);
             setSeller(sellerData);
             console.log('✅ AuthContext: Kerala seller authenticated');
-            console.log('🏪 Shop:', sellerData.shop_name, '| Seller:', sellerData.name);
           } catch (parseError) {
             console.error('❌ AuthContext: Error parsing seller data:', parseError);
             setSeller(null);
@@ -483,8 +494,9 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setRetryCount(prev => prev + 1);
     } finally {
       setIsLoading(false);
+      isCheckingAuth.current = false;
     }
-  }, [isTokenExpired, refreshToken, clearAuthError, logout, trackPerformance]);
+  }, [isTokenExpired, refreshToken, clearAuthError, trackPerformance]);
 
   // ✅ Enhanced login
   const login = useCallback(async (loginData: any): Promise<boolean> => {
@@ -510,7 +522,6 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const currentTime = new Date().toISOString();
       
-      // Store tokens securely
       if (refresh_token) {
         await secureStorage.setItem(SECURE_KEYS.REFRESH_TOKEN, refresh_token);
       }
@@ -541,13 +552,7 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       trackPerformance('login', startTime);
       
-      console.log('✅ AuthContext: Kerala seller logged in successfully:', {
-        id: sellerData.id,
-        name: sellerData.name,
-        shopName: sellerData.shop_name,
-        phone: sellerData.phone,
-        loginTime: currentTime,
-      });
+      console.log('✅ AuthContext: Kerala seller logged in successfully');
       
       return true;
     } catch (error) {
@@ -565,7 +570,6 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('🚪 AuthContext: Logging out Kerala seller...');
       const startTime = Date.now();
       
-      // Clear secure storage
       await Promise.all([
         secureStorage.deleteItem(SECURE_KEYS.REFRESH_TOKEN),
         secureStorage.deleteItem(SECURE_KEYS.API_TOKEN),
@@ -671,27 +675,34 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, []); // ✅ Empty deps
 
-  // ✅ App state management
+  // ✅ FIXED: App state management with empty deps
   useEffect(() => {
+    console.log('📱 Setting up AppState listener...');
+    
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       console.log('📱 App state changed to:', nextAppState);
       
       if (nextAppState === 'active') {
         checkAuthStatus();
-        testConnection();
       } else if (nextAppState === 'background') {
+        console.log('💾 Saving pending data...');
         saveCriticalData();
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription?.remove();
-  }, [checkAuthStatus, testConnection, saveCriticalData]);
+    
+    return () => {
+      console.log('🧹 Cleaning up AppState listener');
+      subscription?.remove();
+    };
+  }, []); // ✅ FIXED: Empty deps - prevents duplicate listeners!
 
   // ✅ Initialize on mount
   useEffect(() => {
+    console.log('🔍 Initial authentication check...');
     const initializeAuth = async () => {
       await checkBiometricSupport();
       await testConnection();
@@ -699,11 +710,10 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
     
     initializeAuth();
-  }, [checkAuthStatus, testConnection, checkBiometricSupport]);
+  }, []); // ✅ Empty deps
 
   // ✅ Enhanced context value
   const contextValue = React.useMemo<AuthContextType>(() => ({
-    // Core authentication
     isAuthenticated,
     isLoading,
     seller,
@@ -712,21 +722,15 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     checkAuthStatus,
     setIsAuthenticated,
     setSeller,
-    
-    // Enhanced features
     isFirstTime,
     authError,
     retryCount,
     connectionStatus,
     networkState,
-    
-    // Security & biometrics
     biometricSupported,
     biometricEnabled,
     authenticateWithBiometrics,
     toggleBiometric,
-    
-    // Advanced methods
     refreshUserData,
     updateSellerProfile,
     clearAuthError,
@@ -735,8 +739,6 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isTokenExpired,
     refreshToken,
     performWithRetry,
-    
-    // Performance monitoring
     performanceMetrics,
     trackPerformance,
   }), [
@@ -755,10 +757,8 @@ const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   );
 };
 
-// ✅ Set displayName
 AuthProvider.displayName = 'AuthProvider';
 
-// ✅ Enhanced exports
 export { AuthProvider, STORAGE_KEYS, SECURE_KEYS };
 export type { SellerData, AuthContextType, NetworkState, PerformanceMetrics };
 export default AuthContext;

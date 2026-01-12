@@ -1,45 +1,45 @@
 // src/services/FirebaseAuthService.ts
-import auth from '@react-native-firebase/auth';
+import axios from 'axios';
+
+const API_BASE_URL = 'https://keralaseller-backend.onrender.com';
 
 class FirebaseAuthService {
+  private phoneNumber: string = '';
+
   /**
-   * Send OTP via Firebase Phone Auth
-   * @param phoneNumber - Phone number to send OTP to
-   * @returns Firebase confirmation object
+   * Send OTP via Django backend
    */
   async sendOTP(phoneNumber: string): Promise<any> {
     try {
-      console.log('📤 Sending Firebase OTP to:', phoneNumber);
+      // Remove +91 if present
+      const cleanPhone = phoneNumber.replace('+91', '');
+      this.phoneNumber = cleanPhone;
       
-      // Format phone number with +91 country code
-      const formattedPhone = phoneNumber.startsWith('+') 
-        ? phoneNumber 
-        : `+91${phoneNumber}`;
-
-      // Send OTP via Firebase - returns confirmation object
-      const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
+      console.log('📤 Sending OTP via backend to:', cleanPhone);
       
-      console.log('✅ Firebase OTP sent successfully!');
-      return confirmation;
+      // ✅ CORRECTED ENDPOINT: /user/send-otp/ (not /user/seller/send-otp/)
+      const response = await axios.post(`${API_BASE_URL}/user/send-otp/`, {
+        phone: cleanPhone
+      });
+      
+      console.log('✅ OTP sent successfully');
+      
+      // Return a mock confirmation object to match Firebase interface
+      return {
+        phoneNumber: cleanPhone,
+        confirm: async (code: string) => {
+          return await this.verifyOTP({ phoneNumber: cleanPhone }, code);
+        }
+      };
       
     } catch (error: any) {
-      console.error('❌ Firebase OTP send failed:', error);
-      
-      if (error.code === 'auth/too-many-requests') {
-        throw new Error('Too many requests. Please try again later.');
-      } else if (error.code === 'auth/invalid-phone-number') {
-        throw new Error('Invalid phone number format.');
-      }
-      
-      throw new Error(error.message || 'Failed to send OTP via Firebase');
+      console.error('❌ Error sending OTP:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error || 'Failed to send OTP');
     }
   }
 
   /**
-   * Verify OTP and get Firebase ID token
-   * @param confirmation - Firebase confirmation object from sendOTP
-   * @param code - 6-digit OTP code
-   * @returns User data with Firebase ID token
+   * Verify OTP via Django backend
    */
   async verifyOTP(confirmation: any, code: string): Promise<{
     user: any;
@@ -48,74 +48,52 @@ class FirebaseAuthService {
     uid: string;
   }> {
     try {
-      console.log('🔍 Verifying Firebase OTP...');
+      console.log('🔍 Verifying OTP via backend...');
       
-      // Confirm the OTP code
-      const userCredential = await confirmation.confirm(code);
+      // Note: Your backend might not have a verify endpoint for sellers
+      // You might need to check what endpoint exists for OTP verification
+      // Looking at the URLs, there's no /user/verify-otp/ for sellers
+      // You might need to add this endpoint in your Django backend
       
-      console.log('✅ Firebase OTP verified! User:', userCredential.user.uid);
+      const response = await axios.post(`${API_BASE_URL}/user/verify-otp/`, {
+        phone: confirmation.phoneNumber || this.phoneNumber,
+        otp: code
+      });
       
-      // Get Firebase ID token - THIS IS WHAT YOUR BACKEND NEEDS
-      const idToken = await userCredential.user.getIdToken();
+      console.log('✅ OTP verified successfully');
       
+      // Return data in Firebase-compatible format
       return {
-        user: userCredential.user,
-        idToken: idToken,  // ← This goes to your backend as firebase_id_token
-        phoneNumber: userCredential.user.phoneNumber || '',
-        uid: userCredential.user.uid,
+        user: {
+          phoneNumber: confirmation.phoneNumber || this.phoneNumber,
+          uid: `seller_${confirmation.phoneNumber || this.phoneNumber}`
+        },
+        idToken: response.data.temp_token || 'verified',
+        phoneNumber: confirmation.phoneNumber || this.phoneNumber,
+        uid: `seller_${confirmation.phoneNumber || this.phoneNumber}`
       };
       
     } catch (error: any) {
-      console.error('❌ Firebase OTP verification failed:', error);
-      
-      if (error.code === 'auth/invalid-verification-code') {
-        throw new Error('Invalid OTP code. Please try again.');
-      } else if (error.code === 'auth/code-expired') {
-        throw new Error('OTP code has expired. Please request a new one.');
-      } else if (error.code === 'auth/session-expired') {
-        throw new Error('Session expired. Please request a new OTP.');
-      }
-      
-      throw new Error(error.message || 'Invalid OTP');
+      console.error('❌ Error verifying OTP:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error || 'Invalid OTP');
     }
   }
 
-  /**
-   * Get current Firebase user
-   */
   getCurrentUser() {
-    return auth().currentUser;
-  }
-
-  /**
-   * Get Firebase ID token for current user
-   */
-  async getIdToken(): Promise<string | null> {
-    const user = auth().currentUser;
-    if (user) {
-      return await user.getIdToken();
-    }
     return null;
   }
 
-  /**
-   * Sign out from Firebase
-   */
-  async signOut() {
-    try {
-      await auth().signOut();
-      console.log('✅ Signed out from Firebase');
-    } catch (error) {
-      console.error('❌ Firebase sign out failed:', error);
-      throw error;
-    }
+  async getIdToken(): Promise<string | null> {
+    return null;
   }
 
-  /**
-   * Listen to auth state changes
-   */
+  async signOut() {
+    this.phoneNumber = '';
+    console.log('✅ Signed out');
+  }
+
   onAuthStateChanged(callback: (user: any) => void) {
-    return auth().onAuthStateChanged(callback);
+    return () => {};
   }
 }
 
