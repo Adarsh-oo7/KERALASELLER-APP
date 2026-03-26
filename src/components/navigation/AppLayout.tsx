@@ -1,9 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, StatusBar, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from './TopBar';
 import DrawerLayout from './DrawerLayout';
 
@@ -16,61 +13,84 @@ interface AppLayoutProps {
   backgroundColor?: string;
 }
 
-const { height } = Dimensions.get('window');
-
 const AppLayout: React.FC<AppLayoutProps> = ({
   children,
   title = 'Kerala Sellers',
   subtitle,
   showNotifications = true,
-  notificationCount = 3, // Example notification count
+  notificationCount = 0,
   backgroundColor = '#ffffff',
 }) => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const insets = useSafeAreaInsets();
 
-  const toggleDrawer = () => {
-    console.log('🧭 Toggling drawer from TopBar');
-    setIsDrawerOpen(!isDrawerOpen);
-  };
+  const toggleDrawer = useCallback(() => setIsDrawerOpen(p => !p), []);
+  const openDrawer  = useCallback(() => setIsDrawerOpen(true), []);
+  const closeDrawer = useCallback(() => setIsDrawerOpen(false), []);
 
-  const closeDrawer = () => {
-    console.log('🧭 Closing drawer from AppLayout');
-    setIsDrawerOpen(false);
-  };
-
-  // Calculate top bar height (including status bar)
-  const topBarHeight = 120; // Adjust based on your TopBar component
+  // Actual top bar height = safe area top + bar content height (56px)
+  const TOP_BAR_HEIGHT = insets.top + 56;
 
   return (
-    <View style={styles.container}>
-      {/* ✅ FIXED TOP BAR */}
-      <TopBar
-        title={title}
-        subtitle={subtitle}
-        onMenuPress={toggleDrawer}
-        showNotifications={showNotifications}
-        notificationCount={notificationCount}
+    <View style={s.root}>
+      <StatusBar
+        barStyle="dark-content"
         backgroundColor={backgroundColor}
+        translucent={Platform.OS === 'android'}
       />
 
-      {/* ✅ MAIN CONTENT WITH DRAWER */}
-      <DrawerLayout isOpen={isDrawerOpen} onClose={closeDrawer}>
-        <View style={[styles.content, { paddingTop: 0 }]}>
-          {children}
-        </View>
-      </DrawerLayout>
+      {/* ── Fixed TopBar ── */}
+      <View style={[s.topBar, { height: TOP_BAR_HEIGHT, backgroundColor }]}>
+        <TopBar
+          title={title}
+          subtitle={subtitle}
+          onMenuPress={toggleDrawer}
+          showNotifications={showNotifications}
+          notificationCount={notificationCount}
+          backgroundColor={backgroundColor}
+        />
+      </View>
+
+      {/* ── Content below TopBar ── */}
+      <View style={[s.body, { marginTop: TOP_BAR_HEIGHT }]}>
+        <DrawerLayout
+          isOpen={isDrawerOpen}
+          onClose={closeDrawer}
+          onOpen={openDrawer}
+        >
+          <View style={s.content}>
+            {children}
+          </View>
+        </DrawerLayout>
+      </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
+const s = StyleSheet.create({
+  root: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f1f5f9',
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    // Shadow so content scrolls under it cleanly
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  body: {
+    flex: 1,
   },
   content: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f1f5f9',
   },
 });
 

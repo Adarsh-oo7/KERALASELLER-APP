@@ -1,294 +1,152 @@
-// services/NotificationService.ts
+// src/services/NotificationService.ts
 import apiClient from './ApiClient';
 
-// ===================================================================
-// ✅ BACKEND TYPES (what Django sends)
-// ===================================================================
+// ── Backend types ─────────────────────────────────────────────────────────────
+
 interface BackendNotification {
-  id: number;
-  message: string;
-  link: string | null;
-  is_read: boolean;
+  id:         number;
+  message:    string;
+  link:       string | null;
+  is_read:    boolean;
   created_at: string;
 }
 
-// ===================================================================
-// ✅ APP TYPES (what your screens expect)
-// ===================================================================
-interface Notification {
-  id: string;
-  type: 'order' | 'stock' | 'payment' | 'system' | 'marketing';
-  title: string;
-  message: string;
-  time: string;
-  unread: boolean;
-  actionable: boolean;
+// ── App types ─────────────────────────────────────────────────────────────────
+
+export interface Notification {
+  id:          string;
+  type:        'order' | 'stock' | 'payment' | 'system' | 'marketing';
+  title:       string;
+  message:     string;
+  time:        string;
+  unread:      boolean;
+  actionable:  boolean;
   action_url?: string;
-  created_at: string;
+  created_at:  string;
 }
 
-interface NotificationResponse {
-  data: Notification[];
-}
+export interface NotificationResponse { data: Notification[]; }
+export interface ActionResponse       { data: { success: boolean; message?: string } }
 
-interface ActionResponse {
-  data: {
-    success: boolean;
-    message?: string;
+// ── Transformer ───────────────────────────────────────────────────────────────
+
+const TYPE_KEYWORDS: Record<Notification['type'], string[]> = {
+  order:     ['order', 'delivered', 'dispatch', 'shipped'],
+  stock:     ['stock', 'inventory', 'restock', 'low', 'units left'],
+  payment:   ['payment', 'paid', 'received', 'refund', 'transaction'],
+  marketing: ['boost', 'marketing', 'promotion', 'offer', 'campaign'],
+  system:    ['profile', 'updated', 'subscription', 'account', 'setting'],
+};
+
+const SCREEN_MAP: Record<string, string> = {
+  orders:       'Orders',
+  products:     'Products',
+  billing:      'Billing',
+  subscription: 'Subscription',
+  dashboard:    'Dashboard',
+  profile:      'Profile',
+};
+
+const parseType = (message: string): Notification['type'] => {
+  const lower = message.toLowerCase();
+  for (const [type, keywords] of Object.entries(TYPE_KEYWORDS)) {
+    if (keywords.some(k => lower.includes(k))) return type as Notification['type'];
+  }
+  return 'system';
+};
+
+const extractTitle = (message: string): string => {
+  // Strip emoji characters
+  const clean = message.replace(/\p{Emoji}/gu, '').trim();
+
+  // Format: "Title - body"
+  if (clean.includes(' - ')) {
+    const part = clean.split(' - ')[0].trim();
+    if (part.length > 0) return part;
+  }
+
+  // First sentence
+  const sentence = clean.split(/[.!]/)[0].trim();
+  if (sentence.length > 0 && sentence.length < 60) return sentence;
+
+  // Truncate
+  return clean.length > 50 ? clean.slice(0, 47) + '…' : clean;
+};
+
+const formatTime = (dateString: string): string => {
+  const diff  = Date.now() - new Date(dateString).getTime();
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+
+  if (mins  <  1) return 'Just now';
+  if (mins  < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days  <  7) return `${days}d ago`;
+
+  return new Date(dateString).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short',
+    ...(days > 365 ? { year: 'numeric' } : {}),
+  });
+};
+
+const mapLink = (link: string | null): string | undefined => {
+  if (!link) return undefined;
+  const lower = link.toLowerCase();
+  return Object.entries(SCREEN_MAP).find(([key]) => lower.includes(key))?.[1];
+};
+
+const transform = (n: BackendNotification): Notification => {
+  const action_url = mapLink(n.link);
+  return {
+    id:         n.id.toString(),
+    type:       parseType(n.message),
+    title:      extractTitle(n.message),
+    message:    n.message,
+    time:       formatTime(n.created_at),
+    unread:     !n.is_read,
+    actionable: !!action_url,
+    action_url,
+    created_at: n.created_at,
   };
-}
+};
 
-// ===================================================================
-// ✅ HELPER FUNCTIONS - Transform backend data to app format
-// ===================================================================
-class NotificationTransformer {
-  
-  /**
-   * ✅ Parse notification type from message
-   */
-  static parseType(message: string): Notification['type'] {
-    const lower = message.toLowerCase();
-    
-    if (lower.includes('order') || lower.includes('🎉') || lower.includes('📦')) {
-      return 'order';
-    } else if (lower.includes('stock') || lower.includes('⚠️') || lower.includes('low')) {
-      return 'stock';
-    } else if (lower.includes('payment') || lower.includes('₹') || lower.includes('✅')) {
-      return 'payment';
-    } else if (lower.includes('profile') || lower.includes('👤') || lower.includes('subscription')) {
-      return 'system';
-    } else if (lower.includes('boost') || lower.includes('marketing') || lower.includes('📈')) {
-      return 'marketing';
-    }
-    return 'system';
-  }
+// ── Service ───────────────────────────────────────────────────────────────────
 
-  /**
-   * ✅ Extract title from message
-   */
-  static extractTitle(message: string): string {
-    // Remove emojis for title extraction
-    const withoutEmojis = message.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
-    
-    // Try splitting by dash
-    if (withoutEmojis.includes(' - ')) {
-      const title = withoutEmojis.split(' - ')[0].trim();
-      return title || withoutEmojis.substring(0, 50);
-    }
-    
-    // Try first sentence
-    const firstSentence = withoutEmojis.split(/[.!]/) [0].trim();
-    if (firstSentence.length > 0 && firstSentence.length < 60) {
-      return firstSentence;
-    }
-    
-    // Fallback: first 50 chars
-    return withoutEmojis.length > 50 
-      ? withoutEmojis.substring(0, 47) + '...' 
-      : withoutEmojis;
-  }
-
-  /**
-   * ✅ Format relative time
-   */
-  static formatTime(dateString: string): string {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-    
-    return date.toLocaleDateString('en-IN', { 
-      month: 'short', 
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-    });
-  }
-
-  /**
-   * ✅ Map backend link to app screen name
-   */
-  static mapLinkToScreen(link: string | null): string | undefined {
-    if (!link) return undefined;
-
-    const lowerLink = link.toLowerCase();
-    
-    if (lowerLink.includes('orders')) return 'Orders';
-    if (lowerLink.includes('products')) return 'Products';
-    if (lowerLink.includes('billing')) return 'Billing';
-    if (lowerLink.includes('subscription')) return 'Subscription';
-    if (lowerLink.includes('dashboard')) return 'Dashboard';
-    if (lowerLink.includes('profile')) return 'Profile';
-    
-    return undefined;
-  }
-
-  /**
-   * ✅ Transform backend notification to app format
-   */
-  static transform(backend: BackendNotification): Notification {
-    const type = this.parseType(backend.message);
-    const title = this.extractTitle(backend.message);
-    const time = this.formatTime(backend.created_at);
-    const action_url = this.mapLinkToScreen(backend.link);
-
-    return {
-      id: backend.id.toString(),
-      type,
-      title,
-      message: backend.message,
-      time,
-      unread: !backend.is_read,
-      actionable: !!action_url,
-      action_url,
-      created_at: backend.created_at,
-    };
-  }
-}
-
-// ===================================================================
-// ✅ NOTIFICATION SERVICE - Fetches REAL DATA from backend
-// ===================================================================
 class NotificationService {
-  
-  /**
-   * ✅ Get all notifications from backend
-   */
+
   async getNotifications(): Promise<NotificationResponse> {
-    try {
-      console.log('🔔 NotificationService: Fetching notifications from backend...');
-      
-      // ✅ REAL API CALL
-      const response = await apiClient.get<BackendNotification[]>('/api/notifications/');
-      const backendNotifications = response.data || [];
-      
-      console.log(`📡 Backend returned ${backendNotifications.length} notifications`);
-      
-      // ✅ Transform backend data to app format
-      const appNotifications = backendNotifications.map(n => 
-        NotificationTransformer.transform(n)
-      );
-      
-      console.log(`✅ Transformed ${appNotifications.length} notifications for app`);
-      
-      return { data: appNotifications };
-      
-    } catch (error: any) {
-      console.error('❌ NotificationService: Failed to fetch notifications', error);
-      
-      // ✅ Return empty array (component will show empty state)
-      return { data: [] };
-    }
+    const res = await apiClient.get<BackendNotification[]>('/api/notifications/');
+    return { data: (res.data ?? []).map(transform) };
   }
 
-  /**
-   * ✅ Get unread notification count
-   */
   async getUnreadCount(): Promise<number> {
+    // Try dedicated count endpoint first — avoids fetching full payloads
     try {
-      console.log('🔔 NotificationService: Getting unread count...');
-      
-      // ✅ Option 1: Use dedicated count endpoint (if available)
+      const res = await apiClient.get<{ unread_count: number }>('/api/notifications/count/');
+      return res.data.unread_count ?? 0;
+    } catch {
+      // Endpoint not available — count from list
       try {
-        const response = await apiClient.get<{ unread_count: number }>('/api/notifications/count/');
-        console.log(`✅ Unread count from API: ${response.data.unread_count}`);
-        return response.data.unread_count;
-      } catch (countError) {
-        // ✅ Fallback: Get all notifications and count locally
-        console.log('⚠️ Count endpoint unavailable, counting locally...');
-        const notifications = await this.getNotifications();
-        const unreadCount = notifications.data.filter(n => n.unread).length;
-        console.log(`✅ Unread count (local): ${unreadCount}`);
-        return unreadCount;
+        const { data } = await this.getNotifications();
+        return data.filter(n => n.unread).length;
+      } catch {
+        return 0;
       }
-      
-    } catch (error) {
-      console.error('❌ Failed to get unread count:', error);
-      return 0;
     }
   }
 
-  /**
-   * ✅ Mark notification as read
-   */
-  async markAsRead(notificationId: string): Promise<ActionResponse> {
-    try {
-      console.log(`🔔 Marking notification ${notificationId} as read...`);
-      
-      // ✅ REAL API CALL
-      await apiClient.patch(`/api/notifications/${notificationId}/mark-as-read/`);
-      
-      console.log(`✅ Notification ${notificationId} marked as read`);
-      
-      return { 
-        data: { 
-          success: true, 
-          message: 'Notification marked as read' 
-        } 
-      };
-      
-    } catch (error: any) {
-      console.error(`❌ Failed to mark notification ${notificationId} as read:`, error);
-      throw error;
-    }
+  async markAsRead(id: string): Promise<void> {
+    await apiClient.patch(`/api/notifications/${id}/mark-as-read/`);
   }
 
-  /**
-   * ✅ Mark all notifications as read
-   */
-  async markAllAsRead(): Promise<ActionResponse> {
-    try {
-      console.log('🔔 Marking all notifications as read...');
-      
-      // ✅ REAL API CALL
-      await apiClient.patch('/api/notifications/mark-all-read/');
-      
-      console.log('✅ All notifications marked as read');
-      
-      return { 
-        data: { 
-          success: true, 
-          message: 'All notifications marked as read' 
-        } 
-      };
-      
-    } catch (error: any) {
-      console.error('❌ Failed to mark all as read:', error);
-      throw error;
-    }
+  async markAllAsRead(): Promise<void> {
+    await apiClient.patch('/api/notifications/mark-all-read/');
   }
 
-  /**
-   * ✅ Clear all notifications
-   */
-  async clearAll(): Promise<ActionResponse> {
-    try {
-      console.log('🔔 Clearing all notifications...');
-      
-      // ✅ REAL API CALL
-      await apiClient.delete('/api/notifications/clear-all/');
-      
-      console.log('✅ All notifications cleared');
-      
-      return { 
-        data: { 
-          success: true, 
-          message: 'All notifications cleared' 
-        } 
-      };
-      
-    } catch (error: any) {
-      console.error('❌ Failed to clear notifications:', error);
-      throw error;
-    }
+  async clearAll(): Promise<void> {
+    await apiClient.delete('/api/notifications/clear-all/');
   }
 }
 
 export default new NotificationService();
-export type { Notification, NotificationResponse, ActionResponse };

@@ -1,568 +1,479 @@
 // src/screens/auth/ForgotPasswordScreen.tsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  StatusBar,
-  Animated,
-  ScrollView,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
+  StatusBar, Animated, ScrollView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getBaseURL } from '../../config/api';
+import { StackNavigationProp } from '@react-navigation/stack';
+import apiClient from '../../services/ApiClient';
 
-interface ForgotPasswordScreenProps {
-  navigation: any;
-}
+type Props = { navigation: StackNavigationProp<any> };
 
-export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScreenProps) {
+// ── Password strength (reused from RegisterScreen) ────────────────────────────
+
+const getStrength = (pw: string) => {
+  if (!pw)         return { label: '',       color: '#e5e7eb', width: '0%'   };
+  if (pw.length < 6)                              return { label: 'Weak',   color: '#ef4444', width: '25%'  };
+  if (pw.length < 8)                              return { label: 'Fair',   color: '#f59e0b', width: '50%'  };
+  if (/[A-Z]/.test(pw) && /\d/.test(pw))          return { label: 'Strong', color: '#10b981', width: '100%' };
+  return { label: 'Good', color: '#3b82f6', width: '75%' };
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function ForgotPasswordScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+
+  const [step,            setStep]            = useState<1 | 2 | 3>(1);
+  const [loading,         setLoading]         = useState(false);
+  const [phone,           setPhone]           = useState('');
+  const [otp,             setOtp]             = useState('');
+  const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showPw,          setShowPw]          = useState(false);
+  const [showConfirm,     setShowConfirm]     = useState(false);
+  const [formError,       setFormError]       = useState('');
+  const [phoneError,      setPhoneError]      = useState('');
+  const [resendCooldown,  setResendCooldown]  = useState(0);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
+  const shakeAnim   = useRef(new Animated.Value(0)).current;
+  const otpRef      = useRef<TextInput>(null);
+  const pwRef       = useRef<TextInput>(null);
+  const confirmRef  = useRef<TextInput>(null);
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
+  const pwStrength = getStrength(newPassword);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  const shake = () => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8,  duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 5,  duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0,  duration: 55, useNativeDriver: true }),
     ]).start();
-  }, []);
+  };
 
-  const handleSendOTP = async () => {
-    const phoneClean = phone.replace(/\D/g, '');
-    if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
-      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number starting with 6-9');
-      return;
-    }
+  const startCooldown = (secs = 60) => {
+    setResendCooldown(secs);
+    const id = setInterval(() => {
+      setResendCooldown(v => { if (v <= 1) { clearInterval(id); return 0; } return v - 1; });
+    }, 1000);
+  };
+
+  const validatePhone = () => {
+    if (!phone)              { setPhoneError('Phone number is required'); return false; }
+    if (phone.length !== 10) { setPhoneError('Must be 10 digits'); return false; }
+    if (!/^[6-9]/.test(phone)) { setPhoneError('Must start with 6, 7, 8 or 9'); return false; }
+    setPhoneError(''); return true;
+  };
+
+  // ── Step 1 — send OTP ────────────────────────────────────────────────────
+
+  const sendOtp = async () => {
+    setFormError('');
+    if (!validatePhone()) { shake(); return; }
 
     setLoading(true);
-    const API_BASE_URL = getBaseURL();
-
     try {
-      const response = await fetch(`${API_BASE_URL}/user/seller/password-reset/send-otp/`, {
-
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ phone: phoneClean }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ OTP sent:', data);
-        Alert.alert('OTP Sent', 'A 6-digit OTP has been sent to your phone', [
-          { text: 'OK', onPress: () => setStep(2) }
-        ]);
-      } else {
-        const errorData = await response.json();
-        Alert.alert('Error', errorData.error || 'Failed to send OTP');
-      }
-    } catch (error) {
-      console.error('❌ Send OTP error:', error);
-      Alert.alert('Connection Error', 'Cannot connect to server. Please check your network.');
+      await apiClient.post('/user/seller/password-reset/send-otp/', { phone });
+      setStep(2);
+      startCooldown(60);
+    } catch (err: any) {
+      setFormError(err.response?.data?.error ?? 'Failed to send OTP. Please try again.');
+      shake();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResetPassword = async () => {
-    if (!otp || otp.length !== 6) {
-      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP');
-      return;
-    }
-
-    if (!newPassword || newPassword.length < 8) {
-      Alert.alert('Weak Password', 'Password must be at least 8 characters');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match');
-      return;
-    }
-
+  const resendOtp = async () => {
+    if (resendCooldown > 0) return;
+    setFormError('');
     setLoading(true);
-    const API_BASE_URL = getBaseURL();
-
     try {
-      const response = await fetch(`${API_BASE_URL}/user/seller/password-reset/verify/`, {
-
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: phone.replace(/\D/g, ''),
-          otp: otp,
-          new_password: newPassword,
-          confirm_password: confirmPassword,
-        }),
-      });
-
-      if (response.ok) {
-        console.log('✅ Password reset successful');
-        setStep(3);
-        setTimeout(() => navigation.navigate('Login'), 3000);
-      } else {
-        const errorData = await response.json();
-        Alert.alert('Reset Failed', errorData.error || 'Invalid OTP or password');
-      }
-    } catch (error) {
-      console.error('❌ Reset password error:', error);
-      Alert.alert('Connection Error', 'Cannot connect to server');
+      await apiClient.post('/user/seller/password-reset/send-otp/', { phone });
+      startCooldown(60);
+    } catch (err: any) {
+      setFormError(err.response?.data?.error ?? 'Failed to resend OTP.');
+      shake();
     } finally {
       setLoading(false);
     }
   };
 
-  const formatPhoneNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length <= 10) {
-      setPhone(cleaned);
+  // ── Step 2 — verify OTP + reset ──────────────────────────────────────────
+
+  const resetPassword = async () => {
+    setFormError('');
+
+    if (!otp || otp.length !== 6)            { setFormError('Enter the 6-digit OTP'); shake(); return; }
+    if (!newPassword || newPassword.length < 8) { setFormError('Password must be at least 8 characters'); shake(); return; }
+    if (newPassword !== confirmPassword)      { setFormError('Passwords do not match'); shake(); return; }
+
+    setLoading(true);
+    try {
+      await apiClient.post('/user/seller/password-reset/verify/', {
+        phone,
+        otp,
+        new_password:     newPassword,
+        confirm_password: confirmPassword,
+      });
+      setStep(3);
+      setTimeout(() => navigation.replace('Login'), 3000);
+    } catch (err: any) {
+      setFormError(err.response?.data?.error ?? 'Invalid OTP or request expired. Try again.');
+      shake();
+    } finally {
+      setLoading(false);
     }
   };
 
-  // SUCCESS SCREEN
-  if (step === 3) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-        
-        <View style={styles.successContainer}>
-          <Ionicons name="checkmark-circle" size={80} color="#10B981" />
-          <Text style={styles.successTitle}>Password Reset Successfully!</Text>
-          <Text style={styles.successMessage}>
-            You can now login with your new password.
-          </Text>
+  // ── Step 3 — success ─────────────────────────────────────────────────────
 
-          <TouchableOpacity style={styles.successButton} onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.successButtonText}>Go to Login</Text>
-          </TouchableOpacity>
+  if (step === 3) return (
+    <View style={[s.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <View style={s.successWrap}>
+        <View style={s.successIconWrap}>
+          <Ionicons name="checkmark-circle" size={64} color="#10b981" />
         </View>
+        <Text style={s.successTitle}>Password Reset!</Text>
+        <Text style={s.successSub}>
+          Your password has been updated successfully.{'\n'}Redirecting to login…
+        </Text>
+        <TouchableOpacity style={s.primaryBtn} onPress={() => navigation.replace('Login')}>
+          <Ionicons name="log-in-outline" size={18} color="white" />
+          <Text style={s.primaryBtnText}>Go to Login</Text>
+        </TouchableOpacity>
       </View>
-    );
-  }
+    </View>
+  );
+
+  // ── Steps 1 & 2 ──────────────────────────────────────────────────────────
 
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { paddingTop: insets.top }]} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+    <View style={[s.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-          <TouchableOpacity style={styles.backIcon} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#1F2937" />
-          </TouchableOpacity>
-          
-          <View style={styles.logoSection}>
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>KS</Text>
-            </View>
-            <Text style={styles.brandTitle}>Kerala Sellers</Text>
-            <Text style={styles.brandSubtitle}>Password Recovery</Text>
-          </View>
-        </Animated.View>
-
-        {/* Form */}
-        <Animated.View 
-          style={[
-            styles.formContainer, 
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-          ]}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.formTitle}>
-            {step === 1 ? 'Forgot Your Password?' : 'Reset Your Password'}
-          </Text>
-          <Text style={styles.formSubtitle}>
-            {step === 1 
-              ? 'Enter your phone number to receive a 6-digit OTP'
-              : 'Enter the OTP and create a new password'
-            }
-          </Text>
 
-          {step === 1 ? (
-            // STEP 1: Phone Number
-            <>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Phone Number</Text>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.countryCode}>🇮🇳 +91</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="9876543210"
-                    placeholderTextColor="#9CA3AF"
-                    value={phone}
-                    onChangeText={formatPhoneNumber}
-                    keyboardType="numeric"
-                    maxLength={10}
-                    editable={!loading}
-                  />
-                </View>
+          {/* Back + brand */}
+          <View style={s.topRow}>
+            <TouchableOpacity
+              style={s.backBtn}
+              onPress={() => step === 2 ? setStep(1) : navigation.goBack()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="arrow-back" size={20} color="#374151" />
+            </TouchableOpacity>
+
+            <View style={s.brand}>
+              <View style={s.logoBg}>
+                <Text style={s.logoK}>K</Text>
               </View>
-
-              <TouchableOpacity 
-                style={[styles.primaryButton, loading && styles.buttonDisabled]} 
-                onPress={handleSendOTP} 
-                disabled={loading}
-              >
-                {loading ? (
-                  <View style={styles.loadingRow}>
-                    <ActivityIndicator size="small" color="white" />
-                    <Text style={styles.buttonText}>Sending OTP...</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.buttonText}>Send OTP</Text>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            // STEP 2: OTP + New Password
-            <>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>6-Digit OTP</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="123456"
-                    placeholderTextColor="#9CA3AF"
-                    value={otp}
-                    onChangeText={(text) => setOtp(text.replace(/\D/g, '').slice(0, 6))}
-                    keyboardType="numeric"
-                    maxLength={6}
-                    editable={!loading}
-                  />
-                </View>
+              <View>
+                <Text style={s.logoLine1}>KERALA</Text>
+                <Text style={s.logoLine2}>SELLERS</Text>
               </View>
+            </View>
+          </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>New Password</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Min 8 characters"
-                    placeholderTextColor="#9CA3AF"
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    secureTextEntry={!showPassword}
-                    editable={!loading}
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeButton} 
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <Ionicons 
-                      name={showPassword ? 'eye-outline' : 'eye-off-outline'} 
-                      size={22} 
-                      color="#6B7280" 
+          {/* Progress */}
+          <View style={s.progressWrap}>
+            <View style={s.progressTrack}>
+              <View style={[s.progressFill, { width: step === 1 ? '50%' : '100%' }]} />
+            </View>
+            <Text style={s.stepText}>Step {step} of 2</Text>
+          </View>
+
+          {/* Card */}
+          <Animated.View style={[s.card, { transform: [{ translateX: shakeAnim }] }]}>
+
+            <Text style={s.cardTitle}>
+              {step === 1 ? 'Forgot password?' : 'Reset your password'}
+            </Text>
+            <Text style={s.cardSub}>
+              {step === 1
+                ? 'Enter your registered phone number to receive an OTP'
+                : `Enter the code sent to +91 ${phone}`}
+            </Text>
+
+            {/* Global error */}
+            {!!formError && (
+              <View style={s.formError}>
+                <Ionicons name="alert-circle" size={15} color="#991b1b" />
+                <Text style={s.formErrorText}>{formError}</Text>
+              </View>
+            )}
+
+            {step === 1 ? (
+              /* ── Step 1 ── */
+              <>
+                <View style={s.field}>
+                  <Text style={s.label}>Phone Number</Text>
+                  <View style={[
+                    s.inputRow,
+                    !!phoneError && s.inputRowError,
+                    !phoneError && phone.length === 10 && s.inputRowOk,
+                  ]}>
+                    <View style={s.prefixWrap}>
+                      <Text style={s.prefix}>🇮🇳 +91</Text>
+                    </View>
+                    <TextInput
+                      style={s.input}
+                      value={phone}
+                      onChangeText={t => {
+                        setPhone(t.replace(/\D/g, '').slice(0, 10));
+                        setPhoneError('');
+                        setFormError('');
+                      }}
+                      placeholder="98765 43210"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="number-pad"
+                      maxLength={10}
+                      editable={!loading}
+                      returnKeyType="done"
+                      onSubmitEditing={sendOtp}
                     />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Confirm Password</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Re-enter password"
-                    placeholderTextColor="#9CA3AF"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showConfirmPassword}
-                    editable={!loading}
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeButton} 
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    <Ionicons 
-                      name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'} 
-                      size={22} 
-                      color="#6B7280" 
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <TouchableOpacity 
-                style={[styles.primaryButton, loading && styles.buttonDisabled]} 
-                onPress={handleResetPassword} 
-                disabled={loading}
-              >
-                {loading ? (
-                  <View style={styles.loadingRow}>
-                    <ActivityIndicator size="small" color="white" />
-                    <Text style={styles.buttonText}>Resetting...</Text>
+                    {!phoneError && phone.length === 10 && (
+                      <Ionicons name="checkmark-circle" size={17} color="#10b981" style={{ marginLeft: 6 }} />
+                    )}
                   </View>
-                ) : (
-                  <Text style={styles.buttonText}>Reset Password</Text>
-                )}
-              </TouchableOpacity>
+                  {!!phoneError && (
+                    <View style={s.fieldErrRow}>
+                      <Ionicons name="alert-circle-outline" size={12} color="#ef4444" />
+                      <Text style={s.fieldErrText}>{phoneError}</Text>
+                    </View>
+                  )}
+                </View>
 
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => setStep(1)}>
-                <Ionicons name="arrow-back-outline" size={18} color="#3B82F6" />
-                <Text style={styles.secondaryButtonText}>Back to Phone Entry</Text>
-              </TouchableOpacity>
-            </>
-          )}
+                <TouchableOpacity
+                  style={[s.primaryBtn, loading && s.primaryBtnDim]}
+                  onPress={sendOtp}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading
+                    ? <><ActivityIndicator color="white" size="small" /><Text style={s.primaryBtnText}>Sending…</Text></>
+                    : <><Ionicons name="phone-portrait-outline" size={18} color="white" /><Text style={s.primaryBtnText}>Send OTP</Text></>
+                  }
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* ── Step 2 ── */
+              <>
+                {/* OTP */}
+                <View style={s.field}>
+                  <Text style={s.label}>Verification Code</Text>
+                  <View style={[s.inputRow, otp.length === 6 && s.inputRowOk]}>
+                    <TextInput
+                      ref={otpRef}
+                      style={[s.input, s.otpInput]}
+                      value={otp}
+                      onChangeText={t => { setOtp(t.replace(/\D/g, '').slice(0, 6)); setFormError(''); }}
+                      placeholder="● ● ● ● ● ●"
+                      placeholderTextColor="#d1d5db"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      editable={!loading}
+                      returnKeyType="next"
+                      onSubmitEditing={() => pwRef.current?.focus()}
+                      autoFocus
+                    />
+                    {otp.length === 6 && (
+                      <Ionicons name="checkmark-circle" size={17} color="#10b981" style={{ marginLeft: 6 }} />
+                    )}
+                  </View>
+                </View>
 
-          <TouchableOpacity style={styles.loginLink} onPress={() => navigation.goBack()}>
-            <Text style={styles.loginLinkText}>Back to Login</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+                {/* Resend */}
+                <TouchableOpacity
+                  onPress={resendOtp}
+                  disabled={resendCooldown > 0 || loading}
+                  style={s.resendBtn}
+                >
+                  <Text style={[s.resendText, resendCooldown > 0 && s.resendTextDim]}>
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* New password */}
+                <View style={s.field}>
+                  <Text style={s.label}>New Password</Text>
+                  <View style={[s.inputRow, newPassword.length >= 8 && s.inputRowOk]}>
+                    <TextInput
+                      ref={pwRef}
+                      style={s.input}
+                      value={newPassword}
+                      onChangeText={t => { setNewPassword(t); setFormError(''); }}
+                      placeholder="Min 8 characters"
+                      placeholderTextColor="#9ca3af"
+                      secureTextEntry={!showPw}
+                      autoCapitalize="none"
+                      editable={!loading}
+                      returnKeyType="next"
+                      onSubmitEditing={() => confirmRef.current?.focus()}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPw(v => !v)}
+                      style={s.eyeBtn}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name={showPw ? 'eye-outline' : 'eye-off-outline'} size={18} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </View>
+                  {newPassword.length > 0 && (
+                    <View style={s.strengthWrap}>
+                      <View style={s.strengthTrack}>
+                        <View style={[s.strengthFill, { width: pwStrength.width, backgroundColor: pwStrength.color }]} />
+                      </View>
+                      <Text style={[s.strengthLabel, { color: pwStrength.color }]}>{pwStrength.label}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Confirm password */}
+                <View style={s.field}>
+                  <Text style={s.label}>Confirm Password</Text>
+                  <View style={[
+                    s.inputRow,
+                    confirmPassword.length > 0 && confirmPassword !== newPassword && s.inputRowError,
+                    confirmPassword.length > 0 && confirmPassword === newPassword && s.inputRowOk,
+                  ]}>
+                    <TextInput
+                      ref={confirmRef}
+                      style={s.input}
+                      value={confirmPassword}
+                      onChangeText={t => { setConfirmPassword(t); setFormError(''); }}
+                      placeholder="Re-enter new password"
+                      placeholderTextColor="#9ca3af"
+                      secureTextEntry={!showConfirm}
+                      autoCapitalize="none"
+                      editable={!loading}
+                      returnKeyType="done"
+                      onSubmitEditing={resetPassword}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowConfirm(v => !v)}
+                      style={s.eyeBtn}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name={showConfirm ? 'eye-outline' : 'eye-off-outline'} size={18} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </View>
+                  {confirmPassword.length > 0 && confirmPassword === newPassword && (
+                    <View style={s.fieldOkRow}>
+                      <Ionicons name="checkmark-circle-outline" size={12} color="#10b981" />
+                      <Text style={s.fieldOkText}>Passwords match</Text>
+                    </View>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={[s.primaryBtn, loading && s.primaryBtnDim]}
+                  onPress={resetPassword}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading
+                    ? <><ActivityIndicator color="white" size="small" /><Text style={s.primaryBtnText}>Resetting…</Text></>
+                    : <><Ionicons name="lock-closed-outline" size={18} color="white" /><Text style={s.primaryBtnText}>Reset Password</Text></>
+                  }
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Back to login */}
+            <TouchableOpacity style={s.loginLink} onPress={() => navigation.navigate('Login')}>
+              <Text style={s.loginLinkText}>Back to Login</Text>
+            </TouchableOpacity>
+
+          </Animated.View>
+
+          <Text style={s.footer}>Kerala Sellers · Built for local businesses</Text>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 30,
-    alignItems: 'center',
-  },
-  backIcon: {
-    position: 'absolute',
-    left: 20,
-    top: 30,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  logoSection: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  logoText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  brandTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  brandSubtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  formContainer: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 24,
-    marginTop: 20,
-    marginBottom: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  formTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  formSubtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 28,
-    lineHeight: 22,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  countryCode: {
-    fontSize: 15,
-    color: '#1F2937',
-    fontWeight: '600',
-    marginRight: 8,
-    paddingRight: 12,
-    borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    paddingVertical: 14,
-    fontWeight: '500',
-  },
-  passwordInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    paddingVertical: 14,
-    fontWeight: '500',
-  },
-  eyeButton: {
-    padding: 8,
-  },
-  primaryButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8,
-    marginBottom: 8,
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  loginLink: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  loginLinkText: {
-    fontSize: 15,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  successContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  successTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#1F2937',
-    textAlign: 'center',
-    marginTop: 24,
-    marginBottom: 12,
-  },
-  successMessage: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 24,
-  },
-  successButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: 12,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  successButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  root:             { flex: 1, backgroundColor: '#f8fafc' },
+  scroll:           { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40 },
+
+  topRow:           { flexDirection: 'row', alignItems: 'center', paddingTop: 16, marginBottom: 20 },
+  backBtn:          { width: 38, height: 38, borderRadius: 10, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center',
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2, marginRight: 16 },
+
+  brand:            { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  logoBg:           { width: 42, height: 42, borderRadius: 12, backgroundColor: '#3b82f6', alignItems: 'center', justifyContent: 'center',
+                      shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 6, elevation: 5 },
+  logoK:            { fontSize: 22, fontWeight: '900', color: 'white' },
+  logoLine1:        { fontSize: 16, fontWeight: '900', color: '#1f2937', letterSpacing: 3 },
+  logoLine2:        { fontSize: 11, fontWeight: '700', color: '#3b82f6', letterSpacing: 4, marginTop: -1 },
+
+  progressWrap:     { marginBottom: 20 },
+  progressTrack:    { height: 4, backgroundColor: '#e5e7eb', borderRadius: 2, marginBottom: 6 },
+  progressFill:     { height: '100%', backgroundColor: '#3b82f6', borderRadius: 2 },
+  stepText:         { fontSize: 11, color: '#9ca3af', textAlign: 'right' },
+
+  card:             { backgroundColor: 'white', borderRadius: 24, padding: 24, marginBottom: 20,
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 16, elevation: 4 },
+  cardTitle:        { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  cardSub:          { fontSize: 13, color: '#6b7280', marginBottom: 20, lineHeight: 19 },
+
+  formError:        { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 10, padding: 12, marginBottom: 16 },
+  formErrorText:    { flex: 1, fontSize: 13, color: '#991b1b', fontWeight: '500' },
+
+  field:            { marginBottom: 14 },
+  label:            { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 },
+  inputRow:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 14, minHeight: 50 },
+  inputRowError:    { borderColor: '#ef4444', backgroundColor: '#fff5f5' },
+  inputRowOk:       { borderColor: '#10b981' },
+  prefixWrap:       { marginRight: 10, paddingRight: 10, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
+  prefix:           { fontSize: 13, fontWeight: '600', color: '#374151' },
+  input:            { flex: 1, fontSize: 14, color: '#111827', fontWeight: '500', paddingVertical: 0 },
+  eyeBtn:           { padding: 4, marginLeft: 4 },
+  otpInput:         { textAlign: 'center', letterSpacing: 10, fontSize: 20, fontWeight: '700' },
+  fieldErrRow:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  fieldErrText:     { fontSize: 12, color: '#ef4444' },
+  fieldOkRow:       { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  fieldOkText:      { fontSize: 12, color: '#10b981' },
+
+  strengthWrap:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6, marginBottom: 2 },
+  strengthTrack:    { flex: 1, height: 3, backgroundColor: '#e5e7eb', borderRadius: 2 },
+  strengthFill:     { height: '100%', borderRadius: 2 },
+  strengthLabel:    { fontSize: 11, fontWeight: '700', width: 44, textAlign: 'right' },
+
+  resendBtn:        { alignSelf: 'flex-end', marginBottom: 12, marginTop: -4 },
+  resendText:       { fontSize: 13, color: '#3b82f6', fontWeight: '600' },
+  resendTextDim:    { color: '#9ca3af' },
+
+  primaryBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      backgroundColor: '#3b82f6', paddingVertical: 15, borderRadius: 14, marginBottom: 10,
+                      shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 8, elevation: 4 },
+  primaryBtnDim:    { backgroundColor: '#93c5fd', shadowOpacity: 0, elevation: 0 },
+  primaryBtnText:   { fontSize: 15, fontWeight: '700', color: 'white' },
+
+  loginLink:        { alignItems: 'center', paddingVertical: 12, marginTop: 6 },
+  loginLinkText:    { fontSize: 14, color: '#6b7280', fontWeight: '500' },
+
+  successWrap:      { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  successIconWrap:  { width: 100, height: 100, borderRadius: 50, backgroundColor: '#ecfdf5', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  successTitle:     { fontSize: 24, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 10 },
+  successSub:       { fontSize: 14, color: '#6b7280', textAlign: 'center', lineHeight: 22, marginBottom: 32 },
+
+  footer:           { textAlign: 'center', fontSize: 12, color: '#d1d5db', marginTop: 4, marginBottom: 8 },
 });

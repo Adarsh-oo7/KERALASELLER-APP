@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+// src/navigation/AppNavigator.tsx
+import React, {
+  useState, useEffect, useCallback, useRef, createContext, useContext,
+} from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet, Platform } from 'react-native';
 
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
-import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen'; // ✅ ADD THIS
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 
 // Main screens
 import CreateShopScreen from '../screens/profile/CreateShopScreen';
@@ -31,10 +34,12 @@ import DrawerLayout from '../components/navigation/DrawerLayout';
 import AuthService from '../services/AuthService';
 import NotificationService from '../services/NotificationService';
 
-const Stack = createStackNavigator();
-const Tab = createBottomTabNavigator();
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-// ✅ AppState Context
+const NOTIFICATION_POLL_MS = 60_000; // 60s — was 30s, no need to hammer the API
+
+// ── Context ───────────────────────────────────────────────────────────────────
+
 interface AppStateContextType {
   isDrawerOpen: boolean;
   setIsDrawerOpen: (open: boolean) => void;
@@ -44,10 +49,10 @@ interface AppStateContextType {
   setCurrentTitle: (title: string) => void;
   currentSubtitle?: string;
   setCurrentSubtitle: (subtitle?: string) => void;
-  loadNotificationCount: () => void;
+  refreshNotifications: () => void;
 }
 
-const AppStateContext = React.createContext<AppStateContextType>({
+export const AppStateContext = createContext<AppStateContextType>({
   isDrawerOpen: false,
   setIsDrawerOpen: () => {},
   notificationCount: 0,
@@ -56,234 +61,118 @@ const AppStateContext = React.createContext<AppStateContextType>({
   setCurrentTitle: () => {},
   currentSubtitle: '',
   setCurrentSubtitle: () => {},
-  loadNotificationCount: () => {},
+  refreshNotifications: () => {},
 });
 
-// ✅ Component wrappers
-const CreateShopScreenWrapper: React.FC<any> = (props) => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-  return (
-    <View style={styles.mainContainer}>
-      <TopBar
-        title="Store Setup"
-        subtitle="Complete your profile"
-        onMenuPress={() => setIsDrawerOpen(true)}
-        showNotifications={false}
-        backgroundColor="#ffffff"
-      />
-      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
-        <View style={styles.screenContainer}>
-          <CreateShopScreen {...props} />
-        </View>
-      </DrawerLayout>
-    </View>
-  );
+/**
+ * Wraps any screen with TopBar + DrawerLayout.
+ * Eliminates the 4 near-identical wrapper components you had before.
+ */
+const withTopBar = (
+  WrappedScreen: React.ComponentType<any>,
+  title: string,
+  subtitle: string,
+  showNotifications = true,
+) => {
+  const Wrapper: React.FC<any> = (props) => {
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    return (
+      <View style={s.fill}>
+        <TopBar
+          title={title}
+          subtitle={subtitle}
+          onMenuPress={() => setDrawerOpen(true)}
+          showNotifications={showNotifications}
+          backgroundColor="#ffffff"
+        />
+        <DrawerLayout isOpen={drawerOpen} onClose={() => setDrawerOpen(false)}>
+          <View style={s.fill}>
+            <WrappedScreen {...props} />
+          </View>
+        </DrawerLayout>
+      </View>
+    );
+  };
+  Wrapper.displayName = `withTopBar(${title})`;
+  return Wrapper;
 };
 
-const OrderDetailsScreenWrapper: React.FC<any> = (props) => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+// Stack-level screen wrappers (have their own local drawer state)
+const CreateShopScreenWrapper    = withTopBar(CreateShopScreen,    'Store Setup',         'Complete your profile',                    false);
+const OrderDetailsScreenWrapper  = withTopBar(OrderDetailsScreen,  'Order Details',       'View order information');
+const BillingScreenWrapper       = withTopBar(BillingScreen,       'Local Billing',       'Point of Sale');
+const StockManagementWrapper     = withTopBar(StockManagementScreen, 'Stock Management',  'Quick inventory updates');
 
-  return (
-    <View style={styles.mainContainer}>
-      <TopBar
-        title="Order Details"
-        subtitle="View order information"
-        onMenuPress={() => setIsDrawerOpen(true)}
-        showNotifications={true}
-        backgroundColor="#ffffff"
-      />
-      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
-        <View style={styles.screenContainer}>
-          <OrderDetailsScreen {...props} />
-        </View>
-      </DrawerLayout>
-    </View>
-  );
+// ── Tab screen wrappers — use context to set TopBar title ─────────────────────
+
+interface TabWrapperConfig {
+  title: string;
+  subtitle: string;
+  Screen: React.ComponentType<any>;
+}
+
+const makeTabWrapper = ({ title, subtitle, Screen }: TabWrapperConfig) => {
+  const Wrapper: React.FC<any> = (props) => {
+    const { setCurrentTitle, setCurrentSubtitle } = useContext(AppStateContext);
+    useEffect(() => {
+      setCurrentTitle(title);
+      setCurrentSubtitle(subtitle);
+    }, []); // ← intentionally empty — title only set once on mount
+    return <Screen {...props} />;
+  };
+  Wrapper.displayName = `TabWrapper(${title})`;
+  return Wrapper;
 };
 
-const BillingScreenWrapper: React.FC<any> = (props) => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+const DashboardWrapper      = makeTabWrapper({ title: 'Dashboard',     subtitle: 'Welcome back! 🌴',                       Screen: DashboardScreen });
+const ProductsWrapper       = makeTabWrapper({ title: 'Products',      subtitle: 'Manage your inventory',                  Screen: ProductsScreen });
+const AddProductWrapper     = makeTabWrapper({ title: 'Add Product',   subtitle: 'Create new listing',                     Screen: AddProductScreen });
+const OrdersWrapper         = makeTabWrapper({ title: 'Orders',        subtitle: 'Customer orders',                        Screen: OrdersScreen });
+const HistoryWrapper        = makeTabWrapper({ title: 'History',       subtitle: 'Sales records',                          Screen: HistoryScreen });
+const SubscriptionWrapper   = makeTabWrapper({ title: 'Subscription',  subtitle: 'Manage your plan',                       Screen: SubscriptionScreen });
+const NotificationsWrapper  = makeTabWrapper({ title: 'Notifications', subtitle: 'Stay updated with your business',        Screen: NotificationsScreen });
 
-  return (
-    <View style={styles.mainContainer}>
-      <TopBar
-        title="Local Billing"
-        subtitle="Point of Sale"
-        onMenuPress={() => setIsDrawerOpen(true)}
-        showNotifications={true}
-        backgroundColor="#ffffff"
-      />
-      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
-        <View style={styles.screenContainer}>
-          <BillingScreen {...props} />
-        </View>
-      </DrawerLayout>
-    </View>
-  );
-};
+// ── Main Tab Navigator ────────────────────────────────────────────────────────
 
-const StockManagementScreenWrapper: React.FC<any> = (props) => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+const Stack = createStackNavigator();
+const Tab   = createBottomTabNavigator();
 
-  return (
-    <View style={styles.mainContainer}>
-      <TopBar
-        title="📦 Stock Management"
-        subtitle="Quick inventory updates • Real-time tracking"
-        onMenuPress={() => setIsDrawerOpen(true)}
-        showNotifications={true}
-        backgroundColor="#ffffff"
-      />
-      
-      <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
-        <View style={styles.screenContainer}>
-          <StockManagementScreen {...props} />
-        </View>
-      </DrawerLayout>
-    </View>
-  );
-};
-
-// ✅ Tab screen wrappers
-const DashboardScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('Dashboard');
-    setCurrentSubtitle('Welcome back! 🌴');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <DashboardScreen {...props} />
-    </View>
-  );
-};
-
-const ProductsScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('Products');
-    setCurrentSubtitle('Manage your inventory');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <ProductsScreen {...props} />
-    </View>
-  );
-};
-
-const AddProductScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('Add Product');
-    setCurrentSubtitle('Create new listing');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <AddProductScreen {...props} />
-    </View>
-  );
-};
-
-const OrdersScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('Orders');
-    setCurrentSubtitle('Customer orders');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <OrdersScreen {...props} />
-    </View>
-  );
-};
-
-const HistoryScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('History');
-    setCurrentSubtitle('Sales records');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <HistoryScreen {...props} />
-    </View>
-  );
-};
-
-const SubscriptionScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('Subscription');
-    setCurrentSubtitle('Manage your plan and unlock premium features');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <SubscriptionScreen {...props} />
-    </View>
-  );
-};
-
-const NotificationsScreenWrapper = (props: any) => {
-  const { setCurrentTitle, setCurrentSubtitle } = React.useContext(AppStateContext);
-  
-  React.useEffect(() => {
-    setCurrentTitle('Notifications');
-    setCurrentSubtitle('Stay updated with your business');
-  }, [setCurrentTitle, setCurrentSubtitle]);
-
-  return (
-    <View style={styles.screenContainer}>
-      <NotificationsScreen {...props} />
-    </View>
-  );
-};
-
-// ✅ Main Tab Navigator
 const MainTabNavigator: React.FC = () => {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen]       = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [currentTitle, setCurrentTitle] = useState('Dashboard');
-  const [currentSubtitle, setCurrentSubtitle] = useState('Welcome back! 🌴');
+  const [currentTitle, setCurrentTitle]       = useState('Dashboard');
+  const [currentSubtitle, setCurrentSubtitle] = useState<string | undefined>('Welcome back! 🌴');
 
-  const loadNotificationCount = async (): Promise<void> => {
+  // ── Notification polling — recursive setTimeout (no stacking) ────────────
+  const fetchNotifications = useCallback(async () => {
     try {
       const count = await NotificationService.getUnreadCount();
       setNotificationCount(count);
-      console.log('🔔 AppNavigator: Notification count loaded:', count);
-    } catch (error) {
-      console.error('❌ AppNavigator: Failed to load notification count:', error);
-      setNotificationCount(0);
+    } catch (e) {
+      console.error('Notification fetch failed:', e);
     }
-  };
-
-  React.useEffect(() => {
-    loadNotificationCount();
-    const interval = setInterval(loadNotificationCount, 30000);
-    return () => clearInterval(interval);
   }, []);
 
-  const toggleDrawer = (): void => {
-    console.log('🧭 Toggling drawer from TopBar');
-    setIsDrawerOpen(!isDrawerOpen);
-  };
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
 
-  const closeDrawer = (): void => {
-    console.log('🧭 Closing drawer');
-    setIsDrawerOpen(false);
-  };
+    const poll = async () => {
+      await fetchNotifications();
+      if (!cancelled) {
+        timeoutId = setTimeout(poll, NOTIFICATION_POLL_MS);
+      }
+    };
+
+    poll(); // fire immediately on mount
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [fetchNotifications]);
 
   return (
     <AppStateContext.Provider value={{
@@ -295,159 +184,140 @@ const MainTabNavigator: React.FC = () => {
       setCurrentTitle,
       currentSubtitle,
       setCurrentSubtitle,
-      loadNotificationCount,
+      refreshNotifications: fetchNotifications,
     }}>
-      <View style={styles.mainContainer}>
+      <View style={s.fill}>
         <TopBar
           title={currentTitle}
           subtitle={currentSubtitle}
-          onMenuPress={toggleDrawer}
-          showNotifications={true}
+          onMenuPress={() => setIsDrawerOpen(v => !v)}
+          showNotifications
           notificationCount={notificationCount}
           backgroundColor="#ffffff"
         />
-
-        <DrawerLayout isOpen={isDrawerOpen} onClose={closeDrawer}>
-          <View style={styles.tabContainer}>
-            <Tab.Navigator
-              tabBar={(props) => <BottomTabs {...props} />}
-              screenOptions={{
-                headerShown: false,
-              }}
-              initialRouteName="Dashboard"
-            >
-              <Tab.Screen name="Dashboard" component={DashboardScreenWrapper} />
-              <Tab.Screen name="Products" component={ProductsScreenWrapper} />
-              <Tab.Screen name="AddProduct" component={AddProductScreenWrapper} />
-              <Tab.Screen name="Orders" component={OrdersScreenWrapper} />
-              <Tab.Screen name="History" component={HistoryScreenWrapper} />
-              
-              <Tab.Screen 
-                name="Subscription" 
-                component={SubscriptionScreenWrapper}
-                options={{
-                  tabBarButton: () => null,
-                }}
-              />
-              
-              <Tab.Screen 
-                name="Notifications" 
-                component={NotificationsScreenWrapper}
-                options={{
-                  tabBarButton: () => null,
-                }}
-              />
-            </Tab.Navigator>
-          </View>
+        <DrawerLayout isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)}>
+          <Tab.Navigator
+            tabBar={(props) => <BottomTabs {...props} />}
+            screenOptions={{ headerShown: false }}
+            initialRouteName="Dashboard"
+          >
+            <Tab.Screen name="Dashboard"  component={DashboardWrapper} />
+            <Tab.Screen name="Products"   component={ProductsWrapper} />
+            <Tab.Screen name="AddProduct" component={AddProductWrapper} />
+            <Tab.Screen name="Orders"     component={OrdersWrapper} />
+            <Tab.Screen name="History"    component={HistoryWrapper} />
+            <Tab.Screen
+              name="Subscription"
+              component={SubscriptionWrapper}
+              options={{ tabBarButton: () => null }}
+            />
+            <Tab.Screen
+              name="Notifications"
+              component={NotificationsWrapper}
+              options={{ tabBarButton: () => null }}
+            />
+          </Tab.Navigator>
         </DrawerLayout>
       </View>
     </AppStateContext.Provider>
   );
 };
 
-// ✅ Main AppNavigator
+// ── App Navigator ─────────────────────────────────────────────────────────────
+
 const AppNavigator: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading]           = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // ── Auth check: ONCE on mount ─────────────────────────────────────────────
   useEffect(() => {
-    checkAuthStatus();
-  }, []);
+    let cancelled = false;
+
+    AuthService.isAuthenticated()
+      .then(auth => { if (!cancelled) setIsAuthenticated(auth); })
+      .catch(() => { if (!cancelled) setIsAuthenticated(false); })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+
+    return () => { cancelled = true; };
+  }, []); // ← runs ONCE — no polling loop
+
+  // ── Auth polling: every 30s, only check if state actually changed ─────────
+  // Uses a ref for isAuthenticated so the interval closure is never stale
+  const isAuthRef = useRef(isAuthenticated);
+  useEffect(() => { isAuthRef.current = isAuthenticated; }, [isAuthenticated]);
 
   useEffect(() => {
-    const authCheckInterval = setInterval(async () => {
+    if (isLoading) return; // don't poll until initial check is done
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    const poll = async () => {
       try {
-        const currentAuth = await AuthService.isAuthenticated();
-        
-        if (currentAuth !== isAuthenticated) {
-          if (currentAuth) {
-            console.log('🔐 User logged in successfully');
-          } else {
-            console.log('🚪 User logged out - navigation will be handled by AuthService');
-          }
-          setIsAuthenticated(currentAuth);
+        const current = await AuthService.isAuthenticated();
+        // Only update state if it actually changed — prevents re-renders
+        if (!cancelled && current !== isAuthRef.current) {
+          setIsAuthenticated(current);
         }
-        
-      } catch (error) {
-        console.error('❌ Auth check interval failed:', error);
-        if (isAuthenticated) {
-          console.log('🚪 Auth error detected, setting to logged out');
+      } catch {
+        if (!cancelled && isAuthRef.current) {
           setIsAuthenticated(false);
         }
       }
-    }, 3000);
+      if (!cancelled) {
+        timeoutId = setTimeout(poll, 30_000); // check every 30s, not 3s
+      }
+    };
 
-    return () => clearInterval(authCheckInterval);
-  }, [isAuthenticated]);
+    timeoutId = setTimeout(poll, 30_000); // first check after 30s, not immediately
 
-  const checkAuthStatus = async (): Promise<void> => {
-    try {
-      console.log('🔍 Initial authentication check...');
-      const authenticated = await AuthService.isAuthenticated();
-      setIsAuthenticated(authenticated);
-      console.log('🔐 Initial authentication status:', authenticated ? 'Logged In' : 'Logged Out');
-    } catch (error) {
-      console.error('❌ Initial auth check failed:', error);
-      setIsAuthenticated(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [isLoading]); // ← only depends on isLoading, not isAuthenticated
 
-  const handleAuthChange = (authStatus: boolean): void => {
-    console.log('🔄 Manual auth state change:', authStatus ? 'Logged In' : 'Logged Out');
-    setIsAuthenticated(authStatus);
-    
-    if (!authStatus) {
-      console.log('🧹 Cleaning up UI state after logout');
-    }
-  };
+  const handleAuthChange = useCallback((auth: boolean) => {
+    setIsAuthenticated(auth);
+  }, []);
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
+  // ── Loading screen ────────────────────────────────────────────────────────
+
+  if (isLoading) return (
+    <View style={s.loadingWrap}>
+      <View style={s.loadingIconWrap}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>
-          Loading Kerala Sellers...
-        </Text>
       </View>
-    );
-  }
+      <Text style={s.loadingTitle}>Kerala Sellers</Text>
+      <Text style={s.loadingSub}>Setting up your store...</Text>
+    </View>
+  );
+
+  // ── Navigator ─────────────────────────────────────────────────────────────
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {isAuthenticated ? (
         <>
-          {/* ✅ MAIN APP */}
-          <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-          
-          {/* ✅ Modal screens */}
-          <Stack.Screen name="CreateShop" component={CreateShopScreenWrapper} />
-          <Stack.Screen name="OrderDetails" component={OrderDetailsScreenWrapper} />
-          <Stack.Screen name="Billing" component={BillingScreenWrapper} />
-          <Stack.Screen name="StockManagement" component={StockManagementScreenWrapper} />
-          <Stack.Screen name="Payments" component={PaymentsScreen} />
+          <Stack.Screen name="MainTabs"       component={MainTabNavigator} />
+          <Stack.Screen name="CreateShop"     component={CreateShopScreenWrapper} />
+          <Stack.Screen name="OrderDetails"   component={OrderDetailsScreenWrapper} />
+          <Stack.Screen name="Billing"        component={BillingScreenWrapper} />
+          <Stack.Screen name="StockManagement" component={StockManagementWrapper} />
+          <Stack.Screen name="Payments"       component={PaymentsScreen} />
         </>
       ) : (
         <>
-          {/* ✅ AUTH SCREENS */}
           <Stack.Screen name="Login">
             {(props) => (
-              <LoginScreen 
-                {...props} 
-                onLoginSuccess={() => handleAuthChange(true)} 
-              />
+              <LoginScreen {...props} onLoginSuccess={() => handleAuthChange(true)} />
             )}
           </Stack.Screen>
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          {/* ✅ ADD THIS: ForgotPassword screen */}
-          <Stack.Screen 
-            name="ForgotPassword" 
+          <Stack.Screen name="Register"        component={RegisterScreen} />
+          <Stack.Screen
+            name="ForgotPassword"
             component={ForgotPasswordScreen}
-            options={{
-              headerShown: false,
-              animationEnabled: true,
-            }}
+            options={{ headerShown: false, animationEnabled: true }}
           />
         </>
       )}
@@ -455,32 +325,14 @@ const AppNavigator: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  tabContainer: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  screenContainer: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  loadingContainer: {
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#f8fafc'
-  },
-  loadingText: {
-    marginTop: 16, 
-    fontSize: 16, 
-    color: '#6b7280',
-    textAlign: 'center'
-  },
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  fill:         { flex: 1, backgroundColor: '#f8fafc' },
+  loadingWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', gap: 12 },
+  loadingIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+  loadingTitle: { fontSize: 20, fontWeight: '900', color: '#111827' },
+  loadingSub:   { fontSize: 13, color: '#9ca3af' },
 });
 
 export default AppNavigator;
-export { AppStateContext };

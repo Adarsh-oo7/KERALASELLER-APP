@@ -1,18 +1,9 @@
 // screens/Orders/OrderDetailsScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  RefreshControl,
-  Modal,
-  TextInput,
-  Clipboard,
-  Share,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Alert, RefreshControl, Modal,
+  TextInput, Clipboard, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
@@ -21,29 +12,9 @@ import { RouteProp } from '@react-navigation/native';
 import OrderService from '../../services/OrderService';
 import { ApiError } from '../../types/api';
 
-// ===================================================================
-// ✅ ENHANCED COLORS - Better contrast and readability
-// ===================================================================
-const COLORS = {
-  primary: '#3b82f6',
-  primaryLight: '#60a5fa',
-  primaryDark: '#2563eb',
-  success: '#10b981',
-  successLight: '#d1fae5',
-  error: '#ef4444',
-  errorLight: '#fee2e2',
-  warning: '#f59e0b',
-  warningLight: '#fef3c7',
-  surface: '#ffffff',
-  background: '#f8fafc',
-  textPrimary: '#1f2937',
-  textSecondary: '#6b7280',
-  textTertiary: '#9ca3af',
-  borderLight: '#e5e7eb',
-  borderMedium: '#d1d5db',
-};
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type OrderDetailsScreenProps = {
+type Props = {
   navigation: StackNavigationProp<any>;
   route: RouteProp<{ params: { orderId: number; onRefresh?: () => void } }, 'params'>;
 };
@@ -74,860 +45,514 @@ interface Order {
   cancel_reason?: string;
 }
 
-// ===================================================================
-// ✅ ENHANCED ORDER TIMELINE - Better visual design
-// ===================================================================
-const OrderTimeline: React.FC<{ order: Order }> = ({ order }) => {
-  const timelineSteps = [
-    {
-      key: 'PENDING',
-      label: 'Order Placed',
-      icon: 'checkmark-circle',
-      completed: ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(order.status)
-    },
-    {
-      key: 'PROCESSING',
-      label: 'Processing',
-      icon: 'cube',
-      completed: ['PROCESSING', 'SHIPPED', 'DELIVERED'].includes(order.status)
-    },
-    {
-      key: 'SHIPPED',
-      label: 'Shipped',
-      icon: 'car',
-      completed: ['SHIPPED', 'DELIVERED'].includes(order.status)
-    },
-    {
-      key: 'DELIVERED',
-      label: 'Delivered',
-      icon: 'star',
-      completed: order.status === 'DELIVERED'
-    }
-  ];
+// ── Config ────────────────────────────────────────────────────────────────────
 
-  if (order.status === 'CANCELLED') {
-    return (
-      <View style={styles.cancelledTimeline}>
-        <View style={styles.cancelledIconContainer}>
-          <Ionicons name="alert-circle" size={24} color={COLORS.error} />
-        </View>
-        <View style={styles.cancelledContent}>
-          <Text style={styles.cancelledTitle}>Order Cancelled</Text>
-          <Text style={styles.cancelledDate}>
-            on {new Date(order.updated_at || order.created_at).toLocaleDateString('en-IN', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric'
-            })}
-          </Text>
-          {order.cancel_reason && (
-            <View style={styles.cancelReasonBox}>
-              <Text style={styles.cancelReasonLabel}>Reason:</Text>
-              <Text style={styles.cancelReasonText}>{order.cancel_reason}</Text>
-            </View>
-          )}
-        </View>
+const STATUS_CFG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
+  PENDING:    { label: 'Pending',    color: '#92400e', bg: '#fffbeb', icon: 'time-outline' },
+  PROCESSING: { label: 'Processing', color: '#1e40af', bg: '#eff6ff', icon: 'refresh-outline' },
+  SHIPPED:    { label: 'Shipped',    color: '#065f46', bg: '#f0fdf4', icon: 'car-outline' },
+  DELIVERED:  { label: 'Delivered',  color: '#065f46', bg: '#f0fdf4', icon: 'checkmark-circle-outline' },
+  CANCELLED:  { label: 'Cancelled',  color: '#991b1b', bg: '#fef2f2', icon: 'close-circle-outline' },
+};
+
+const TIMELINE_STEPS = [
+  { key: 'PENDING',    label: 'Order Placed', icon: 'bag-check-outline' as const,       reached: ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED'] },
+  { key: 'PROCESSING', label: 'Processing',   icon: 'cube-outline' as const,            reached: ['PROCESSING', 'SHIPPED', 'DELIVERED'] },
+  { key: 'SHIPPED',    label: 'Shipped',       icon: 'car-outline' as const,             reached: ['SHIPPED', 'DELIVERED'] },
+  { key: 'DELIVERED',  label: 'Delivered',     icon: 'checkmark-circle-outline' as const, reached: ['DELIVERED'] },
+];
+
+const SHIPPING_PROVIDERS = ['DTDC', 'Blue Dart', 'FedEx', 'Delhivery', 'Ecom Express', 'India Post', 'Other'];
+
+const STATUS_OPTIONS = [
+  { value: 'PENDING',    label: 'Pending' },
+  { value: 'PROCESSING', label: 'Processing' },
+  { value: 'SHIPPED',    label: 'Shipped' },
+  { value: 'DELIVERED',  label: 'Delivered' },
+  { value: 'CANCELLED',  label: 'Cancelled' },
+];
+
+const formatDate = (d: string) =>
+  new Date(d).toLocaleString('en-IN', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// ── Timeline sub-component ────────────────────────────────────────────────────
+
+const OrderTimeline: React.FC<{ order: Order }> = ({ order }) => {
+  if (order.status === 'CANCELLED') return (
+    <View style={s.cancelBox}>
+      <View style={s.cancelIconWrap}>
+        <Ionicons name="close-circle" size={22} color="#ef4444" />
       </View>
-    );
-  }
+      <View style={{ flex: 1 }}>
+        <Text style={s.cancelTitle}>Order Cancelled</Text>
+        <Text style={s.cancelDate}>
+          on {new Date(order.updated_at || order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </Text>
+        {!!order.cancel_reason && (
+          <View style={s.cancelReasonBox}>
+            <Text style={s.cancelReasonLabel}>Reason</Text>
+            <Text style={s.cancelReasonText}>{order.cancel_reason}</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
 
   return (
-    <View style={styles.timelineContainer}>
-      {timelineSteps.map((step, index) => (
-        <View key={step.key} style={styles.timelineStepContainer}>
-          <View style={styles.timelineRow}>
-            {/* ✅ Improved icon design */}
-            <View style={[
-              styles.timelineIcon,
-              {
-                backgroundColor: step.completed ? COLORS.success : COLORS.background,
-                borderWidth: step.completed ? 0 : 2,
-                borderColor: COLORS.borderMedium,
-              }
-            ]}>
-              <Ionicons 
-                name={step.icon as any} 
-                size={22} 
-                color={step.completed ? 'white' : COLORS.textTertiary} 
-              />
-              {step.key === order.status && (
-                <View style={styles.currentIndicator} />
-              )}
+    <View style={s.timeline}>
+      {TIMELINE_STEPS.map((step, idx) => {
+        const done    = step.reached.includes(order.status);
+        const current = step.key === order.status;
+        return (
+          <View key={step.key}>
+            <View style={s.timelineRow}>
+              <View style={[s.timelineCircle, done && s.timelineCircleDone]}>
+                <Ionicons name={step.icon} size={18} color={done ? '#fff' : '#d1d5db'} />
+                {current && <View style={s.timelinePulse} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.timelineLabel, { color: done ? '#111827' : '#9ca3af', fontWeight: current ? '800' : done ? '600' : '400' }]}>
+                  {step.label}
+                </Text>
+                {current && (
+                  <View style={s.timelineCurrent}>
+                    <View style={s.timelineCurrentDot} />
+                    <Text style={s.timelineCurrentText}>Current Status</Text>
+                  </View>
+                )}
+              </View>
             </View>
-            
-            {/* ✅ Better content layout */}
-            <View style={styles.timelineContent}>
-              <Text style={[
-                styles.timelineLabel,
-                { 
-                  color: step.completed ? COLORS.textPrimary : COLORS.textSecondary,
-                  fontWeight: step.key === order.status ? '700' : step.completed ? '600' : '400'
-                }
-              ]}>
-                {step.label}
-              </Text>
-              {step.key === order.status && (
-                <View style={styles.currentBadge}>
-                  <View style={styles.currentDot} />
-                  <Text style={styles.currentText}>Current Status</Text>
-                </View>
-              )}
-            </View>
+            {idx < TIMELINE_STEPS.length - 1 && (
+              <View style={[s.timelineConnector, done && s.timelineConnectorDone]} />
+            )}
           </View>
-          
-          {/* ✅ Improved connector */}
-          {index < timelineSteps.length - 1 && (
-            <View style={[
-              styles.timelineConnector,
-              { 
-                backgroundColor: step.completed ? COLORS.success : COLORS.borderLight,
-                opacity: step.completed ? 1 : 0.5,
-              }
-            ]} />
-          )}
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 };
 
-// ===================================================================
-// ✅ MAIN COMPONENT
-// ===================================================================
-const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, route }) => {
-  const { orderId, onRefresh: parentRefresh } = route.params;
-  
-  const [order, setOrder] = useState<Order | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string>('');
-  
-  // Modal state
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [newStatus, setNewStatus] = useState('');
-  const [trackingId, setTrackingId] = useState('');
-  const [shippingProvider, setShippingProvider] = useState('');
-  const [notes, setNotes] = useState('');
-  const [isUpdating, setIsUpdating] = useState(false);
+// ── Detail row helper ─────────────────────────────────────────────────────────
 
-  const fetchOrderDetails = useCallback(async () => {
+const DetailRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <View style={s.detailRow}>
+    <Text style={s.detailLabel}>{label}</Text>
+    <View style={{ flex: 1 }}>{children}</View>
+  </View>
+);
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+const OrderDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
+  const { orderId, onRefresh: parentRefresh } = route.params;
+
+  const [order, setOrder]               = useState<Order | null>(null);
+  const [isLoading, setIsLoading]       = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [error, setError]               = useState('');
+  const [showModal, setShowModal]       = useState(false);
+  const [newStatus, setNewStatus]       = useState('');
+  const [trackingId, setTrackingId]     = useState('');
+  const [shippingProvider, setShippingProvider] = useState('');
+  const [notes, setNotes]               = useState('');
+  const [isUpdating, setIsUpdating]     = useState(false);
+
+  const load = useCallback(async () => {
     try {
-      console.log('🔍 Fetching order details:', orderId);
       setError('');
-      
-      const response = await OrderService.getOrder(orderId);
-      console.log('✅ Order details fetched:', response.data);
-      
-      setOrder(response.data);
-      setNewStatus(response.data.status);
-      setTrackingId(response.data.tracking_id || '');
-      setShippingProvider(response.data.shipping_provider || '');
-    } catch (error: any) {
-      console.error('❌ Failed to fetch order details:', error);
-      const apiError = error as ApiError;
-      
-      if (apiError.response?.status === 401) {
-        setError('Session expired. Please login again.');
-      } else if (apiError.response?.status === 404) {
-        setError('Order not found or you do not have permission to view it.');
-      } else {
-        setError(apiError.message || 'Failed to load order details');
-      }
-    } finally {
-      setIsLoading(false);
-      setRefreshing(false);
-    }
+      const res = await OrderService.getOrder(orderId);
+      setOrder(res.data);
+      setNewStatus(res.data.status);
+      setTrackingId(res.data.tracking_id || '');
+      setShippingProvider(res.data.shipping_provider || '');
+    } catch (e: any) {
+      const err = e as ApiError;
+      if (err.response?.status === 401) setError('Session expired. Please login again.');
+      else if (err.response?.status === 404) setError('Order not found.');
+      else setError(err.message || 'Failed to load order details');
+    } finally { setIsLoading(false); setRefreshing(false); }
   }, [orderId]);
 
-  useEffect(() => {
-    fetchOrderDetails();
-  }, [fetchOrderDetails]);
+  useEffect(() => { load(); }, [load]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchOrderDetails();
-  };
+  const onRefresh = () => { setRefreshing(true); load(); };
 
-  const canModifyOrder = order?.status !== 'CANCELLED' && order?.status !== 'DELIVERED';
-  const isOrderCancelled = order?.status === 'CANCELLED';
-  const isOrderDelivered = order?.status === 'DELIVERED';
+  const canModify     = order?.status !== 'CANCELLED' && order?.status !== 'DELIVERED';
+  const isCancelled   = order?.status === 'CANCELLED';
+  const isDelivered   = order?.status === 'DELIVERED';
 
-  const handleStatusUpdate = async () => {
+  const handleUpdate = async () => {
     if (!order) return;
-    
-    if (isOrderCancelled) {
-      Alert.alert('Cannot Update', 'Cannot update status of a cancelled order.');
-      return;
-    }
-
-    if (isOrderDelivered) {
-      Alert.alert('Cannot Update', 'Cannot update status of a delivered order.');
-      return;
-    }
-
     if (newStatus === 'SHIPPED' && (!trackingId.trim() || !shippingProvider.trim())) {
-      Alert.alert('Missing Information', 'Please provide both shipping provider and tracking ID for shipped orders.');
+      Alert.alert('Missing Info', 'Please provide shipping provider and tracking ID.');
       return;
     }
-
-    Alert.alert(
-      'Confirm Update',
-      `Update order #${order.id} status to "${newStatus}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Update', onPress: performUpdate }
-      ]
-    );
+    Alert.alert('Confirm Update', `Update order #${order.id} to "${newStatus}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Update', onPress: performUpdate },
+    ]);
   };
 
   const performUpdate = async () => {
     if (!order) return;
-    
     setIsUpdating(true);
-    
     try {
-      const updateData: any = {
-        status: newStatus,
-      };
-
-      if (newStatus === 'SHIPPED') {
-        updateData.tracking_id = trackingId.trim();
-        updateData.shipping_provider = shippingProvider.trim();
-      }
-
-      if (notes.trim()) {
-        updateData.notes = notes.trim();
-      }
-
-      console.log('🔄 Updating order status:', updateData);
-      
-      await OrderService.updateOrderStatus(order.id, updateData);
-      
-      console.log('✅ Order status updated successfully');
-      
-      setShowUpdateModal(false);
-      setTrackingId('');
-      setShippingProvider('');
-      setNotes('');
-      
-      await fetchOrderDetails();
-      
-      if (parentRefresh) {
-        parentRefresh();
-      }
-      
-      Alert.alert(
-        'Success! 🎉',
-        `Order #${order.id} has been updated to "${newStatus}"`,
-        [{ text: 'OK' }]
-      );
-      
-    } catch (error: any) {
-      console.error('❌ Failed to update order status:', error);
-      Alert.alert(
-        'Update Failed',
-        error.response?.data?.message || 'Failed to update order status. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsUpdating(false);
-    }
+      const data: any = { status: newStatus };
+      if (newStatus === 'SHIPPED') { data.tracking_id = trackingId.trim(); data.shipping_provider = shippingProvider.trim(); }
+      if (notes.trim()) data.notes = notes.trim();
+      await OrderService.updateOrderStatus(order.id, data);
+      setShowModal(false); setNotes('');
+      await load();
+      parentRefresh?.();
+      Alert.alert('Updated!', `Order #${order.id} is now "${newStatus}".`);
+    } catch (e: any) {
+      Alert.alert('Update Failed', e.response?.data?.message || 'Please try again.');
+    } finally { setIsUpdating(false); }
   };
 
-  const copyTrackingId = async (trackingId: string) => {
-    try {
-      await Clipboard.setString(trackingId);
-      Alert.alert('Copied!', 'Tracking ID copied to clipboard');
-    } catch (error) {
-      console.error('Failed to copy:', error);
-    }
+  const copyTracking = async () => {
+    try { await Clipboard.setString(order!.tracking_id!); Alert.alert('Copied!', 'Tracking ID copied.'); } catch {}
   };
 
-  const shareOrderDetails = async () => {
+  const shareOrder = async () => {
     if (!order) return;
-    
-    const shareText = `Order #${order.id}\nCustomer: ${order.customer_name || 'Guest'}\nAmount: ₹${order.total_amount}\nStatus: ${order.status}${order.tracking_id ? `\nTracking: ${order.tracking_id}` : ''}`;
-    
-    try {
-      await Share.share({
-        message: shareText,
-        title: `Order #${order.id} Details`,
-      });
-    } catch (error) {
-      console.error('Share failed:', error);
-    }
+    const txt = `Order #${order.id}\nCustomer: ${order.customer_name || 'Guest'}\nAmount: ₹${order.total_amount}\nStatus: ${order.status}${order.tracking_id ? `\nTracking: ${order.tracking_id}` : ''}`;
+    try { await Share.share({ message: txt, title: `Order #${order.id}` }); } catch {}
   };
 
-  const handleGenerateBill = async () => {
-    try {
-      Alert.alert(
-        'Bill Generation',
-        'Bill generation feature will be implemented soon!',
-        [{ text: 'OK' }]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to generate bill');
-    }
-  };
+  // ── States ─────────────────────────────────────────────────────────────────
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  if (isLoading) return (
+    <View style={[s.screen, s.centered]}>
+      <ActivityIndicator size="large" color="#3b82f6" />
+      <Text style={s.loadingText}>Loading order details...</Text>
+    </View>
+  );
 
-  const getStatusStyle = (status: string) => {
-    const statusStyles = {
-      'PENDING': { backgroundColor: COLORS.warningLight, color: '#92400e' },
-      'PROCESSING': { backgroundColor: '#dbeafe', color: '#1e40af' },
-      'SHIPPED': { backgroundColor: COLORS.successLight, color: '#065f46' },
-      'DELIVERED': { backgroundColor: COLORS.successLight, color: '#065f46' },
-      'CANCELLED': { backgroundColor: COLORS.errorLight, color: '#991b1b' },
-    };
-    return statusStyles[status as keyof typeof statusStyles] || { backgroundColor: '#f3f4f6', color: '#374151' };
-  };
+  if (error && !order) return (
+    <View style={[s.screen, s.centered]}>
+      <View style={s.errorIcon}><Ionicons name="alert-circle-outline" size={40} color="#ef4444" /></View>
+      <Text style={s.errorTitle}>Something went wrong</Text>
+      <Text style={s.errorMsg}>{error}</Text>
+      <TouchableOpacity style={s.retryBtn} onPress={load}>
+        <Ionicons name="refresh" size={16} color="white" />
+        <Text style={s.retryText}>Try Again</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={s.backLink} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={16} color="#3b82f6" />
+        <Text style={s.backLinkText}>Back to Orders</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-  const getStatusIcon = (status: string) => {
-    const icons = {
-      'PENDING': 'time',
-      'PROCESSING': 'cube',
-      'SHIPPED': 'car',
-      'DELIVERED': 'checkmark-circle',
-      'CANCELLED': 'close-circle',
-    };
-    return icons[status as keyof typeof icons] || 'cube';
-  };
+  if (!order) return (
+    <View style={[s.screen, s.centered]}>
+      <Ionicons name="cube-outline" size={48} color="#d1d5db" />
+      <Text style={s.errorTitle}>Order not found</Text>
+      <TouchableOpacity style={s.backLink} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={16} color="#3b82f6" />
+        <Text style={s.backLinkText}>Back to Orders</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-  const statusOptions = [
-    { value: 'PENDING', label: '⏱️ Pending' },
-    { value: 'PROCESSING', label: '⚙️ Processing' },
-    { value: 'SHIPPED', label: '🚚 Shipped' },
-    { value: 'DELIVERED', label: '✅ Delivered' },
-    { value: 'CANCELLED', label: '❌ Cancelled' },
-  ];
+  const cfg = STATUS_CFG[order.status] || STATUS_CFG.PENDING;
 
-  const shippingProviders = [
-    'DTDC',
-    'Blue Dart',
-    'FedEx',
-    'Delhivery',
-    'Ecom Express',
-    'India Post',
-    'Other'
-  ];
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-  // ===================================================================
-  // ✅ LOADING STATE
-  // ===================================================================
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading order details...</Text>
-      </View>
-    );
-  }
-
-  // ===================================================================
-  // ✅ ERROR STATE
-  // ===================================================================
-  if (error && !order) {
-    return (
-      <View style={styles.errorContainer}>
-        <View style={styles.errorIconContainer}>
-          <Ionicons name="alert-circle" size={64} color={COLORS.error} />
-        </View>
-        <Text style={styles.errorTitle}>Something went wrong</Text>
-        <Text style={styles.errorMessage}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchOrderDetails}>
-          <Ionicons name="refresh" size={20} color="white" />
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.backToOrdersButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
-          <Text style={styles.backToOrdersText}>Back to Orders</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (!order) {
-    return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="cube-outline" size={64} color={COLORS.textTertiary} />
-        <Text style={styles.errorTitle}>Order not found</Text>
-        <Text style={styles.errorMessage}>
-          The order you're looking for doesn't exist or you don't have permission to view it.
-        </Text>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
-          <Text style={styles.backButtonText}>Back to Orders</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const statusStyle = getStatusStyle(order.status);
-
-  // ===================================================================
-  // ✅ MAIN RENDER
-  // ===================================================================
   return (
     <>
-      <ScrollView 
-        style={styles.container}
-        refreshControl=
-
-{
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
-        }
+      <ScrollView
+        style={s.screen}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3b82f6" />}
       >
-        {/* ✅ ENHANCED HEADER */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.headerBackButton} 
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={22} color={COLORS.primary} />
-            <Text style={styles.headerBackText}>Back</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.headerShareButton} 
-            onPress={shareOrderDetails}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="share-social" size={22} color={COLORS.primary} />
-          </TouchableOpacity>
-        </View>
 
-        {/* ✅ ORDER TITLE SECTION */}
-        <View style={styles.titleSection}>
-          <View style={styles.titleRow}>
-            <Text style={styles.orderTitle}>Order #{order.id}</Text>
-            <View style={[styles.statusBadge, statusStyle]}>
-              <Ionicons name={getStatusIcon(order.status) as any} size={16} color={statusStyle.color} />
-              <Text style={[styles.statusText, { color: statusStyle.color }]}>
-                {order.status}
-              </Text>
+        {/* Page header */}
+        <View style={s.pageHeader}>
+          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+            <Ionicons name="arrow-back" size={18} color="#3b82f6" />
+            <Text style={s.backBtnText}>Back</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={s.pageTitle}>Order #{order.id}</Text>
+            <View style={s.pageMeta}>
+              <Ionicons name="calendar-outline" size={12} color="#9ca3af" />
+              <Text style={s.pageDate}>{formatDate(order.created_at)}</Text>
             </View>
           </View>
-          <View style={styles.orderMeta}>
-            <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} />
-            <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+          <View style={[s.statusPill, { backgroundColor: cfg.bg }]}>
+            <Ionicons name={cfg.icon} size={12} color={cfg.color} />
+            <Text style={[s.statusPillText, { color: cfg.color }]}>{cfg.label}</Text>
           </View>
+          <TouchableOpacity style={s.shareBtn} onPress={shareOrder} activeOpacity={0.8}>
+            <Ionicons name="share-social-outline" size={18} color="#3b82f6" />
+          </TouchableOpacity>
         </View>
 
-        {/* ✅ QUICK ACTIONS - Better visual design */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={handleGenerateBill}
+        {/* Action buttons */}
+        <View style={s.actions}>
+          <TouchableOpacity
+            style={[s.actionBtn, { backgroundColor: '#f3f4f6' }]}
+            onPress={() => Alert.alert('Bill Generation', 'Coming soon!')}
             activeOpacity={0.8}
           >
-            <Ionicons name="document-text-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>View Bill</Text>
+            <Ionicons name="document-text-outline" size={16} color="#374151" />
+            <Text style={[s.actionBtnText, { color: '#374151' }]}>View Bill</Text>
           </TouchableOpacity>
-          
-          {canModifyOrder && (
-            <TouchableOpacity 
-              style={styles.primaryActionButton} 
-              onPress={() => setShowUpdateModal(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="create-outline" size={20} color="white" />
-              <Text style={styles.primaryActionButtonText}>Update Status</Text>
-            </TouchableOpacity>
-          )}
 
-          {(isOrderCancelled || isOrderDelivered) && (
-            <TouchableOpacity 
-              style={styles.infoActionButton} 
-              onPress={() => setShowUpdateModal(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="information-circle-outline" size={20} color="white" />
-              <Text style={styles.primaryActionButtonText}>View Details</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[s.actionBtn, { backgroundColor: canModify ? '#3b82f6' : '#f0fdf4', borderColor: canModify ? undefined : '#bbf7d0' }]}
+            onPress={() => setShowModal(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={canModify ? 'create-outline' : 'information-circle-outline'} size={16} color={canModify ? 'white' : '#059669'} />
+            <Text style={[s.actionBtnText, { color: canModify ? 'white' : '#059669' }]}>
+              {canModify ? 'Update Status' : 'View Details'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ✅ ORDER TIMELINE */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderIcon}>
-              <Ionicons name="navigate-circle" size={22} color={COLORS.primary} />
+        {/* Order Progress */}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <View style={[s.cardHeadIcon, { backgroundColor: '#eff6ff' }]}>
+              <Ionicons name="navigate-circle-outline" size={20} color="#3b82f6" />
             </View>
-            <Text style={styles.cardTitle}>Order Progress</Text>
+            <Text style={s.cardTitle}>Order Progress</Text>
           </View>
           <OrderTimeline order={order} />
         </View>
 
-        {/* ✅ CUSTOMER DETAILS */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderIcon}>
-              <Ionicons name="person" size={22} color={COLORS.primary} />
+        {/* Customer Details */}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <View style={[s.cardHeadIcon, { backgroundColor: '#eff6ff' }]}>
+              <Ionicons name="person-outline" size={20} color="#3b82f6" />
             </View>
-            <Text style={styles.cardTitle}>Customer Details</Text>
+            <Text style={s.cardTitle}>Customer</Text>
           </View>
-          
-          <View style={styles.detailsList}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Name</Text>
-              <Text style={styles.detailValue}>
-                {order.customer_name || 'Guest Customer'}
-              </Text>
-            </View>
-            
-            {order.customer_phone && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Phone</Text>
-                <Text style={styles.detailValue}>+91 {order.customer_phone}</Text>
-              </View>
+          <View style={s.detailList}>
+            <DetailRow label="Name">
+              <Text style={s.detailValue}>{order.customer_name || 'Guest Customer'}</Text>
+            </DetailRow>
+            {!!order.customer_phone && (
+              <DetailRow label="Phone">
+                <Text style={s.detailValue}>+91 {order.customer_phone}</Text>
+              </DetailRow>
             )}
-            
-            {order.shipping_address && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Address</Text>
-                <Text style={[styles.detailValue, styles.addressText]}>
-                  {order.shipping_address}
-                </Text>
-              </View>
+            {!!order.shipping_address && (
+              <DetailRow label="Address">
+                <Text style={[s.detailValue, { lineHeight: 20 }]}>{order.shipping_address}</Text>
+              </DetailRow>
             )}
-            
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Order Type</Text>
-              <View style={[
-                styles.orderTypeBadge,
-                {
-                  backgroundColor: order.order_type === 'LOCAL' ? COLORS.warningLight : '#dbeafe',
-                }
-              ]}>
-                <Text style={[
-                  styles.orderTypeText,
-                  {
-                    color: order.order_type === 'LOCAL' ? '#92400e' : '#1e40af',
-                  }
-                ]}>
+            <DetailRow label="Order Type">
+              <View style={[s.typePill, { backgroundColor: order.order_type === 'LOCAL' ? '#fffbeb' : '#eff6ff' }]}>
+                <Text style={[s.typePillText, { color: order.order_type === 'LOCAL' ? '#92400e' : '#1e40af' }]}>
                   {order.order_type === 'LOCAL' ? '🏪 Local Bill' : '🛒 Online Order'}
                 </Text>
               </View>
-            </View>
+            </DetailRow>
           </View>
         </View>
 
-        {/* ✅ SHIPPING DETAILS */}
-        {order.shipping_provider && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardHeaderIcon}>
-                <Ionicons name="car" size={22} color={COLORS.primary} />
+        {/* Shipping Details */}
+        {!!order.shipping_provider && (
+          <View style={s.card}>
+            <View style={s.cardHead}>
+              <View style={[s.cardHeadIcon, { backgroundColor: '#eff6ff' }]}>
+                <Ionicons name="car-outline" size={20} color="#3b82f6" />
               </View>
-              <Text style={styles.cardTitle}>Shipping Details</Text>
+              <Text style={s.cardTitle}>Shipping</Text>
             </View>
-            
-            <View style={styles.detailsList}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Provider</Text>
-                <Text style={styles.detailValue}>{order.shipping_provider}</Text>
-              </View>
-              
-              {order.tracking_id && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Tracking ID</Text>
-                  <View style={styles.trackingContainer}>
-                    <Text style={styles.trackingId}>{order.tracking_id}</Text>
-                    <TouchableOpacity 
-                      style={styles.copyButton}
-                      onPress={() => copyTrackingId(order.tracking_id!)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="copy-outline" size={14} color="white" />
-                      <Text style={styles.copyButtonText}>Copy</Text>
+            <View style={s.detailList}>
+              <DetailRow label="Provider">
+                <Text style={s.detailValue}>{order.shipping_provider}</Text>
+              </DetailRow>
+              {!!order.tracking_id && (
+                <DetailRow label="Tracking">
+                  <View style={s.trackingRow}>
+                    <Text style={s.trackingCode}>{order.tracking_id}</Text>
+                    <TouchableOpacity style={s.copyBtn} onPress={copyTracking}>
+                      <Ionicons name="copy-outline" size={12} color="white" />
+                      <Text style={s.copyBtnText}>Copy</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
+                </DetailRow>
               )}
             </View>
           </View>
         )}
 
-        {/* ✅ PAYMENT DETAILS */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderIcon}>
-              <Ionicons 
-                name={order.payment_method === 'ONLINE' ? 'card' : 'wallet'} 
-                size={22} 
-                color={COLORS.primary} 
-              />
+        {/* Payment */}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <View style={[s.cardHeadIcon, { backgroundColor: '#eff6ff' }]}>
+              <Ionicons name={order.payment_method === 'ONLINE' ? 'card-outline' : 'wallet-outline'} size={20} color="#3b82f6" />
             </View>
-            <Text style={styles.cardTitle}>Payment Details</Text>
+            <Text style={s.cardTitle}>Payment</Text>
           </View>
-          
-          <View style={styles.detailsList}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Method</Text>
-              <Text style={styles.detailValue}>
-                {order.payment_method === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery'}
-              </Text>
-            </View>
-            
-            {order.payment_status && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Status</Text>
-                <View style={[
-                  styles.paymentStatusBadge,
-                  {
-                    backgroundColor: ['Paid', 'PAID'].includes(order.payment_status) 
-                      ? COLORS.successLight : '#dbeafe',
-                  }
-                ]}>
-                  <Text style={[
-                    styles.paymentStatusText,
-                    {
-                      color: ['Paid', 'PAID'].includes(order.payment_status) 
-                        ? '#065f46' : '#1e40af',
-                    }
-                  ]}>
+          <View style={s.detailList}>
+            <DetailRow label="Method">
+              <Text style={s.detailValue}>{order.payment_method === 'ONLINE' ? 'Online Payment' : 'Cash on Delivery'}</Text>
+            </DetailRow>
+            {!!order.payment_status && (
+              <DetailRow label="Status">
+                <View style={[s.typePill, { backgroundColor: ['Paid', 'PAID'].includes(order.payment_status) ? '#f0fdf4' : '#eff6ff' }]}>
+                  <Text style={[s.typePillText, { color: ['Paid', 'PAID'].includes(order.payment_status) ? '#065f46' : '#1e40af' }]}>
                     {order.payment_status}
                   </Text>
                 </View>
-              </View>
+              </DetailRow>
             )}
-            
-            <View style={styles.totalAmountRow}>
-              <Text style={styles.totalLabel}>Total Amount</Text>
-              <Text style={styles.totalAmount}>
-                ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
-              </Text>
-            </View>
+          </View>
+          <View style={s.totalRow}>
+            <Text style={s.totalLabel}>Total Amount</Text>
+            <Text style={s.totalValue}>₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</Text>
           </View>
         </View>
 
-        {/* ✅ ORDER ITEMS */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderIcon}>
-              <Ionicons name="cube" size={22} color={COLORS.primary} />
+        {/* Order Items */}
+        <View style={s.card}>
+          <View style={s.cardHead}>
+            <View style={[s.cardHeadIcon, { backgroundColor: '#eff6ff' }]}>
+              <Ionicons name="cube-outline" size={20} color="#3b82f6" />
             </View>
-            <View style={styles.cardHeaderContent}>
-              <Text style={styles.cardTitle}>Items in this Order</Text>
-              <View style={styles.itemsCountBadge}>
-                <Text style={styles.itemsCountText}>{order.items?.length || 0}</Text>
-              </View>
+            <Text style={s.cardTitle}>Items</Text>
+            <View style={s.itemCountBadge}>
+              <Text style={s.itemCountText}>{order.items?.length ?? 0}</Text>
             </View>
           </View>
-          
+
           {order.items && order.items.length > 0 ? (
-            <View style={styles.itemsList}>
-              {order.items.map((item, index) => (
-                <View key={item.id || index} style={styles.itemCard}>
-                  <View style={styles.itemHeader}>
-                    <View style={styles.itemNameContainer}>
-                      <Text style={styles.itemName}>
-                        {item.product?.name || item.product_name || 'Product'}
-                      </Text>
-                      {item.product?.model_name && (
-                        <Text style={styles.itemModel}>
-                          {item.product.model_name}
-                        </Text>
-                      )}
+            <>
+              {order.items.map((item, idx) => (
+                <View key={item.id ?? idx} style={s.itemCard}>
+                  <View style={s.itemTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.itemName}>{item.product?.name || item.product_name || 'Product'}</Text>
+                      {!!item.product?.model_name && <Text style={s.itemModel}>{item.product.model_name}</Text>}
                     </View>
-                    <Text style={styles.itemSubtotal}>
-                      ₹{(parseFloat(item.price || '0') * item.quantity).toLocaleString('en-IN')}
-                    </Text>
+                    <Text style={s.itemTotal}>₹{(parseFloat(item.price || '0') * item.quantity).toLocaleString('en-IN')}</Text>
                   </View>
-                  
-                  <View style={styles.itemFooter}>
-                    <View style={styles.quantityContainer}>
-                      <View style={styles.quantityBadge}>
-                        <Text style={styles.quantityText}>{item.quantity}×</Text>
-                      </View>
-                      <Text style={styles.unitPrice}>
-                        ₹{parseFloat(item.price || '0').toLocaleString('en-IN')} each
-                      </Text>
+                  <View style={s.itemBot}>
+                    <View style={s.qtyPill}>
+                      <Text style={s.qtyText}>{item.quantity}×</Text>
                     </View>
+                    <Text style={s.unitPrice}>₹{parseFloat(item.price || '0').toLocaleString('en-IN')} each</Text>
                   </View>
                 </View>
               ))}
-              
-              <View style={styles.grandTotalRow}>
-                <Text style={styles.grandTotalLabel}>Grand Total</Text>
-                <Text style={styles.grandTotalAmount}>
-                  ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
-                </Text>
+              <View style={s.grandTotalRow}>
+                <Text style={s.grandTotalLabel}>Grand Total</Text>
+                <Text style={s.grandTotalValue}>₹{parseFloat(order.total_amount).toLocaleString('en-IN')}</Text>
               </View>
-            </View>
+            </>
           ) : (
-            <View style={styles.emptyItems}>
-              <Ionicons name="cube-outline" size={48} color={COLORS.textTertiary} />
-              <Text style={styles.emptyText}>No items found for this order</Text>
+            <View style={s.emptyItems}>
+              <Ionicons name="cube-outline" size={36} color="#d1d5db" />
+              <Text style={s.emptyItemsText}>No items found</Text>
             </View>
           )}
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 48 }} />
       </ScrollView>
 
-      {/* ===================================================================
-          ✅ ENHANCED UPDATE STATUS MODAL
-          =================================================================== */}
-      <Modal
-        visible={showUpdateModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowUpdateModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          {/* Modal Header */}
-          <View style={styles.modalHeader}>
-            <View style={styles.modalTitleContainer}>
-              <Ionicons name="create-outline" size={24} color={COLORS.primary} />
-              <Text style={styles.modalTitle}>
-                {isOrderCancelled ? 'Order Details' : isOrderDelivered ? 'Order Details' : 'Update Order'} #{order.id}
+      {/* ── Update Status Modal ───────────────────────────────────────────── */}
+      <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowModal(false)}>
+        <View style={s.modal}>
+
+          {/* Modal header */}
+          <View style={s.modalHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.modalTitle}>
+                {canModify ? `Update Order #${order.id}` : `Order #${order.id} Details`}
               </Text>
             </View>
-            <TouchableOpacity 
-              onPress={() => setShowUpdateModal(false)}
-              style={styles.modalCloseButton}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={28} color={COLORS.textSecondary} />
+            <TouchableOpacity style={s.modalCloseBtn} onPress={() => setShowModal(false)}>
+              <Ionicons name="close" size={20} color="#6b7280" />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            {/* Cancelled Order Warning */}
-            {isOrderCancelled && (
-              <View style={styles.cancelledWarning}>
-                <Ionicons name="alert-circle" size={20} color={COLORS.error} />
+          <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
+
+            {/* Cancelled / Delivered notice */}
+            {isCancelled && (
+              <View style={[s.noticeBanner, { backgroundColor: '#fef2f2', borderColor: '#fca5a5' }]}>
+                <Ionicons name="close-circle" size={18} color="#ef4444" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.warningTitle}>Order Cancelled</Text>
-                  <Text style={styles.warningText}>
-                    This order has been cancelled and cannot be modified.
-                  </Text>
-                  {order.cancel_reason && (
-                    <View style={styles.cancelReasonModalBox}>
-                      <Text style={styles.cancelReasonModalLabel}>Reason:</Text>
-                      <Text style={styles.cancelReasonModalText}>{order.cancel_reason}</Text>
-                    </View>
-                  )}
+                  <Text style={[s.noticeTitle, { color: '#dc2626' }]}>Order Cancelled</Text>
+                  <Text style={[s.noticeText, { color: '#991b1b' }]}>This order cannot be modified.</Text>
+                  {!!order.cancel_reason && <Text style={[s.noticeText, { color: '#991b1b', marginTop: 4 }]}>Reason: {order.cancel_reason}</Text>}
+                </View>
+              </View>
+            )}
+            {isDelivered && (
+              <View style={[s.noticeBanner, { backgroundColor: '#f0fdf4', borderColor: '#86efac' }]}>
+                <Ionicons name="checkmark-circle" size={18} color="#059669" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.noticeTitle, { color: '#059669' }]}>Order Delivered</Text>
+                  <Text style={[s.noticeText, { color: '#065f46' }]}>This order has been successfully delivered.</Text>
                 </View>
               </View>
             )}
 
-            {/* Delivered Order Info */}
-            {isOrderDelivered && (
-              <View style={styles.deliveredWarning}>
-                <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.successTitle}>Order Delivered</Text>
-                  <Text style={styles.successText}>
-                    This order has been delivered successfully.
-                  </Text>
-                </View>
+            {/* Summary */}
+            <View style={s.modalSummary}>
+              <View style={s.modalSummaryRow}>
+                <Text style={s.modalSummaryLabel}>Customer</Text>
+                <Text style={s.modalSummaryValue}>{order.customer_name || 'Guest'}</Text>
               </View>
-            )}
-
-            {/* Order Summary */}
-            <View style={styles.modalOrderSummary}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Customer</Text>
-                <Text style={styles.summaryValue}>{order.customer_name || 'Guest'}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Amount</Text>
-                <Text style={styles.summaryAmount}>
+              <View style={s.modalSummaryRow}>
+                <Text style={s.modalSummaryLabel}>Amount</Text>
+                <Text style={[s.modalSummaryValue, { color: '#059669', fontWeight: '800' }]}>
                   ₹{parseFloat(order.total_amount).toLocaleString('en-IN')}
                 </Text>
               </View>
             </View>
 
-            {/* Current Status */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Current Status</Text>
-              <View style={[styles.statusBadge, statusStyle, styles.modalStatusBadge]}>
-                <Ionicons name={getStatusIcon(order.status) as any} size={18} color={statusStyle.color} />
-                <Text style={[styles.statusText, { color: statusStyle.color, fontSize: 15 }]}>
-                  {order.status}
-                </Text>
+            {/* Current status */}
+            <View style={s.modalField}>
+              <Text style={s.modalFieldLabel}>Current Status</Text>
+              <View style={[s.statusPill, { backgroundColor: cfg.bg, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7 }]}>
+                <Ionicons name={cfg.icon} size={14} color={cfg.color} />
+                <Text style={[s.statusPillText, { color: cfg.color, fontSize: 13 }]}>{cfg.label}</Text>
               </View>
             </View>
 
-            {/* New Status Picker */}
-            {canModifyOrder && (
-              <View style={styles.modalSection}>
-                <Text style={styles.modalLabel}>
-                  New Status <Text style={styles.required}>*</Text>
-                </Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={newStatus}
-                    onValueChange={(value) => setNewStatus(value)}
-                    style={styles.picker}
-                    enabled={!isUpdating}
-                  >
-                    {statusOptions.map((option) => (
-                      <Picker.Item
-                        key={option.value}
-                        label={option.label}
-                        value={option.value}
-                      />
-                    ))}
+            {/* New status picker */}
+            {canModify && (
+              <View style={s.modalField}>
+                <Text style={s.modalFieldLabel}>New Status <Text style={{ color: '#ef4444' }}>*</Text></Text>
+                <View style={s.pickerWrap}>
+                  <Picker selectedValue={newStatus} onValueChange={setNewStatus} enabled={!isUpdating}>
+                    {STATUS_OPTIONS.map(o => <Picker.Item key={o.value} label={o.label} value={o.value} />)}
                   </Picker>
                 </View>
               </View>
             )}
 
-            {/* Shipping Details (only when status is SHIPPED) */}
-            {newStatus === 'SHIPPED' && canModifyOrder && (
+            {/* Shipping fields */}
+            {newStatus === 'SHIPPED' && canModify && (
               <>
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalLabel}>
-                    Shipping Provider <Text style={styles.required}>*</Text>
-                  </Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={shippingProvider}
-                      onValueChange={(value) => setShippingProvider(value)}
-                      style={styles.picker}
-                      enabled={!isUpdating}
-                    >
-                      <Picker.Item label="Select Provider" value="" />
-                      {shippingProviders.map((provider) => (
-                        <Picker.Item
-                          key={provider}
-                          label={provider}
-                          value={provider}
-                        />
-                      ))}
+                <View style={s.modalField}>
+                  <Text style={s.modalFieldLabel}>Shipping Provider <Text style={{ color: '#ef4444' }}>*</Text></Text>
+                  <View style={s.pickerWrap}>
+                    <Picker selectedValue={shippingProvider} onValueChange={setShippingProvider} enabled={!isUpdating}>
+                      <Picker.Item label="Select provider..." value="" />
+                      {SHIPPING_PROVIDERS.map(p => <Picker.Item key={p} label={p} value={p} />)}
                     </Picker>
                   </View>
                 </View>
-
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalLabel}>
-                    Tracking ID <Text style={styles.required}>*</Text>
-                  </Text>
+                <View style={s.modalField}>
+                  <Text style={s.modalFieldLabel}>Tracking ID <Text style={{ color: '#ef4444' }}>*</Text></Text>
                   <TextInput
-                    style={styles.textInput}
+                    style={s.input}
                     value={trackingId}
                     onChangeText={setTrackingId}
                     placeholder="Enter tracking number"
-                    placeholderTextColor={COLORS.textTertiary}
+                    placeholderTextColor="#9ca3af"
                     autoCapitalize="characters"
                     editable={!isUpdating}
                   />
@@ -935,79 +560,40 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
               </>
             )}
 
-            {/* Show existing shipping info for non-editable orders */}
-            {!canModifyOrder && order.shipping_provider && (
-              <View style={styles.modalSection}>
-                <Text style={styles.modalLabel}>Shipping Information</Text>
-                <View style={styles.readOnlyBox}>
-                  <View style={styles.readOnlyRow}>
-                    <Text style={styles.readOnlyLabel}>Provider:</Text>
-                    <Text style={styles.readOnlyValue}>{order.shipping_provider}</Text>
-                  </View>
-                  {order.tracking_id && (
-                    <View style={styles.readOnlyRow}>
-                      <Text style={styles.readOnlyLabel}>Tracking ID:</Text>
-                      <Text style={styles.readOnlyValue}>{order.tracking_id}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
             {/* Notes */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>
-                {canModifyOrder ? 'Additional Notes' : 'Order Notes'}
-              </Text>
+            <View style={s.modalField}>
+              <Text style={s.modalFieldLabel}>{canModify ? 'Additional Notes' : 'Notes'}</Text>
               <TextInput
-                style={[
-                  styles.textInput,
-                  styles.textArea,
-                  { backgroundColor: !canModifyOrder ? COLORS.background : 'white' }
-                ]}
+                style={[s.input, s.textarea]}
                 value={notes}
                 onChangeText={setNotes}
-                placeholder={canModifyOrder ? "Add any additional information..." : "No additional notes available"}
-                placeholderTextColor={COLORS.textTertiary}
+                placeholder={canModify ? 'Add any notes...' : 'No notes'}
+                placeholderTextColor="#9ca3af"
                 multiline
                 numberOfLines={4}
                 maxLength={500}
-                editable={canModifyOrder && !isUpdating}
+                editable={canModify && !isUpdating}
               />
-              {canModifyOrder && (
-                <Text style={styles.charCount}>{notes.length}/500</Text>
-              )}
+              {canModify && <Text style={s.charCount}>{notes.length}/500</Text>}
             </View>
+
           </ScrollView>
 
-          {/* Modal Footer */}
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.modalCancelButton}
-              onPress={() => setShowUpdateModal(false)}
-              disabled={isUpdating}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.modalCancelText}>
-                {canModifyOrder ? 'Cancel' : 'Close'}
-              </Text>
+          {/* Modal footer */}
+          <View style={s.modalFoot}>
+            <TouchableOpacity style={s.modalCancelBtn} onPress={() => setShowModal(false)} disabled={isUpdating}>
+              <Text style={s.modalCancelText}>{canModify ? 'Cancel' : 'Close'}</Text>
             </TouchableOpacity>
-            
-            {canModifyOrder && (
+            {canModify && (
               <TouchableOpacity
-                style={[styles.modalUpdateButton, isUpdating && styles.disabledButton]}
-                onPress={handleStatusUpdate}
+                style={[s.modalUpdateBtn, isUpdating && { opacity: 0.6 }]}
+                onPress={handleUpdate}
                 disabled={isUpdating}
-                activeOpacity={0.8}
               >
-                {isUpdating ? (
-                  <ActivityIndicator color="white" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-circle" size={20} color="white" />
-                    <Text style={styles.modalUpdateText}>Update Status</Text>
-                  </>
-                )}
+                {isUpdating
+                  ? <ActivityIndicator color="white" size="small" />
+                  : <><Ionicons name="checkmark-circle-outline" size={18} color="white" /><Text style={s.modalUpdateText}>Update Status</Text></>
+                }
               </TouchableOpacity>
             )}
           </View>
@@ -1017,806 +603,135 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   );
 };
 
-// ===================================================================
-// ✅ ENHANCED STYLES - Better UI/UX
-// ===================================================================
-// ===================================================================
-// ✅ OPTIMIZED STYLES - Proper Spacing & Clean Design
-// ===================================================================
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  screen:  { flex: 1, backgroundColor: '#f1f5f9' },
+  centered: { justifyContent: 'center', alignItems: 'center', gap: 14, padding: 32 },
+
+  loadingText: { fontSize: 14, color: '#6b7280', fontWeight: '500' },
+  errorIcon:   { width: 72, height: 72, borderRadius: 36, backgroundColor: '#fef2f2', justifyContent: 'center', alignItems: 'center' },
+  errorTitle:  { fontSize: 18, fontWeight: '800', color: '#111827' },
+  errorMsg:    { fontSize: 14, color: '#6b7280', textAlign: 'center', lineHeight: 20 },
+  retryBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#3b82f6', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, marginTop: 4 },
+  retryText:   { color: 'white', fontSize: 14, fontWeight: '700' },
+  backLink:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backLinkText: { color: '#3b82f6', fontSize: 14, fontWeight: '600' },
+
+  // Page header
+  pageHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-    gap: 20,
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 },
+  backBtnText: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
+  pageTitle:   { fontSize: 16, fontWeight: '800', color: '#111827' },
+  pageMeta:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  pageDate:    { fontSize: 11, color: '#9ca3af' },
+  statusPill:  { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  statusPillText: { fontSize: 11, fontWeight: '700' },
+  shareBtn:    { width: 34, height: 34, borderRadius: 8, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
+
+  // Actions
+  actions: {
+    flexDirection: 'row', gap: 10,
+    backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
   },
-  loadingText: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    backgroundColor: COLORS.background,
-    gap: 20,
-  },
-  errorIconContainer: {
-    marginBottom: 8,
-  },
-  errorTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backToOrdersButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  backToOrdersText: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  
-  // ✅ OPTIMIZED: Compact Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,           // ✅ Reduced from 60
-    paddingBottom: 12,        // ✅ Reduced from 20
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  headerBackButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: COLORS.primaryLight + '15',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  headerBackText: {
-    color: COLORS.primary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  headerShareButton: {
-    backgroundColor: COLORS.primaryLight + '15',
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  // ✅ OPTIMIZED: Compact Title Section
-  titleSection: {
-    paddingHorizontal: 20,
-    paddingTop: 16,           // ✅ Reduced from 20
-    paddingBottom: 16,        // ✅ Reduced from 20
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  orderTitle: {
-    fontSize: 24,             // ✅ Reduced from 26
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  orderMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  orderDate: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-  
-  // ✅ OPTIMIZED: Compact Quick Actions
-  quickActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 14,      // ✅ Reduced from 20
-    backgroundColor: COLORS.surface,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: COLORS.textSecondary,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  primaryActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  primaryActionButtonText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  infoActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#0ea5e9',
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  
-  // ✅ OPTIMIZED: Cards with less top margin
+  actionBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 10 },
+  actionBtnText: { fontSize: 13, fontWeight: '700' },
+
+  // Card
   card: {
-    backgroundColor: COLORS.surface,
-    marginHorizontal: 20,
-    marginTop: 16,            // ✅ Reduced from 20
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-    paddingBottom: 16,
-    marginBottom: 20,
-  },
-  cardHeaderIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: COLORS.primaryLight + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardHeaderContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  itemsCountBadge: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  itemsCountText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  
-  // Timeline Styles
-  timelineContainer: {
-    gap: 0,
-  },
-  timelineStepContainer: {
-    gap: 0,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    paddingVertical: 8,
-  },
-  timelineIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  currentIndicator: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: COLORS.warning,
-    borderWidth: 2,
-    borderColor: 'white',
-  },
-  timelineContent: {
-    flex: 1,
-    gap: 4,
-  },
-  timelineLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  currentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  currentDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.primary,
-  },
-  currentText: {
-    fontSize: 12,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  timelineConnector: {
-    width: 3,
-    height: 32,
-    marginLeft: 21.5,
-    marginTop: -4,
-    marginBottom: -4,
-  },
-  cancelledTimeline: {
-    flexDirection: 'row',
-    padding: 20,
-    backgroundColor: COLORS.errorLight,
-    borderRadius: 12,
-    gap: 16,
-  },
-  cancelledIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'white',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelledContent: {
-    flex: 1,
-    gap: 6,
-  },
-  cancelledTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.error,
-  },
-  cancelledDate: {
-    fontSize: 14,
-    color: '#991b1b',
-  },
-  cancelReasonBox: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: 'white',
-    borderRadius: 8,
-  },
-  cancelReasonLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#991b1b',
-    marginBottom: 4,
-  },
-  cancelReasonText: {
-    fontSize: 13,
-    color: '#991b1b',
-    lineHeight: 18,
-  },
-  
-  // Details List
-  detailsList: {
-    gap: 16,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-    minWidth: 90,
-    paddingTop: 2,
-  },
-  detailValue: {
-    fontSize: 15,
-    color: COLORS.textPrimary,
-    flex: 1,
-    fontWeight: '500',
-  },
-  addressText: {
-    lineHeight: 22,
-  },
-  orderTypeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  orderTypeText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,    // ✅ Reduced from 12
-    paddingVertical: 6,       // ✅ Reduced from 8
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  statusText: {
-    fontSize: 12,             // ✅ Reduced from 13
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  trackingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 10,
-  },
-  trackingId: {
-    backgroundColor: COLORS.background,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    fontSize: 13,
-    fontFamily: 'monospace',
-    flex: 1,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  copyButtonText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  paymentStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  paymentStatusText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  totalAmountRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 2,
-    borderTopColor: COLORS.borderLight,
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  totalAmount: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.success,
-  },
-  
-  // Items List
-  itemsList: {
-    gap: 12,
-  },
-  itemCard: {
-    backgroundColor: COLORS.background,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    gap: 12,
-  },
-  itemNameContainer: {
-    flex: 1,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  itemModel: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-  itemSubtotal: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.success,
-  },
-  itemFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  quantityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  quantityBadge: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  quantityText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  unitPrice: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  grandTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 16,
-    marginTop: 16,
-    borderTopWidth: 2,
-    borderTopColor: COLORS.borderMedium,
-  },
-  grandTotalLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  grandTotalAmount: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.success,
-  },
-  emptyItems: {
-    alignItems: 'center',
-    padding: 48,
-    gap: 16,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-  },
-  
-  // ✅ OPTIMIZED: Modal Styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,           // ✅ Reduced from 60
-    paddingBottom: 16,        // ✅ Reduced from 20
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  modalTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  modalCloseButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalContent: {
-    flex: 1,
-    padding: 20,
-  },
-  cancelledWarning: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 16,
-    backgroundColor: COLORS.errorLight,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  warningTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.error,
-    marginBottom: 4,
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#991b1b',
-    lineHeight: 20,
-  },
-  cancelReasonModalBox: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: 'white',
-    borderRadius: 8,
-  },
-  cancelReasonModalLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#991b1b',
-    marginBottom: 4,
-  },
-  cancelReasonModalText: {
-    fontSize: 13,
-    color: '#991b1b',
-    lineHeight: 18,
-  },
-  deliveredWarning: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 16,
-    backgroundColor: COLORS.successLight,
-    borderWidth: 1,
-    borderColor: COLORS.success,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  successTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.success,
-    marginBottom: 4,
-  },
-  successText: {
-    fontSize: 14,
-    color: '#065f46',
-    lineHeight: 20,
-  },
-  modalOrderSummary: {
-    backgroundColor: COLORS.surface,
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 24,
-    gap: 12,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-  },
-  summaryValue: {
-    fontSize: 15,
-    color: COLORS.textPrimary,
-    fontWeight: '600',
-  },
-  summaryAmount: {
-    fontSize: 18,
-    color: COLORS.success,
-    fontWeight: '700',
-  },
-  modalSection: {
-    marginBottom: 24,
-  },
-  modalLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: 10,
-  },
-  required: {
-    color: COLORS.error,
-  },
-  modalStatusBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  pickerContainer: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderMedium,
-  },
-  picker: {
-    height: 54,
-  },
-  textInput: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.borderMedium,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: COLORS.textPrimary,
-  },
-  textArea: {
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-  readOnlyBox: {
-    padding: 16,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    borderRadius: 12,
-    gap: 12,
-  },
-  readOnlyRow: {
-    gap: 4,
-  },
-  readOnlyLabel: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-  },
-  readOnlyValue: {
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    fontWeight: '500',
-  },
-  charCount: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 6,
-    textAlign: 'right',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
-    gap: 12,
-  },
-  modalCancelButton: {
-    flex: 1,
-    paddingVertical: 16,
-    backgroundColor: COLORS.textSecondary,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalUpdateButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 16,
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-  },
-  modalUpdateText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  disabledButton: {
-    backgroundColor: COLORS.textTertiary,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: COLORS.primaryLight + '15',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  backButtonText: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
+    backgroundColor: 'white', marginHorizontal: 14, marginTop: 14,
+    borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#f3f4f6',
+  },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#f9fafb' },
+  cardHeadIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  cardTitle: { fontSize: 15, fontWeight: '800', color: '#111827', flex: 1 },
+  itemCountBadge: { backgroundColor: '#3b82f6', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  itemCountText: { fontSize: 12, fontWeight: '700', color: 'white' },
+
+  // Detail rows
+  detailList: { gap: 14 },
+  detailRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  detailLabel: { fontSize: 12, fontWeight: '700', color: '#9ca3af', minWidth: 72, paddingTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  detailValue: { fontSize: 14, fontWeight: '500', color: '#1f2937' },
+  typePill:    { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  typePillText: { fontSize: 12, fontWeight: '600' },
+
+  trackingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  trackingCode: { flex: 1, backgroundColor: '#f9fafb', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, fontSize: 13, fontWeight: '600', color: '#111827' },
+  copyBtn:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#3b82f6', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 },
+  copyBtnText: { fontSize: 11, fontWeight: '700', color: 'white' },
+
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 16, borderTopWidth: 2, borderTopColor: '#f3f4f6' },
+  totalLabel: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
+  totalValue: { fontSize: 20, fontWeight: '900', color: '#059669' },
+
+  // Items
+  itemCard:  { backgroundColor: '#f9fafb', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#f3f4f6', marginBottom: 10 },
+  itemTop:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 12 },
+  itemName:  { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 3 },
+  itemModel: { fontSize: 12, color: '#9ca3af' },
+  itemTotal: { fontSize: 15, fontWeight: '900', color: '#059669' },
+  itemBot:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  qtyPill:   { backgroundColor: '#3b82f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  qtyText:   { fontSize: 12, fontWeight: '800', color: 'white' },
+  unitPrice: { fontSize: 12, color: '#6b7280' },
+  grandTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14, marginTop: 4, borderTopWidth: 2, borderTopColor: '#e5e7eb' },
+  grandTotalLabel: { fontSize: 15, fontWeight: '700', color: '#374151' },
+  grandTotalValue: { fontSize: 22, fontWeight: '900', color: '#059669' },
+  emptyItems: { alignItems: 'center', paddingVertical: 32, gap: 10 },
+  emptyItemsText: { fontSize: 14, color: '#9ca3af' },
+
+  // Timeline
+  timeline: { gap: 0 },
+  timelineRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 8 },
+  timelineCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  timelineCircleDone: { backgroundColor: '#059669' },
+  timelinePulse: { position: 'absolute', top: -3, right: -3, width: 12, height: 12, borderRadius: 6, backgroundColor: '#f59e0b', borderWidth: 2, borderColor: 'white' },
+  timelineLabel: { fontSize: 14 },
+  timelineCurrent: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  timelineCurrentDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#3b82f6' },
+  timelineCurrentText: { fontSize: 11, color: '#3b82f6', fontWeight: '700' },
+  timelineConnector: { width: 3, height: 28, marginLeft: 20.5, backgroundColor: '#e5e7eb' },
+  timelineConnectorDone: { backgroundColor: '#059669' },
+
+  // Cancel box
+  cancelBox: { flexDirection: 'row', gap: 14, backgroundColor: '#fef2f2', padding: 16, borderRadius: 12 },
+  cancelIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center' },
+  cancelTitle: { fontSize: 15, fontWeight: '800', color: '#dc2626', marginBottom: 2 },
+  cancelDate:  { fontSize: 12, color: '#991b1b' },
+  cancelReasonBox:   { marginTop: 10, padding: 10, backgroundColor: 'white', borderRadius: 8 },
+  cancelReasonLabel: { fontSize: 11, fontWeight: '700', color: '#991b1b', marginBottom: 3, textTransform: 'uppercase' },
+  cancelReasonText:  { fontSize: 13, color: '#991b1b', lineHeight: 18 },
+
+  // Modal
+  modal:    { flex: 1, backgroundColor: '#f1f5f9' },
+  modalHead: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', gap: 12 },
+  modalTitle: { fontSize: 17, fontWeight: '800', color: '#111827' },
+  modalCloseBtn: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center' },
+  modalBody: { flex: 1, padding: 16 },
+  noticeBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, marginBottom: 16 },
+  noticeTitle: { fontSize: 14, fontWeight: '800', marginBottom: 3 },
+  noticeText:  { fontSize: 13, lineHeight: 18 },
+  modalSummary: { backgroundColor: 'white', borderRadius: 12, padding: 14, gap: 12, marginBottom: 16, borderWidth: 1, borderColor: '#f3f4f6' },
+  modalSummaryRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modalSummaryLabel: { fontSize: 13, color: '#6b7280', fontWeight: '600' },
+  modalSummaryValue: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  modalField:      { marginBottom: 18 },
+  modalFieldLabel: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8 },
+  pickerWrap: { backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb' },
+  input:     { backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#111827' },
+  textarea:  { minHeight: 90, textAlignVertical: 'top' },
+  charCount: { fontSize: 11, color: '#9ca3af', textAlign: 'right', marginTop: 5 },
+  modalFoot: { flexDirection: 'row', gap: 10, backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  modalCancelBtn:  { flex: 1, paddingVertical: 14, backgroundColor: '#f3f4f6', borderRadius: 10, alignItems: 'center' },
+  modalCancelText: { fontSize: 15, fontWeight: '700', color: '#374151' },
+  modalUpdateBtn:  { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, backgroundColor: '#3b82f6', borderRadius: 10 },
+  modalUpdateText: { fontSize: 15, fontWeight: '700', color: 'white' },
 });
 
 export default OrderDetailsScreen;

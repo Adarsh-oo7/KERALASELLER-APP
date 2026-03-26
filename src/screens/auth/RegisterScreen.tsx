@@ -1,717 +1,562 @@
 // src/screens/auth/RegisterScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  StyleSheet,
-  ActivityIndicator,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ActivityIndicator, ScrollView, KeyboardAvoidingView,
+  Platform, StatusBar, Animated,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FirebaseAuthService from '../../services/FirebaseAuthService';
 import AuthService from '../../services/AuthService';
 
-type RegisterScreenProps = {
-  navigation: StackNavigationProp<any>;
-};
+type Props = { navigation: StackNavigationProp<any> };
 
-interface ValidationErrors {
-  name?: string;
-  shop_name?: string;
-  phone?: string;
-  email?: string;
-  password?: string;
+interface FormData {
+  name:            string;
+  shop_name:       string;
+  phone:           string;
+  email:           string;
+  password:        string;
+  confirmPassword: string;
+  otp:             string;
+}
+
+interface FieldErrors {
+  name?:            string;
+  shop_name?:       string;
+  phone?:           string;
+  email?:           string;
+  password?:        string;
   confirmPassword?: string;
 }
 
-const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
-  const [step, setStep] = useState<1 | 2>(1);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
-  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
-  const [verificationId, setVerificationId] = useState<any>(null); // ✅ Store confirmation object
+const EMPTY_FORM: FormData = {
+  name: '', shop_name: '', phone: '', email: '',
+  password: '', confirmPassword: '', otp: '',
+};
 
-  const [formData, setFormData] = useState({
-    name: '',
-    shop_name: '',
-    phone: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    otp: '',
-  });
+// ── Validation ────────────────────────────────────────────────────────────────
 
-  // Validation functions
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+const validators = {
+  name:            (v: string) => !v.trim() ? 'Full name is required' : v.trim().length < 2 ? 'At least 2 characters' : '',
+  shop_name:       (v: string) => !v.trim() ? 'Shop name is required' : v.trim().length < 2 ? 'At least 2 characters' : '',
+  phone:           (v: string) => !v ? 'Phone number is required' : !/^[6-9]\d{9}$/.test(v) ? 'Enter a valid 10-digit number' : '',
+  email:           (v: string) => !v.trim() ? 'Email is required' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? 'Enter a valid email' : '',
+  password:        (v: string) => !v ? 'Password is required' : v.length < 8 ? 'Minimum 8 characters' : '',
+  confirmPassword: (v: string, pw: string) => !v ? 'Please confirm your password' : v !== pw ? 'Passwords do not match' : '',
+};
+
+// ── Password strength ─────────────────────────────────────────────────────────
+
+const getPasswordStrength = (pw: string): { label: string; color: string; width: string } => {
+  if (!pw)        return { label: '',        color: '#e5e7eb', width: '0%'   };
+  if (pw.length < 6)                               return { label: 'Weak',   color: '#ef4444', width: '25%'  };
+  if (pw.length < 8)                               return { label: 'Fair',   color: '#f59e0b', width: '50%'  };
+  if (/[A-Z]/.test(pw) && /\d/.test(pw))           return { label: 'Strong', color: '#10b981', width: '100%' };
+  return { label: 'Good', color: '#3b82f6', width: '75%' };
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+const RegisterScreen: React.FC<Props> = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
+
+  const [step,              setStep]              = useState<1 | 2>(1);
+  const [loading,           setLoading]           = useState(false);
+  const [formError,         setFormError]         = useState('');
+  const [fieldErrors,       setFieldErrors]       = useState<FieldErrors>({});
+  const [showPassword,      setShowPassword]      = useState(false);
+  const [showConfirm,       setShowConfirm]       = useState(false);
+  const [verificationId,    setVerificationId]    = useState<any>(null);
+  const [resendCooldown,    setResendCooldown]    = useState(0);
+  const [form,              setForm]              = useState<FormData>(EMPTY_FORM);
+
+  const shakeAnim   = useRef(new Animated.Value(0)).current;
+  const shopRef     = useRef<TextInput>(null);
+  const emailRef    = useRef<TextInput>(null);
+  const phoneRef    = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmRef  = useRef<TextInput>(null);
+  const otpRef      = useRef<TextInput>(null);
+
+  const pwStrength = getPasswordStrength(form.password);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  const shake = () => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8,  duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 5,  duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -5, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0,  duration: 55, useNativeDriver: true }),
+    ]).start();
   };
 
-  const validatePhone = (phone: string): boolean => {
-    const phoneRegex = /^[6-9]\d{9}$/;
-    return phoneRegex.test(phone);
+  const update = (key: keyof FormData, value: string) => {
+    const cleaned = key === 'phone'
+      ? value.replace(/\D/g, '').slice(0, 10)
+      : key === 'otp'
+        ? value.replace(/\D/g, '').slice(0, 6)
+        : value;
+
+    setForm(prev => ({ ...prev, [key]: cleaned }));
+    setFormError('');
+
+    if (fieldErrors[key as keyof FieldErrors]) {
+      setFieldErrors(prev => ({ ...prev, [key]: undefined }));
+    }
   };
 
-  const validatePassword = (password: string): boolean => {
-    return password.length >= 8;
+  const setFieldError = (key: keyof FieldErrors, msg: string) =>
+    setFieldErrors(prev => ({ ...prev, [key]: msg }));
+
+  const validateAll = (): boolean => {
+    const errs: FieldErrors = {};
+    errs.name            = validators.name(form.name)           || undefined;
+    errs.shop_name       = validators.shop_name(form.shop_name) || undefined;
+    errs.phone           = validators.phone(form.phone)         || undefined;
+    errs.email           = validators.email(form.email)         || undefined;
+    errs.password        = validators.password(form.password)   || undefined;
+    errs.confirmPassword = validators.confirmPassword(form.confirmPassword, form.password) || undefined;
+
+    const cleaned = Object.fromEntries(Object.entries(errs).filter(([, v]) => v));
+    setFieldErrors(cleaned);
+    return Object.keys(cleaned).length === 0;
   };
 
-  const validateForm = (): boolean => {
-    const errors: ValidationErrors = {};
-    
-    if (!formData.name.trim()) {
-      errors.name = 'Full name is required';
-    } else if (formData.name.trim().length < 2) {
-      errors.name = 'Name must be at least 2 characters';
-    }
-    
-    if (!formData.shop_name.trim()) {
-      errors.shop_name = 'Shop name is required';
-    } else if (formData.shop_name.trim().length < 2) {
-      errors.shop_name = 'Shop name must be at least 2 characters';
-    }
-    
-    if (!formData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!validateEmail(formData.email)) {
-      errors.email = 'Please enter a valid email address';
-    }
-    
-    if (!formData.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!validatePhone(formData.phone)) {
-      errors.phone = 'Please enter a valid 10-digit phone number';
-    }
-    
-    if (!formData.password) {
-      errors.password = 'Password is required';
-    } else if (!validatePassword(formData.password)) {
-      errors.password = 'Password must be at least 8 characters';
-    }
-    
-    if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Please confirm your password';
-    } else if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match';
-    }
-    
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
+  // ── OTP cooldown timer ───────────────────────────────────────────────────
+
+  const startCooldown = (secs = 60) => {
+    setResendCooldown(secs);
+    const id = setInterval(() => {
+      setResendCooldown(v => {
+        if (v <= 1) { clearInterval(id); return 0; }
+        return v - 1;
+      });
+    }, 1000);
   };
 
-  const handleChange = (name: keyof typeof formData, value: string): void => {
-    if (name === 'phone') {
-      const formattedValue = value.replace(/\D/g, '').slice(0, 10);
-      setFormData({ ...formData, [name]: formattedValue });
-    } else {
-      setFormData({ ...formData, [name]: value });
-    }
-    
-    if (validationErrors[name as keyof ValidationErrors]) {
-      setValidationErrors(prev => ({
-        ...prev,
-        [name]: undefined
-      }));
-    }
-    
-    if (error) setError('');
-  };
+  // ── Step 1 — send OTP ────────────────────────────────────────────────────
 
-  const handleSendOtp = async (): Promise<void> => {
-    setError('');
-    
-    if (!validateForm()) {
-      setError('Please fix the errors above');
-      return;
-    }
-    
-    setIsLoading(true);
-    
+  const handleSendOtp = async () => {
+    setFormError('');
+    if (!validateAll()) { shake(); return; }
+
+    setLoading(true);
     try {
-      console.log('🔍 Step 1: Checking if seller already exists...');
-      
-      const checkResult = await AuthService.checkSellerExists(
-        formData.phone.trim(),
-        formData.email.trim()
-      );
-      
-      if (checkResult.exists) {
-        console.log('❌ Seller already exists:', checkResult.field);
-        
-        if (checkResult.field === 'phone') {
-          setValidationErrors(prev => ({
-            ...prev,
-            phone: checkResult.message || 'This phone number is already registered'
-          }));
-          setError('This phone number is already registered. Please login instead.');
-        } else if (checkResult.field === 'email') {
-          setValidationErrors(prev => ({
-            ...prev,
-            email: checkResult.message || 'This email is already registered'
-          }));
-          setError('This email is already registered. Please use a different email.');
-        }
-        
-        setIsLoading(false);
+      const check = await AuthService.checkSellerExists(form.phone, form.email.trim());
+      if (check.exists) {
+        if (check.field === 'phone') setFieldError('phone', check.message ?? 'Already registered');
+        if (check.field === 'email') setFieldError('email', check.message ?? 'Already registered');
+        shake();
         return;
       }
-      
-      console.log('✅ Phone and email available. Sending Firebase OTP...');
-      
-      // ✅ React Native Firebase - No recaptchaVerifier needed!
-      const confirmation = await FirebaseAuthService.sendOTP(
-  `+91${formData.phone.trim()}`  // ✅ Correct
-);
 
-      
-      setVerificationId(confirmation); // Store confirmation object
+      const confirmation = await FirebaseAuthService.sendOTP(`+91${form.phone}`);
+      setVerificationId(confirmation);
       setStep(2);
-      
-      Alert.alert(
-        '✅ OTP Sent!',
-        `Verification code has been sent to +91 ${formData.phone}`,
-        [{ text: 'OK' }]
-      );
-      
+      startCooldown(60);
     } catch (err: any) {
-      console.error('❌ Send OTP error:', err);
-      setError(err.message || 'Failed to send OTP. Please try again.');
+      setFormError(err.message ?? 'Failed to send OTP. Please try again.');
+      shake();
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleCompleteRegistration = async (): Promise<void> => {
-    setError('');
-    
-    if (!formData.otp || formData.otp.length !== 6) {
-      setError('Please enter a valid 6-digit OTP');
+  // ── Step 2 — verify OTP + register ──────────────────────────────────────
+
+  const handleVerifyAndRegister = async () => {
+    setFormError('');
+    if (!form.otp || form.otp.length !== 6) {
+      setFormError('Enter the 6-digit code sent to your phone');
+      shake();
       return;
     }
-    
-    setIsLoading(true);
-    
+
+    setLoading(true);
     try {
-      console.log('🔥 Step 1: Verifying Firebase OTP...');
-      
-      // ✅ Pass confirmation object and OTP
-      const firebaseResult = await FirebaseAuthService.verifyOTP(
-        verificationId,
-        formData.otp.trim()
-      );
-      
-      console.log('✅ Firebase OTP verified! ID Token received.');
-      console.log('🔥 Step 2: Registering with Django backend...');
-      
+      const firebaseResult = await FirebaseAuthService.verifyOTP(verificationId, form.otp.trim());
+
       await AuthService.registerWithFirebase({
-        name: formData.name.trim(),
-        shop_name: formData.shop_name.trim(),
-        phone: formData.phone.trim(),
-        email: formData.email.trim(),
-        password: formData.password,
-        confirmPassword: formData.confirmPassword,
+        name:              form.name.trim(),
+        shop_name:         form.shop_name.trim(),
+        phone:             form.phone,
+        email:             form.email.trim(),
+        password:          form.password,
+        confirmPassword:   form.confirmPassword,
         firebase_id_token: firebaseResult.idToken,
       });
-      
-      console.log('✅ Backend registration successful!');
-      
-      Alert.alert(
-        '🎉 Success!', 
-        'Your seller account has been created successfully!',
-        [{ 
-          text: 'Login Now', 
-          onPress: () => navigation.replace('Login')
-        }]
-      );
-      
+
+      // Navigate directly — no Alert popup
+      navigation.replace('Login');
     } catch (err: any) {
-      console.error('❌ Registration error:', err);
-      setError(err.message || 'Registration failed. Please try again.');
+      setFormError(err.message ?? 'Verification failed. Please try again.');
+      shake();
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleResendOtp = async (): Promise<void> => {
-    setError('');
-    setIsLoading(true);
-    
+  // ── Resend OTP ───────────────────────────────────────────────────────────
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    setLoading(true);
     try {
-      // ✅ React Native Firebase - No recaptchaVerifier needed!
-      const confirmation = await FirebaseAuthService.sendOTP(
-        formData.phone.trim()
-      );
-      
+      const confirmation = await FirebaseAuthService.sendOTP(`+91${form.phone}`);
       setVerificationId(confirmation);
-      Alert.alert('✅ Success', 'OTP has been resent to your phone');
+      startCooldown(60);
+      setFormError('');
     } catch (err: any) {
-      setError(err.message || 'Failed to resend OTP. Please try again.');
+      setFormError(err.message ?? 'Failed to resend OTP.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleBackToStep1 = (): void => {
-    setStep(1);
-    setFormData(prev => ({ ...prev, otp: '' }));
-    setError('');
+  // ── Field renderer ───────────────────────────────────────────────────────
+
+  const Field = ({
+    fieldKey, label, placeholder, keyboard = 'default', secure = false,
+    showToggle, onToggle, maxLen, nextRef, autoCapitalize = 'words',
+  }: {
+    fieldKey:       keyof FormData;
+    label:          string;
+    placeholder:    string;
+    keyboard?:      any;
+    secure?:        boolean;
+    showToggle?:    boolean;
+    onToggle?:      () => void;
+    maxLen?:        number;
+    nextRef?:       React.RefObject<TextInput>;
+    autoCapitalize?: any;
+  }) => {
+    const err = fieldErrors[fieldKey as keyof FieldErrors];
+    const val = form[fieldKey];
+    const isOk = !err && val.length > 0;
+
+    return (
+      <View style={s.field}>
+        <Text style={s.label}>{label}</Text>
+        <View style={[s.inputRow, !!err && s.inputRowError, isOk && s.inputRowOk]}>
+          <TextInput
+            style={s.input}
+            value={val}
+            onChangeText={v => update(fieldKey, v)}
+            placeholder={placeholder}
+            placeholderTextColor="#9ca3af"
+            keyboardType={keyboard}
+            secureTextEntry={secure}
+            autoCapitalize={autoCapitalize}
+            autoCorrect={false}
+            editable={!loading}
+            maxLength={maxLen}
+            returnKeyType={nextRef ? 'next' : 'done'}
+            onSubmitEditing={() => nextRef?.current?.focus()}
+          />
+          {showToggle && onToggle && (
+            <TouchableOpacity onPress={onToggle} style={s.eyeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name={secure ? 'eye-off-outline' : 'eye-outline'} size={18} color="#9ca3af" />
+            </TouchableOpacity>
+          )}
+          {isOk && !showToggle && (
+            <Ionicons name="checkmark-circle" size={17} color="#10b981" style={{ marginLeft: 6 }} />
+          )}
+        </View>
+        {!!err && (
+          <View style={s.fieldErrRow}>
+            <Ionicons name="alert-circle-outline" size={12} color="#ef4444" />
+            <Text style={s.fieldErrText}>{err}</Text>
+          </View>
+        )}
+      </View>
+    );
   };
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.card}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Create Seller Account</Text>
-            <Text style={styles.subtitle}>
-              {step === 1 
-                ? "Join Kerala Sellers and start selling your products online" 
-                : "We've sent a verification code to your phone"}
+    <View style={[s.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+
+          {/* Brand */}
+          <View style={s.brand}>
+            <View style={s.logoBg}>
+              <Text style={s.logoK}>K</Text>
+            </View>
+            <View>
+              <Text style={s.logoLine1}>KERALA</Text>
+              <Text style={s.logoLine2}>SELLERS</Text>
+            </View>
+          </View>
+
+          {/* Card */}
+          <Animated.View style={[s.card, { transform: [{ translateX: shakeAnim }] }]}>
+
+            {/* Header */}
+            <Text style={s.cardTitle}>
+              {step === 1 ? 'Create your account' : 'Verify your phone'}
             </Text>
-          </View>
+            <Text style={s.cardSub}>
+              {step === 1
+                ? 'Join Kerala Sellers and start selling today'
+                : `Code sent to +91 ${form.phone}`}
+            </Text>
 
-          {/* Progress Indicator */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View 
-                style={[
-                  styles.progressFill,
-                  { width: step === 1 ? '50%' : '100%' }
-                ]}
-              />
+            {/* Progress */}
+            <View style={s.progressWrap}>
+              <View style={s.progressTrack}>
+                <View style={[s.progressFill, { width: step === 1 ? '50%' : '100%' }]} />
+              </View>
+              <Text style={s.stepText}>Step {step} of 2</Text>
             </View>
-            <Text style={styles.stepIndicator}>Step {step} of 2</Text>
-          </View>
 
-          {step === 1 ? (
-            /* Step 1: Business Details */
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Your Full Name</Text>
-                <TextInput
-                  value={formData.name}
-                  onChangeText={(value) => handleChange('name', value)}
-                  placeholder="Enter your full name"
-                  style={[
-                    styles.input,
-                    validationErrors.name && styles.inputError
-                  ]}
-                  editable={!isLoading}
-                />
-                {validationErrors.name && (
-                  <Text style={styles.errorText}>{validationErrors.name}</Text>
-                )}
+            {/* Global error */}
+            {!!formError && (
+              <View style={s.formError}>
+                <Ionicons name="alert-circle" size={15} color="#991b1b" />
+                <Text style={s.formErrorText}>{formError}</Text>
               </View>
+            )}
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Shop Name</Text>
-                <TextInput
-                  value={formData.shop_name}
-                  onChangeText={(value) => handleChange('shop_name', value)}
-                  placeholder="Enter your shop/business name"
-                  style={[
-                    styles.input,
-                    validationErrors.shop_name && styles.inputError
-                  ]}
-                  editable={!isLoading}
+            {step === 1 ? (
+              /* ── Step 1 ── */
+              <>
+                <Field fieldKey="name"      label="Full Name"    placeholder="Ravi Kumar"        nextRef={shopRef}     autoCapitalize="words" />
+                <Field fieldKey="shop_name" label="Shop Name"    placeholder="Ravi Electronics"  nextRef={emailRef}    autoCapitalize="words" />
+                <Field fieldKey="email"     label="Email"        placeholder="ravi@gmail.com"    nextRef={phoneRef}    autoCapitalize="none" keyboard="email-address" />
+
+                {/* Phone with +91 prefix */}
+                <View style={s.field}>
+                  <Text style={s.label}>Phone Number</Text>
+                  <View style={[
+                    s.inputRow,
+                    !!fieldErrors.phone && s.inputRowError,
+                    !fieldErrors.phone && form.phone.length === 10 && s.inputRowOk,
+                  ]}>
+                    <View style={s.prefixWrap}>
+                      <Text style={s.prefix}>🇮🇳 +91</Text>
+                    </View>
+                    <TextInput
+                      ref={phoneRef}
+                      style={s.input}
+                      value={form.phone}
+                      onChangeText={v => update('phone', v)}
+                      placeholder="98765 43210"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="number-pad"
+                      maxLength={10}
+                      editable={!loading}
+                      returnKeyType="next"
+                      onSubmitEditing={() => passwordRef.current?.focus()}
+                    />
+                    {!fieldErrors.phone && form.phone.length === 10 && (
+                      <Ionicons name="checkmark-circle" size={17} color="#10b981" style={{ marginLeft: 6 }} />
+                    )}
+                  </View>
+                  {!!fieldErrors.phone && (
+                    <View style={s.fieldErrRow}>
+                      <Ionicons name="alert-circle-outline" size={12} color="#ef4444" />
+                      <Text style={s.fieldErrText}>{fieldErrors.phone}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Password + strength */}
+                <Field
+                  fieldKey="password" label="Password" placeholder="Min 8 characters"
+                  secure={!showPassword} showToggle onToggle={() => setShowPassword(v => !v)}
+                  nextRef={confirmRef} autoCapitalize="none"
                 />
-                {validationErrors.shop_name && (
-                  <Text style={styles.errorText}>{validationErrors.shop_name}</Text>
+                {form.password.length > 0 && (
+                  <View style={s.strengthWrap}>
+                    <View style={s.strengthTrack}>
+                      <View style={[s.strengthFill, { width: pwStrength.width, backgroundColor: pwStrength.color }]} />
+                    </View>
+                    <Text style={[s.strengthLabel, { color: pwStrength.color }]}>{pwStrength.label}</Text>
+                  </View>
                 )}
-              </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email Address</Text>
-                <TextInput
-                  value={formData.email}
-                  onChangeText={(value) => handleChange('email', value)}
-                  placeholder="Enter your email address"
-                  keyboardType="email-address"
+                <Field
+                  fieldKey="confirmPassword" label="Confirm Password" placeholder="Re-enter password"
+                  secure={!showConfirm} showToggle onToggle={() => setShowConfirm(v => !v)}
                   autoCapitalize="none"
-                  style={[
-                    styles.input,
-                    validationErrors.email && styles.inputError
-                  ]}
-                  editable={!isLoading}
                 />
-                {validationErrors.email && (
-                  <Text style={styles.errorText}>{validationErrors.email}</Text>
-                )}
-              </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Phone Number</Text>
-                <TextInput
-                  value={formData.phone}
-                  onChangeText={(value) => handleChange('phone', value)}
-                  placeholder="Enter 10-digit phone number"
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  style={[
-                    styles.input,
-                    validationErrors.phone && styles.inputError
-                  ]}
-                  editable={!isLoading}
-                />
-                {validationErrors.phone && (
-                  <Text style={styles.errorText}>{validationErrors.phone}</Text>
-                )}
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.passwordContainer}>
-                  <TextInput
-                    value={formData.password}
-                    onChangeText={(value) => handleChange('password', value)}
-                    placeholder="Create a strong password (min 8 characters)"
-                    secureTextEntry={!showPassword}
-                    style={[
-                      styles.passwordInput,
-                      validationErrors.password && styles.inputError
-                    ]}
-                    editable={!isLoading}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => setShowPassword(!showPassword)}
-                    disabled={isLoading}
-                  >
-                    <Text style={styles.eyeButtonText}>
-                      {showPassword ? '👁️' : '👁️‍🗨️'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                {validationErrors.password && (
-                  <Text style={styles.errorText}>{validationErrors.password}</Text>
-                )}
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Confirm Password</Text>
-                <View style={styles.passwordContainer}>
-                  <TextInput
-                    value={formData.confirmPassword}
-                    onChangeText={(value) => handleChange('confirmPassword', value)}
-                    placeholder="Confirm your password"
-                    secureTextEntry={!showConfirmPassword}
-                    style={[
-                      styles.passwordInput,
-                      validationErrors.confirmPassword && styles.inputError
-                    ]}
-                    editable={!isLoading}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                    disabled={isLoading}
-                  >
-                    <Text style={styles.eyeButtonText}>
-                      {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                {validationErrors.confirmPassword && (
-                  <Text style={styles.errorText}>{validationErrors.confirmPassword}</Text>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={[styles.button, isLoading && styles.buttonDisabled]}
-                onPress={handleSendOtp}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <ActivityIndicator color="white" size="small" />
-                    <Text style={styles.buttonText}>Checking availability...</Text>
-                  </>
-                ) : (
-                  <Text style={styles.buttonText}>Send Verification OTP</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            /* Step 2: OTP Verification */
-            <View style={styles.form}>
-              <View style={styles.otpInfo}>
-                <Text style={styles.otpText}>
-                  Verification code sent to: +91 {formData.phone}
-                </Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Verification Code</Text>
-                <TextInput
-                  value={formData.otp}
-                  onChangeText={(value) => 
-                    setFormData(prev => ({
-                      ...prev,
-                      otp: value.replace(/\D/g, '').slice(0, 6)
-                    }))
-                  }
-                  placeholder="Enter 6-digit OTP"
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  style={[styles.input, styles.otpInput]}
-                  editable={!isLoading}
-                />
                 <TouchableOpacity
-                  style={styles.resendButton}
-                  onPress={handleResendOtp}
-                  disabled={isLoading}
+                  style={[s.primaryBtn, loading && s.primaryBtnDim]}
+                  onPress={handleSendOtp}
+                  disabled={loading}
+                  activeOpacity={0.85}
                 >
-                  <Text style={styles.resendButtonText}>Resend OTP</Text>
+                  {loading
+                    ? <><ActivityIndicator color="white" size="small" /><Text style={s.primaryBtnText}>Checking…</Text></>
+                    : <><Ionicons name="phone-portrait-outline" size={18} color="white" /><Text style={s.primaryBtnText}>Send Verification Code</Text></>
+                  }
                 </TouchableOpacity>
-              </View>
+              </>
+            ) : (
+              /* ── Step 2 ── */
+              <>
+                {/* OTP boxes hint */}
+                <View style={s.otpHint}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={18} color="#3b82f6" />
+                  <Text style={s.otpHintText}>
+                    Enter the 6-digit code sent via SMS to <Text style={{ fontWeight: '700' }}>+91 {form.phone}</Text>
+                  </Text>
+                </View>
 
-              <TouchableOpacity
-                style={[styles.button, isLoading && styles.buttonDisabled]}
-                onPress={handleCompleteRegistration}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <ActivityIndicator color="white" size="small" />
-                    <Text style={styles.buttonText}>Creating Account...</Text>
-                  </>
-                ) : (
-                  <Text style={styles.buttonText}>Create Seller Account</Text>
-                )}
-              </TouchableOpacity>
+                <View style={s.field}>
+                  <Text style={s.label}>Verification Code</Text>
+                  <View style={[s.inputRow, form.otp.length === 6 && s.inputRowOk]}>
+                    <TextInput
+                      ref={otpRef}
+                      style={[s.input, s.otpInput]}
+                      value={form.otp}
+                      onChangeText={v => update('otp', v)}
+                      placeholder="● ● ● ● ● ●"
+                      placeholderTextColor="#d1d5db"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      editable={!loading}
+                      returnKeyType="done"
+                      onSubmitEditing={handleVerifyAndRegister}
+                      autoFocus
+                    />
+                    {form.otp.length === 6 && (
+                      <Ionicons name="checkmark-circle" size={18} color="#10b981" style={{ marginLeft: 6 }} />
+                    )}
+                  </View>
+                </View>
 
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={handleBackToStep1}
-                disabled={isLoading}
-              >
-                <Text style={styles.backButtonText}>← Back to Details</Text>
+                {/* Resend */}
+                <TouchableOpacity
+                  onPress={handleResend}
+                  disabled={resendCooldown > 0 || loading}
+                  style={s.resendBtn}
+                >
+                  <Text style={[s.resendText, resendCooldown > 0 && s.resendTextDim]}>
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.primaryBtn, (loading || form.otp.length !== 6) && s.primaryBtnDim]}
+                  onPress={handleVerifyAndRegister}
+                  disabled={loading || form.otp.length !== 6}
+                  activeOpacity={0.85}
+                >
+                  {loading
+                    ? <><ActivityIndicator color="white" size="small" /><Text style={s.primaryBtnText}>Creating Account…</Text></>
+                    : <><Ionicons name="checkmark-done-outline" size={18} color="white" /><Text style={s.primaryBtnText}>Create Seller Account</Text></>
+                  }
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={s.backBtn}
+                  onPress={() => { setStep(1); setForm(p => ({ ...p, otp: '' })); setFormError(''); }}
+                  disabled={loading}
+                >
+                  <Ionicons name="arrow-back-outline" size={16} color="#6b7280" />
+                  <Text style={s.backBtnText}>Back to details</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Login link */}
+            <View style={s.loginRow}>
+              <Text style={s.loginPrompt}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={loading}>
+                <Text style={s.loginLink}>Sign In</Text>
               </TouchableOpacity>
             </View>
-          )}
 
-          {/* Error Message */}
-          {error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorMessage}>⚠️ {error}</Text>
-            </View>
-          )}
+          </Animated.View>
 
-          {/* Footer Links */}
-          <View style={styles.footerLinks}>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.linkText}>
-                Already have an account? Login
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <Text style={s.footer}>Kerala Sellers · Built for local businesses</Text>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  card: {
-    backgroundColor: 'white',
-    padding: 32,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  progressContainer: {
-    marginBottom: 24,
-  },
-  progressBar: {
-    width: '100%',
-    height: 4,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 2,
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#3b82f6',
-    borderRadius: 2,
-  },
-  stepIndicator: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-  form: {
-    gap: 20,
-  },
-  inputGroup: {
-    marginBottom: 4,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  input: {
-    width: '100%',
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    fontSize: 16,
-    backgroundColor: '#ffffff',
-  },
-  passwordContainer: {
-    position: 'relative',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  passwordInput: {
-    flex: 1,
-    padding: 16,
-    paddingRight: 50,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    fontSize: 16,
-    backgroundColor: '#ffffff',
-  },
-  eyeButton: {
-    position: 'absolute',
-    right: 12,
-    padding: 4,
-  },
-  eyeButtonText: {
-    fontSize: 18,
-  },
-  inputError: {
-    borderColor: '#ef4444',
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 14,
-    marginTop: 6,
-  },
-  otpInfo: {
-    padding: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  otpText: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-  otpInput: {
-    textAlign: 'center',
-    letterSpacing: 8,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  resendButton: {
-    alignSelf: 'flex-end',
-    marginTop: 8,
-    padding: 4,
-  },
-  resendButtonText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    textDecorationLine: 'underline',
-  },
-  button: {
-    width: '100%',
-    padding: 16,
-    backgroundColor: '#3b82f6',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    minHeight: 52,
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backButton: {
-    alignItems: 'center',
-    padding: 12,
-    marginTop: 8,
-  },
-  backButtonText: {
-    color: '#6b7280',
-    fontSize: 16,
-  },
-  errorContainer: {
-    padding: 12,
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  errorMessage: {
-    color: '#991b1b',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  footerLinks: {
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  linkText: {
-    color: '#3b82f6',
-    fontSize: 16,
-    fontWeight: '500',
-  },
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  root:             { flex: 1, backgroundColor: '#f8fafc' },
+  scroll:           { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 16 },
+
+  brand:            { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24, paddingTop: 12 },
+  logoBg:           { width: 48, height: 48, borderRadius: 14, backgroundColor: '#3b82f6', alignItems: 'center', justifyContent: 'center',
+                      shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  logoK:            { fontSize: 26, fontWeight: '900', color: 'white' },
+  logoLine1:        { fontSize: 19, fontWeight: '900', color: '#1f2937', letterSpacing: 3 },
+  logoLine2:        { fontSize: 13, fontWeight: '700', color: '#3b82f6', letterSpacing: 4, marginTop: -2 },
+
+  card:             { backgroundColor: 'white', borderRadius: 24, padding: 24, marginBottom: 20,
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 4 },
+  cardTitle:        { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  cardSub:          { fontSize: 14, color: '#6b7280', marginBottom: 20 },
+
+  progressWrap:     { marginBottom: 20 },
+  progressTrack:    { height: 4, backgroundColor: '#e5e7eb', borderRadius: 2, marginBottom: 6 },
+  progressFill:     { height: '100%', backgroundColor: '#3b82f6', borderRadius: 2 },
+  stepText:         { fontSize: 12, color: '#9ca3af', textAlign: 'right' },
+
+  formError:        { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 10, padding: 12, marginBottom: 16 },
+  formErrorText:    { flex: 1, fontSize: 13, color: '#991b1b', fontWeight: '500' },
+
+  field:            { marginBottom: 14 },
+  label:            { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 },
+  inputRow:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 14, minHeight: 50 },
+  inputRowError:    { borderColor: '#ef4444', backgroundColor: '#fff5f5' },
+  inputRowOk:       { borderColor: '#10b981' },
+  prefixWrap:       { marginRight: 10, paddingRight: 10, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
+  prefix:           { fontSize: 13, fontWeight: '600', color: '#374151' },
+  input:            { flex: 1, fontSize: 14, color: '#111827', fontWeight: '500', paddingVertical: 0 },
+  eyeBtn:           { padding: 4, marginLeft: 4 },
+  fieldErrRow:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  fieldErrText:     { fontSize: 12, color: '#ef4444' },
+
+  strengthWrap:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -8, marginBottom: 10 },
+  strengthTrack:    { flex: 1, height: 3, backgroundColor: '#e5e7eb', borderRadius: 2 },
+  strengthFill:     { height: '100%', borderRadius: 2 },
+  strengthLabel:    { fontSize: 11, fontWeight: '700', width: 44, textAlign: 'right' },
+
+  otpHint:          { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#eff6ff', borderRadius: 10, padding: 12, marginBottom: 16 },
+  otpHintText:      { flex: 1, fontSize: 13, color: '#1e40af', lineHeight: 19 },
+  otpInput:         { textAlign: 'center', letterSpacing: 10, fontSize: 20, fontWeight: '700' },
+
+  resendBtn:        { alignSelf: 'flex-end', marginBottom: 12, marginTop: -4 },
+  resendText:       { fontSize: 13, color: '#3b82f6', fontWeight: '600' },
+  resendTextDim:    { color: '#9ca3af' },
+
+  primaryBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      backgroundColor: '#3b82f6', paddingVertical: 15, borderRadius: 14, marginBottom: 10,
+                      shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 8, elevation: 4 },
+  primaryBtnDim:    { backgroundColor: '#93c5fd', shadowOpacity: 0, elevation: 0 },
+  primaryBtnText:   { fontSize: 15, fontWeight: '700', color: 'white' },
+
+  backBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginBottom: 4 },
+  backBtnText:      { fontSize: 14, color: '#6b7280' },
+
+  loginRow:         { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  loginPrompt:      { fontSize: 14, color: '#6b7280' },
+  loginLink:        { fontSize: 14, color: '#3b82f6', fontWeight: '700' },
+
+  footer:           { textAlign: 'center', fontSize: 12, color: '#d1d5db', marginTop: 4 },
 });
 
 export default RegisterScreen;

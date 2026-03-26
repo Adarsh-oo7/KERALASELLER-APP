@@ -1,59 +1,20 @@
 // src/screens/stock/StockManagementScreen.tsx
 import React, { useEffect, useState, useCallback, useContext } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  Image,
-  Alert,
-  ActivityIndicator,
-  RefreshControl,
-  Modal,
-  StatusBar,
-  Platform,
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, Image, Alert, ActivityIndicator,
+  RefreshControl, Modal, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { COLORS } from '../../constants/colors';
 import { AppStateContext } from '../../navigation/AppNavigator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-// ✅ Professional Color Palette
-const STOCK_COLORS = {
-  primary: '#1e40af',
-  primaryLight: '#3b82f6',
-  primaryDark: '#1e3a8a',
-  success: '#059669',
-  successLight: '#10b981',
-  warning: '#d97706',
-  warningLight: '#f59e0b',
-  danger: '#dc2626',
-  dangerLight: '#ef4444',
-  purple: '#7c3aed',
-  purpleLight: '#8b5cf6',
-  background: '#f8fafc',
-  surface: '#ffffff',
-  cardBg: '#ffffff',
-  border: '#e2e8f0',
-  borderLight: '#f1f5f9',
-  textPrimary: '#0f172a',
-  textSecondary: '#475569',
-  textTertiary: '#94a3b8',
-  textMuted: '#cbd5e1',
-  interactive: '#3b82f6',
-  interactiveHover: '#2563eb',
-  shadow: 'rgba(15, 23, 42, 0.1)',
-  shadowDark: 'rgba(15, 23, 42, 0.2)',
-};
+// ── Config ────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-const API_URL = `${API_BASE_URL}/user/store/products/`;
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_URL  = `${API_BASE}/user/store/products/`;
 
 interface Product {
   id: number;
@@ -67,9 +28,17 @@ interface Product {
   main_image_url?: string;
 }
 
-// ===================================================================
-// ✅ CUSTOM AMOUNT MODAL
-// ===================================================================
+type StockFilter = 'all' | 'low_stock' | 'out_of_stock' | 'overstocked';
+
+const getStockStatus = (p: Product) => {
+  if (p.online_stock <= 0)             return { label: 'Out of Stock', color: '#dc2626', bg: '#fef2f2', icon: 'alert-circle-outline' as const };
+  if (p.online_stock <= 5)             return { label: 'Low Stock',    color: '#d97706', bg: '#fffbeb', icon: 'warning-outline' as const };
+  if (p.online_stock > p.total_stock)  return { label: 'Overstocked',  color: '#7c3aed', bg: '#f5f3ff', icon: 'trending-up-outline' as const };
+  return                                      { label: 'In Stock',     color: '#059669', bg: '#f0fdf4', icon: 'checkmark-circle-outline' as const };
+};
+
+// ── CustomAmountModal ─────────────────────────────────────────────────────────
+
 const CustomAmountModal: React.FC<{
   visible: boolean;
   productName: string;
@@ -78,135 +47,110 @@ const CustomAmountModal: React.FC<{
   onConfirm: (amount: number) => void;
   onCancel: () => void;
 }> = ({ visible, productName, currentStock, stockType, onConfirm, onCancel }) => {
-  const [customAmount, setCustomAmount] = useState('');
-  const [operation, setOperation] = useState<'add' | 'set'>('add');
+  const [amount, setAmount]         = useState('');
+  const [op, setOp]                 = useState<'add' | 'set'>('add');
+
+  const reset = () => { setAmount(''); setOp('add'); };
 
   const handleConfirm = () => {
-    const amount = parseInt(customAmount, 10);
-    if (isNaN(amount) || amount < 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid number');
-      return;
-    }
-    
-    const finalAmount = operation === 'add' ? currentStock + amount : amount;
-    onConfirm(finalAmount);
-    setCustomAmount('');
-    setOperation('add');
+    const n = parseInt(amount, 10);
+    if (isNaN(n) || n < 0) { Alert.alert('Invalid Amount', 'Enter a valid number.'); return; }
+    onConfirm(op === 'add' ? currentStock + n : n);
+    reset();
   };
 
-  const handleCancel = () => {
-    setCustomAmount('');
-    setOperation('add');
-    onCancel();
-  };
+  const handleCancel = () => { reset(); onCancel(); };
+
+  const preview = amount
+    ? op === 'add'
+      ? `New stock: ${currentStock + parseInt(amount || '0', 10)}`
+      : `Stock set to: ${amount}`
+    : '';
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={handleCancel}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.customAmountModal}>
-          <LinearGradient
-            colors={[STOCK_COLORS.primary, STOCK_COLORS.primaryLight]}
-            style={styles.customAmountHeader}
-          >
-            <View style={styles.modalHeaderContent}>
-              <View style={styles.modalIconContainer}>
-                <Ionicons name="calculator" size={20} color="#fff" />
-              </View>
-              <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Custom Stock Amount</Text>
-                <Text style={styles.modalSubtitle} numberOfLines={1}>{productName}</Text>
-              </View>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleCancel}>
+      <View style={m.overlay}>
+        <View style={m.sheet}>
+          {/* Header */}
+          <View style={m.head}>
+            <View style={m.headIcon}>
+              <Ionicons name="calculator-outline" size={18} color="#3b82f6" />
             </View>
-            <TouchableOpacity onPress={handleCancel} style={styles.closeButton}>
-              <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+            <View style={{ flex: 1 }}>
+              <Text style={m.headTitle}>Custom Stock Amount</Text>
+              <Text style={m.headSub} numberOfLines={1}>{productName}</Text>
+            </View>
+            <TouchableOpacity style={m.closeBtn} onPress={handleCancel}>
+              <Ionicons name="close" size={18} color="#6b7280" />
             </TouchableOpacity>
-          </LinearGradient>
+          </View>
 
-          <ScrollView style={styles.customAmountBody} showsVerticalScrollIndicator={false}>
-            <View style={styles.currentStockDisplay}>
-              <Text style={styles.currentStockLabel}>Current {stockType === 'total' ? 'Total' : 'Online'} Stock:</Text>
-              <Text style={styles.currentStockValue}>{currentStock}</Text>
+          <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+            {/* Current stock */}
+            <View style={m.currentRow}>
+              <Text style={m.currentLabel}>Current {stockType === 'total' ? 'Total' : 'Online'} Stock</Text>
+              <Text style={m.currentVal}>{currentStock}</Text>
             </View>
 
-            <View style={styles.operationSelector}>
-              <TouchableOpacity
-                style={[styles.operationButton, operation === 'add' && styles.operationButtonActive]}
-                onPress={() => setOperation('add')}
-              >
-                <Ionicons name="add-circle" size={18} color={operation === 'add' ? '#fff' : STOCK_COLORS.primary} />
-                <Text style={[styles.operationButtonText, operation === 'add' && styles.operationButtonTextActive]}>
-                  Add to Stock
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.operationButton, operation === 'set' && styles.operationButtonActive]}
-                onPress={() => setOperation('set')}
-              >
-                <Ionicons name="create" size={18} color={operation === 'set' ? '#fff' : STOCK_COLORS.primary} />
-                <Text style={[styles.operationButtonText, operation === 'set' && styles.operationButtonTextActive]}>
-                  Set Exact Amount
-                </Text>
-              </TouchableOpacity>
+            {/* Operation toggle */}
+            <View style={m.toggleRow}>
+              {(['add', 'set'] as const).map(o => (
+                <TouchableOpacity
+                  key={o}
+                  style={[m.toggleBtn, op === o && m.toggleBtnActive]}
+                  onPress={() => setOp(o)}
+                >
+                  <Ionicons
+                    name={o === 'add' ? 'add-circle-outline' : 'create-outline'}
+                    size={15}
+                    color={op === o ? '#fff' : '#3b82f6'}
+                  />
+                  <Text style={[m.toggleText, op === o && m.toggleTextActive]}>
+                    {o === 'add' ? 'Add to Stock' : 'Set Exact'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <View style={styles.amountInputContainer}>
-              <Text style={styles.inputLabel}>
-                {operation === 'add' ? 'Amount to Add:' : 'Set Stock To:'}
-              </Text>
-              <TextInput
-                style={styles.amountInput}
-                value={customAmount}
-                onChangeText={setCustomAmount}
-                keyboardType="numeric"
-                placeholder="Enter amount"
-                placeholderTextColor={STOCK_COLORS.textTertiary}
-                autoFocus
-              />
-              {customAmount && (
-                <Text style={styles.previewText}>
-                  {operation === 'add' 
-                    ? `New stock will be: ${currentStock + parseInt(customAmount || '0', 10)}`
-                    : `Stock will be set to: ${customAmount}`
-                  }
-                </Text>
-              )}
-            </View>
+            {/* Input */}
+            <Text style={m.fieldLabel}>{op === 'add' ? 'Amount to Add' : 'Set Stock To'}</Text>
+            <TextInput
+              style={m.input}
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="numeric"
+              placeholder="Enter amount"
+              placeholderTextColor="#9ca3af"
+              autoFocus
+            />
+            {!!preview && <Text style={m.preview}>{preview}</Text>}
 
-            {operation === 'add' && (
-              <View style={styles.presetsContainer}>
-                <Text style={styles.presetsLabel}>Quick Presets:</Text>
-                <View style={styles.presetsRow}>
-                  {[5, 10, 25, 50, 100].map((amount) => (
-                    <TouchableOpacity
-                      key={amount}
-                      style={styles.presetButton}
-                      onPress={() => setCustomAmount(String(amount))}
-                    >
-                      <Text style={styles.presetButtonText}>+{amount}</Text>
+            {/* Quick presets */}
+            {op === 'add' && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={m.presetsLabel}>Quick Presets</Text>
+                <View style={m.presetsRow}>
+                  {[5, 10, 25, 50, 100].map(n => (
+                    <TouchableOpacity key={n} style={m.preset} onPress={() => setAmount(String(n))}>
+                      <Text style={m.presetText}>+{n}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
             )}
 
-            <View style={styles.modalActionButtons}>
-              <TouchableOpacity style={styles.buttonSecondary} onPress={handleCancel}>
-                <Text style={styles.buttonSecondaryText}>Cancel</Text>
+            {/* Buttons */}
+            <View style={m.btnRow}>
+              <TouchableOpacity style={m.cancelBtn} onPress={handleCancel}>
+                <Text style={m.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity
-                style={[styles.buttonPrimary, !customAmount && styles.buttonDisabled]}
+                style={[m.confirmBtn, !amount && { opacity: 0.5 }]}
                 onPress={handleConfirm}
-                disabled={!customAmount}
+                disabled={!amount}
               >
-                <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                <Text style={styles.buttonPrimaryText}>Confirm</Text>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                <Text style={m.confirmBtnText}>Confirm</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -216,82 +160,8 @@ const CustomAmountModal: React.FC<{
   );
 };
 
-// ===================================================================
-// ✅ SIMPLIFIED STOCK CONTROL
-// ===================================================================
-const SimplifiedStockControl: React.FC<{
-  value: number;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  onChange: (value: string) => void;
-  onCustomAdd: () => void;
-  disabled: boolean;
-  maxValue?: number;
-  type: 'total' | 'online';
-}> = ({ value, onDecrease, onIncrease, onChange, onCustomAdd, disabled, maxValue, type }) => {
-  const buttonColor = type === 'total' ? STOCK_COLORS.primary : STOCK_COLORS.success;
-  const isAtMax = maxValue !== undefined && value >= maxValue;
-  
-  return (
-    <View style={styles.stockControlContainer}>
-      <View style={styles.stockControlRow}>
-        <TouchableOpacity
-          style={[
-            styles.controlButton,
-            disabled && styles.controlButtonDisabled,
-            { borderColor: buttonColor, backgroundColor: disabled ? STOCK_COLORS.borderLight : `${buttonColor}10` }
-          ]}
-          onPress={onDecrease}
-          disabled={disabled || value <= 0}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="remove" size={18} color={disabled || value <= 0 ? STOCK_COLORS.textMuted : buttonColor} />
-        </TouchableOpacity>
-        
-        <View style={[styles.stockValueContainer, { borderColor: buttonColor }]}>
-          <TextInput
-            style={[styles.stockValueInput, disabled && styles.stockValueDisabled]}
-            value={String(value || 0)}
-            onChangeText={onChange}
-            keyboardType="numeric"
-            textAlign="center"
-            editable={!disabled}
-            selectTextOnFocus
-            placeholder="0"
-            placeholderTextColor={STOCK_COLORS.textTertiary}
-          />
-        </View>
-        
-        <TouchableOpacity
-          style={[
-            styles.controlButton,
-            (disabled || isAtMax) && styles.controlButtonDisabled,
-            { borderColor: buttonColor, backgroundColor: disabled || isAtMax ? STOCK_COLORS.borderLight : `${buttonColor}10` }
-          ]}
-          onPress={onIncrease}
-          disabled={disabled || isAtMax}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="add" size={18} color={disabled || isAtMax ? STOCK_COLORS.textMuted : buttonColor} />
-        </TouchableOpacity>
-      </View>
+// ── ConfirmationModal ─────────────────────────────────────────────────────────
 
-      <TouchableOpacity
-        style={[styles.customButton, { backgroundColor: buttonColor }, disabled && styles.customButtonDisabled]}
-        onPress={onCustomAdd}
-        disabled={disabled}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="calculator" size={14} color="#fff" />
-        <Text style={styles.customButtonText}>Custom Amount</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-// ===================================================================
-// ✅ CONFIRMATION MODAL
-// ===================================================================
 const ConfirmationModal: React.FC<{
   visible: boolean;
   message: string;
@@ -301,550 +171,446 @@ const ConfirmationModal: React.FC<{
 }> = ({ visible, message, onConfirm, onCancel, isLoading }) => {
   const [note, setNote] = useState('');
 
-  const handleConfirmClick = () => {
-    onConfirm(note);
-    setNote('');
-  };
-
-  const handleCancel = () => {
-    setNote('');
-    onCancel();
-  };
+  const handleCancel = () => { setNote(''); onCancel(); };
+  const handleConfirm = () => { onConfirm(note); setNote(''); };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleCancel}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <LinearGradient
-            colors={[STOCK_COLORS.primary, STOCK_COLORS.primaryLight]}
-            style={styles.modalHeader}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.modalHeaderContent}>
-              <View style={styles.modalIconContainer}>
-                <Ionicons name="cube" size={20} color="#fff" />
-              </View>
-              <Text style={styles.modalTitle}>Confirm Stock Update</Text>
+      <View style={m.overlay}>
+        <View style={m.sheet}>
+          {/* Header */}
+          <View style={m.head}>
+            <View style={[m.headIcon, { backgroundColor: '#eff6ff' }]}>
+              <Ionicons name="cube-outline" size={18} color="#3b82f6" />
             </View>
-            <TouchableOpacity onPress={handleCancel} style={styles.closeButton} disabled={isLoading}>
-              <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+            <Text style={[m.headTitle, { fontSize: 15 }]}>Confirm Stock Update</Text>
+            <TouchableOpacity style={m.closeBtn} onPress={handleCancel} disabled={isLoading}>
+              <Ionicons name="close" size={18} color="#6b7280" />
             </TouchableOpacity>
-          </LinearGradient>
+          </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-            <Text style={styles.modalMessage}>{message}</Text>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>
-                <Ionicons name="document-text-outline" size={14} color={STOCK_COLORS.textSecondary} />
-                {' '}Reason for change (optional)
-              </Text>
-              <TextInput
-                value={note}
-                onChangeText={setNote}
-                placeholder="e.g., weekly restock, sale, correction, damage"
-                style={styles.textarea}
-                multiline
-                numberOfLines={3}
-                editable={!isLoading}
-                placeholderTextColor={STOCK_COLORS.textTertiary}
-              />
-            </View>
-            
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity onPress={handleCancel} style={styles.buttonSecondary} disabled={isLoading}>
-                <Ionicons name="close-circle" size={16} color="#fff" />
-                <Text style={styles.buttonSecondaryText}>Cancel</Text>
+          <View style={{ padding: 16 }}>
+            <Text style={m.confirmMsg}>{message}</Text>
+
+            <Text style={m.fieldLabel}>Reason for change (optional)</Text>
+            <TextInput
+              style={[m.input, m.textarea]}
+              value={note}
+              onChangeText={setNote}
+              placeholder="e.g., weekly restock, sale, correction"
+              placeholderTextColor="#9ca3af"
+              multiline
+              numberOfLines={3}
+              editable={!isLoading}
+            />
+
+            <View style={m.btnRow}>
+              <TouchableOpacity style={m.cancelBtn} onPress={handleCancel} disabled={isLoading}>
+                <Text style={m.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={handleConfirmClick} 
-                style={[styles.buttonPrimary, isLoading && styles.buttonDisabled]}
+              <TouchableOpacity
+                style={[m.confirmBtn, isLoading && { opacity: 0.6 }]}
+                onPress={handleConfirm}
                 disabled={isLoading}
               >
-                {isLoading ? (
-                  <View style={styles.buttonContent}>
-                    <ActivityIndicator color="#fff" size="small" />
-                    <Text style={styles.buttonPrimaryText}>Updating...</Text>
-                  </View>
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                    <Text style={styles.buttonPrimaryText}>Confirm Update</Text>
-                  </View>
-                )}
+                {isLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <><Ionicons name="checkmark-circle-outline" size={16} color="#fff" /><Text style={m.confirmBtnText}>Confirm</Text></>
+                }
               </TouchableOpacity>
             </View>
-          </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
   );
 };
 
-// ===================================================================
-// ✅ MAIN SCREEN
-// ===================================================================
+// ── StockControl ──────────────────────────────────────────────────────────────
+
+const StockControl: React.FC<{
+  value: number;
+  color: string;
+  disabled: boolean;
+  maxValue?: number;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  onChange: (v: string) => void;
+  onCustom: () => void;
+}> = ({ value, color, disabled, maxValue, onDecrease, onIncrease, onChange, onCustom }) => {
+  const atMax = maxValue !== undefined && value >= maxValue;
+
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={sc.row}>
+        <TouchableOpacity
+          style={[sc.circleBtn, { borderColor: color }, (disabled || value <= 0) && sc.circleBtnDim]}
+          onPress={onDecrease}
+          disabled={disabled || value <= 0}
+        >
+          <Ionicons name="remove" size={16} color={(disabled || value <= 0) ? '#d1d5db' : color} />
+        </TouchableOpacity>
+
+        <View style={[sc.inputWrap, { borderColor: color }]}>
+          <TextInput
+            style={sc.input}
+            value={String(value ?? 0)}
+            onChangeText={onChange}
+            keyboardType="numeric"
+            textAlign="center"
+            editable={!disabled}
+            selectTextOnFocus
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[sc.circleBtn, { borderColor: color }, (disabled || atMax) && sc.circleBtnDim]}
+          onPress={onIncrease}
+          disabled={disabled || atMax}
+        >
+          <Ionicons name="add" size={16} color={(disabled || atMax) ? '#d1d5db' : color} />
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity
+        style={[sc.customBtn, { backgroundColor: color }, disabled && { opacity: 0.5 }]}
+        onPress={onCustom}
+        disabled={disabled}
+      >
+        <Ionicons name="calculator-outline" size={13} color="#fff" />
+        <Text style={sc.customBtnText}>Custom Amount</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// ── Main screen ───────────────────────────────────────────────────────────────
+
 const StockManagementScreen: React.FC = () => {
   const navigation = useNavigation();
   const { setCurrentTitle, setCurrentSubtitle } = useContext(AppStateContext);
-  
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [confirmation, setConfirmation] = useState<{
-    message: string;
-    onConfirm: (note: string) => void;
-  } | null>(null);
-  const [isUpdatingStock, setIsUpdatingStock] = useState<number | null>(null);
-  const [error, setError] = useState('');
-  const [stockFilter, setStockFilter] = useState<'all' | 'low_stock' | 'out_of_stock' | 'overstocked'>('all');
-  const [customAmountModal, setCustomAmountModal] = useState<{
-    visible: boolean;
-    productId: number;
-    productName: string;
-    currentStock: number;
-    stockType: 'total_stock' | 'online_stock';
+
+  const [products, setProducts]                 = useState<Product[]>([]);
+  const [filtered, setFiltered]                 = useState<Product[]>([]);
+  const [isLoading, setIsLoading]               = useState(true);
+  const [search, setSearch]                     = useState('');
+  const [filter, setFilter]                     = useState<StockFilter>('all');
+  const [error, setError]                       = useState('');
+  const [updatingId, setUpdatingId]             = useState<number | null>(null);
+  const [confirmation, setConfirmation]         = useState<{ message: string; onConfirm: (note: string) => void } | null>(null);
+  const [customModal, setCustomModal]           = useState<{
+    productId: number; productName: string; currentStock: number; stockType: 'total_stock' | 'online_stock';
   } | null>(null);
 
   useEffect(() => {
-    setCurrentTitle('📦 Stock Management');
-    setCurrentSubtitle('Quick inventory updates • Real-time tracking');
-  }, [setCurrentTitle, setCurrentSubtitle]);
+    setCurrentTitle('Stock Management');
+    setCurrentSubtitle('Quick inventory updates');
+  }, []);
 
   const fetchData = useCallback(async () => {
     const token = await AsyncStorage.getItem('accessToken');
-    if (!token) {
-      setError('Authentication required. Please login to continue.');
-      setIsLoading(false);
-      return;
-    }
-
+    if (!token) { setError('Authentication required.'); setIsLoading(false); return; }
     try {
-      setIsLoading(true);
-      setError('');
-      
-      const response = await axios.get(API_URL, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
-      
-      const productData = response.data.results || response.data || [];
-      setProducts(productData);
-      setFilteredProducts(productData);
-    } catch (error: any) {
-      if (error.response?.status === 401) {
-        setError('Session expired. Please login again to continue.');
-      } else {
-        setError('Unable to load products. Please check your connection and try again.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
+      setIsLoading(true); setError('');
+      const res = await axios.get(API_URL, { headers: { Authorization: `Bearer ${token}` } });
+      const data: Product[] = res.data.results || res.data || [];
+      setProducts(data);
+    } catch (e: any) {
+      setError(e.response?.status === 401 ? 'Session expired. Please login again.' : 'Failed to load products. Check your connection.');
+    } finally { setIsLoading(false); }
   }, []);
 
+  useEffect(() => { fetchData(); }, [fetchData]);
+
   useEffect(() => {
-    let filtered = [...products];
-
-    if (searchTerm.trim()) {
-      filtered = filtered.filter(product =>
-        product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.model_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    let out = [...products];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      out = out.filter(p => p.name?.toLowerCase().includes(q) || p.model_name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
     }
+    if (filter === 'low_stock')    out = out.filter(p => p.online_stock > 0 && p.online_stock <= 5);
+    if (filter === 'out_of_stock') out = out.filter(p => p.online_stock <= 0);
+    if (filter === 'overstocked')  out = out.filter(p => p.online_stock > p.total_stock);
+    setFiltered(out);
+  }, [products, search, filter]);
 
-    switch (stockFilter) {
-      case 'low_stock':
-        filtered = filtered.filter(product => product.online_stock > 0 && product.online_stock <= 5);
-        break;
-      case 'out_of_stock':
-        filtered = filtered.filter(product => product.online_stock <= 0);
-        break;
-      case 'overstocked':
-        filtered = filtered.filter(product => product.online_stock > product.total_stock);
-        break;
-    }
-
-    setFilteredProducts(filtered);
-  }, [products, searchTerm, stockFilter]);
-
-  useEffect(() => { 
-    fetchData(); 
-  }, [fetchData]);
-
-  const handleStockChange = (productId: number, stockType: 'total_stock' | 'online_stock', newStock: string | number) => {
-    const stockValue = Math.max(0, parseInt(String(newStock), 10));
-    if (isNaN(stockValue)) return;
-
+  const handleStockChange = (productId: number, stockType: 'total_stock' | 'online_stock', newValue: string | number) => {
+    const val = Math.max(0, parseInt(String(newValue), 10));
+    if (isNaN(val)) return;
     const product = products.find(p => p.id === productId);
     if (!product) return;
-
-    const currentStock = product[stockType];
-    const difference = stockValue - currentStock;
-    const stockTypeLabel = stockType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const prev  = product[stockType];
+    const diff  = val - prev;
+    const label = stockType === 'total_stock' ? 'Total Stock' : 'Online Stock';
 
     setConfirmation({
-      message: `Update ${product.name}'s ${stockTypeLabel} from ${currentStock} to ${stockValue}${
-        difference > 0 ? ` (+${difference})` : difference < 0 ? ` (${difference})` : ' (no change)'
-      }?`,
+      message: `Update ${product.name}'s ${label} from ${prev} to ${val}${diff > 0 ? ` (+${diff})` : diff < 0 ? ` (${diff})` : ''}?`,
       onConfirm: async (note: string) => {
-        setIsUpdatingStock(productId);
-        
+        setUpdatingId(productId);
         try {
           const token = await AsyncStorage.getItem('accessToken');
-          const data = { 
-            [stockType]: stockValue, 
-            note: note || `${stockTypeLabel} updated via mobile stock management`
-          };
-
-          await axios.patch(`${API_URL}${productId}/update-stock/`, data, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          
+          await axios.patch(`${API_URL}${productId}/update-stock/`, {
+            [stockType]: val,
+            note: note || `${label} updated via mobile`,
+          }, { headers: { Authorization: `Bearer ${token}` } });
           await fetchData();
-          setError('');
-          
-          Alert.alert('✅ Success!', `${product.name}'s ${stockTypeLabel.toLowerCase()} has been updated to ${stockValue}`);
-        } catch (error: any) {
-          if (error.response?.status === 401) {
-            setError('Session expired. Please login again.');
-          } else {
-            const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Could not update stock. Please try again.';
-            setError(errorMessage);
-            Alert.alert('❌ Update Failed', errorMessage);
-          }
+          Alert.alert('Updated!', `${product.name}'s ${label.toLowerCase()} set to ${val}.`);
+        } catch (e: any) {
+          const msg = e.response?.data?.error || e.response?.data?.message || 'Could not update stock.';
+          setError(msg);
+          Alert.alert('Update Failed', msg);
           await fetchData();
-        } finally {
-          setConfirmation(null);
-          setIsUpdatingStock(null);
-        }
+        } finally { setConfirmation(null); setUpdatingId(null); }
       },
     });
   };
 
-  const getStockStatus = (product: Product) => {
-    const { online_stock, total_stock } = product;
-    
-    if (online_stock <= 0) {
-      return { label: 'Out of Stock', color: STOCK_COLORS.danger, bgColor: `${STOCK_COLORS.danger}15`, icon: 'alert-circle', borderColor: STOCK_COLORS.danger };
-    } else if (online_stock <= 5) {
-      return { label: 'Low Stock', color: STOCK_COLORS.warning, bgColor: `${STOCK_COLORS.warning}15`, icon: 'warning', borderColor: STOCK_COLORS.warning };
-    } else if (online_stock > total_stock) {
-      return { label: 'Overstocked', color: STOCK_COLORS.purple, bgColor: `${STOCK_COLORS.purple}15`, icon: 'trending-up', borderColor: STOCK_COLORS.purple };
-    } else {
-      return { label: 'In Stock', color: STOCK_COLORS.success, bgColor: `${STOCK_COLORS.success}15`, icon: 'checkmark-circle', borderColor: STOCK_COLORS.success };
-    }
-  };
+  // Stats
+  const inStock  = products.filter(p => p.online_stock > 5).length;
+  const lowStock = products.filter(p => p.online_stock > 0 && p.online_stock <= 5).length;
+  const outStock = products.filter(p => p.online_stock <= 0).length;
+  const overStock = products.filter(p => p.online_stock > p.total_stock).length;
 
-  const getFilterCounts = () => {
-    return {
-      all: products.length,
-      low_stock: products.filter(p => p.online_stock > 0 && p.online_stock <= 5).length,
-      out_of_stock: products.filter(p => p.online_stock <= 0).length,
-      overstocked: products.filter(p => p.online_stock > p.total_stock).length
-    };
-  };
-
-  const filterCounts = getFilterCounts();
-
-  const filterTabs = [
-    { key: 'all' as const, label: 'All', count: filterCounts.all, icon: 'grid', color: STOCK_COLORS.primary },
-    { key: 'low_stock' as const, label: 'Low', count: filterCounts.low_stock, icon: 'warning', color: STOCK_COLORS.warning },
-    { key: 'out_of_stock' as const, label: 'Out', count: filterCounts.out_of_stock, icon: 'alert-circle', color: STOCK_COLORS.danger },
-    { key: 'overstocked' as const, label: 'Over', count: filterCounts.overstocked, icon: 'trending-up', color: STOCK_COLORS.purple },
+  const FILTER_TABS: { key: StockFilter; label: string; count: number; color: string; icon: any }[] = [
+    { key: 'all',          label: 'All',     count: products.length, color: '#3b82f6', icon: 'grid-outline' },
+    { key: 'low_stock',    label: 'Low',     count: lowStock,        color: '#d97706', icon: 'warning-outline' },
+    { key: 'out_of_stock', label: 'Out',     count: outStock,        color: '#dc2626', icon: 'alert-circle-outline' },
+    { key: 'overstocked',  label: 'Over',    count: overStock,       color: '#7c3aed', icon: 'trending-up-outline' },
   ];
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={STOCK_COLORS.background} />
-      
+    <View style={s.screen}>
+
+      {/* Modals */}
       {confirmation && (
         <ConfirmationModal
-          visible={true}
+          visible
           message={confirmation.message}
           onConfirm={confirmation.onConfirm}
-          onCancel={() => {
-            setConfirmation(null);
-            fetchData();
-          }}
-          isLoading={isUpdatingStock !== null}
+          onCancel={() => { setConfirmation(null); fetchData(); }}
+          isLoading={updatingId !== null}
         />
       )}
-
-      {customAmountModal && (
+      {customModal && (
         <CustomAmountModal
-          visible={customAmountModal.visible}
-          productName={customAmountModal.productName}
-          currentStock={customAmountModal.currentStock}
-          stockType={customAmountModal.stockType === 'total_stock' ? 'total' : 'online'}
-          onConfirm={(newAmount) => {
-            handleStockChange(customAmountModal.productId, customAmountModal.stockType, newAmount);
-            setCustomAmountModal(null);
-          }}
-          onCancel={() => setCustomAmountModal(null)}
+          visible
+          productName={customModal.productName}
+          currentStock={customModal.currentStock}
+          stockType={customModal.stockType === 'total_stock' ? 'total' : 'online'}
+          onConfirm={amt => { handleStockChange(customModal.productId, customModal.stockType, amt); setCustomModal(null); }}
+          onCancel={() => setCustomModal(null)}
         />
       )}
 
-      <View style={styles.compactStatsContainer}>
-        <LinearGradient colors={[STOCK_COLORS.surface, STOCK_COLORS.borderLight]} style={styles.compactStatsGradient}>
-          <View style={styles.compactStatsRow}>
-            <View style={styles.compactStatItem}>
-              <Text style={styles.compactStatNumber}>{products.length}</Text>
-              <Text style={styles.compactStatLabel}>Total</Text>
+      {/* ── Stat bar ── */}
+      <View style={s.statBar}>
+        {[
+          { label: 'Total',    value: products.length, color: '#3b82f6' },
+          { label: 'In Stock', value: inStock,          color: '#059669' },
+          { label: 'Low',      value: lowStock,         color: '#d97706' },
+          { label: 'Out',      value: outStock,         color: '#dc2626' },
+        ].map((item, idx, arr) => (
+          <React.Fragment key={item.label}>
+            <View style={s.statItem}>
+              <Text style={[s.statVal, { color: item.color }]}>{item.value}</Text>
+              <Text style={s.statLabel}>{item.label}</Text>
             </View>
-            <View style={styles.compactStatDivider} />
-            <View style={styles.compactStatItem}>
-              <Text style={[styles.compactStatNumber, { color: STOCK_COLORS.success }]}>
-                {products.filter(p => p.online_stock > 5).length}
-              </Text>
-              <Text style={styles.compactStatLabel}>In Stock</Text>
-            </View>
-            <View style={styles.compactStatDivider} />
-            <View style={styles.compactStatItem}>
-              <Text style={[styles.compactStatNumber, { color: STOCK_COLORS.warning }]}>{filterCounts.low_stock}</Text>
-              <Text style={styles.compactStatLabel}>Low</Text>
-            </View>
-            <View style={styles.compactStatDivider} />
-            <View style={styles.compactStatItem}>
-              <Text style={[styles.compactStatNumber, { color: STOCK_COLORS.danger }]}>{filterCounts.out_of_stock}</Text>
-              <Text style={styles.compactStatLabel}>Out</Text>
-            </View>
-          </View>
-        </LinearGradient>
+            {idx < arr.length - 1 && <View style={s.statDivider} />}
+          </React.Fragment>
+        ))}
       </View>
 
-      {error && (
-        <View style={styles.errorContainer}>
-          <LinearGradient colors={[`${STOCK_COLORS.danger}10`, `${STOCK_COLORS.danger}05`]} style={styles.errorGradient}>
-            <View style={styles.errorIconContainer}>
-              <Ionicons name="alert-circle" size={16} color={STOCK_COLORS.danger} />
-            </View>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={() => setError('')} style={styles.errorClose}>
-              <Ionicons name="close-circle" size={14} color={STOCK_COLORS.danger} />
-            </TouchableOpacity>
-          </LinearGradient>
+      {/* ── Error banner ── */}
+      {!!error && (
+        <View style={s.errorBanner}>
+          <Ionicons name="alert-circle-outline" size={15} color="#dc2626" />
+          <Text style={s.errorText}>{error}</Text>
+          <TouchableOpacity onPress={() => setError('')}>
+            <Ionicons name="close" size={15} color="#dc2626" />
+          </TouchableOpacity>
         </View>
       )}
 
-      <View style={styles.searchFilterRow}>
-        <View style={styles.compactSearchContainer}>
-          <Ionicons name="search" size={16} color={STOCK_COLORS.textSecondary} />
-          <TextInput
-            placeholder="Search products..."
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            style={styles.compactSearchInput}
-            placeholderTextColor={STOCK_COLORS.textTertiary}
+      {/* ── Search + filter ── */}
+
+<View style={s.toolBar}>
+  {/* Search */}
+  <View style={s.searchBox}>
+    <Ionicons name="search-outline" size={15} color="#9ca3af" />
+    <TextInput
+      style={s.searchInput}
+      value={search}
+      onChangeText={setSearch}
+      placeholder="Search products..."
+      placeholderTextColor="#9ca3af"
+    />
+    {!!search && (
+      <TouchableOpacity onPress={() => setSearch('')}>
+        <Ionicons name="close-circle" size={15} color="#9ca3af" />
+      </TouchableOpacity>
+    )}
+  </View>
+
+  {/* Filter tabs */}
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={s.filterRow}
+    bounces={false}
+  >
+    {FILTER_TABS.map(tab => {
+      const active = filter === tab.key;
+      return (
+        <TouchableOpacity
+          key={tab.key}
+          style={[s.filterTab, active && { backgroundColor: tab.color, borderColor: tab.color }]}
+          onPress={() => setFilter(tab.key)}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={tab.icon}
+            size={13}
+            color={active ? '#fff' : tab.color}
           />
-          {searchTerm.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchTerm('')}>
-              <Ionicons name="close-circle" size={14} color={STOCK_COLORS.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
+          <Text style={[s.filterTabLabel, active && s.filterTabLabelActive]}>
+            {tab.label}
+          </Text>
+          <View style={[s.filterCount, { backgroundColor: active ? 'rgba(255,255,255,0.25)' : tab.color + '18' }]}>
+            <Text style={[s.filterCountText, { color: active ? '#fff' : tab.color }]}>
+              {tab.count}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    })}
+  </ScrollView>
+</View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.compactFilterScroll} contentContainerStyle={styles.compactFilterContainer}>
-          {filterTabs.map(tab => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[
-                styles.compactFilterTab,
-                stockFilter === tab.key && [styles.compactActiveFilterTab, { backgroundColor: tab.color }]
-              ]}
-              onPress={() => setStockFilter(tab.key)}
-            >
-              <Ionicons name={tab.icon as any} size={12} color={stockFilter === tab.key ? '#fff' : tab.color} />
-              <Text style={[styles.compactFilterText, stockFilter === tab.key && styles.compactActiveFilterText]}>
-                {tab.label}
-              </Text>
-              <View style={[
-                styles.compactFilterBadge,
-                stockFilter === tab.key ? 
-                  { backgroundColor: 'rgba(255,255,255,0.25)' } : 
-                  { backgroundColor: `${tab.color}15` }
-              ]}>
-                <Text style={[
-                  styles.compactFilterCount,
-                  stockFilter === tab.key ? { color: '#fff' } : { color: tab.color }
-                ]}>
-                  {tab.count}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
 
+      {/* ── Product list ── */}
       <ScrollView
-        style={styles.productsList}
-        contentContainerStyle={styles.productsContent}
-        refreshControl={
-          <RefreshControl refreshing={false} onRefresh={fetchData} colors={[STOCK_COLORS.primary]} tintColor={STOCK_COLORS.primary} />
-        }
+        style={s.list}
+        contentContainerStyle={s.listContent}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={fetchData} tintColor="#3b82f6" />}
         showsVerticalScrollIndicator={false}
       >
         {isLoading ? (
-          <View style={styles.loadingState}>
-            <LinearGradient colors={[STOCK_COLORS.primary, STOCK_COLORS.primaryLight]} style={styles.loadingGradient}>
-              <ActivityIndicator size="large" color="#fff" />
-              <Text style={styles.loadingText}>Loading your inventory...</Text>
-              <Text style={styles.loadingSubtext}>Fetching real-time stock data</Text>
-            </LinearGradient>
+          <View style={s.centered}>
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text style={s.loadingText}>Loading inventory...</Text>
           </View>
-        ) : filteredProducts.length > 0 ? (
-          filteredProducts.map(product => {
-            const stockStatus = getStockStatus(product);
-            const isUpdating = isUpdatingStock === product.id;
-            
-            return (
-              <View key={product.id} style={styles.productCard}>
-                <LinearGradient colors={[STOCK_COLORS.surface, STOCK_COLORS.borderLight]} style={styles.productCardGradient}>
-                  <View style={styles.productHeader}>
-                    <View style={styles.productImageContainer}>
-                      <Image
-                        source={{ uri: product.image_url || product.main_image_url || 'https://via.placeholder.com/60x60/e2e8f0/64748b?text=📦' }}
-                        style={styles.productImage}
-                      />
-                      <View style={[styles.stockIndicator, { backgroundColor: stockStatus.color }]}>
-                        <Ionicons name={stockStatus.icon as any} size={10} color="#fff" />
-                      </View>
-                    </View>
-                    
-                    <View style={styles.productDetails}>
-                      <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
-                      
-                      {product.model_name && (
-                        <View style={styles.productMetaRow}>
-                          <Ionicons name="car-outline" size={12} color={STOCK_COLORS.textSecondary} />
-                          <Text style={styles.productModel} numberOfLines={1}>{product.model_name}</Text>
-                        </View>
-                      )}
-                      
-                      <View style={styles.productMetaBottomRow}>
-                        {product.sku && (
-                          <View style={styles.productMetaItem}>
-                            <Ionicons name="barcode-outline" size={11} color={STOCK_COLORS.textTertiary} />
-                            <Text style={styles.productSku} numberOfLines={1}>{product.sku}</Text>
-                          </View>
-                        )}
-                        
-                        {product.price && (
-                          <View style={styles.productMetaItem}>
-                            <Ionicons name="pricetag" size={11} color={STOCK_COLORS.success} />
-                            <Text style={styles.productPrice}>₹{product.price.toLocaleString('en-IN')}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
 
-                    <View style={[styles.statusBadge, { backgroundColor: stockStatus.bgColor, borderColor: stockStatus.borderColor }]}>
-                      <Ionicons name={stockStatus.icon as any} size={11} color={stockStatus.color} />
-                      <Text style={[styles.statusText, { color: stockStatus.color }]}>{stockStatus.label}</Text>
-                    </View>
-                  </View>
+        ) : filtered.length > 0 ? filtered.map(product => {
+          const status    = getStockStatus(product);
+          const updating  = updatingId === product.id;
+          const progress  = Math.min((product.online_stock / Math.max(product.total_stock, 1)) * 100, 100);
+          const imgUri    = product.image_url || product.main_image_url;
 
-                  <View style={styles.stockProgressContainer}>
-                    <View style={styles.stockProgressBar}>
-                      <View 
-                        style={[
-                          styles.stockProgressFill, 
-                          { 
-                            width: `${Math.min((product.online_stock / Math.max(product.total_stock, 1)) * 100, 100)}%`,
-                            backgroundColor: stockStatus.color 
-                          }
-                        ]} 
-                      />
-                    </View>
-                    <Text style={styles.stockProgressText}>
-                      {product.online_stock} of {product.total_stock} available online
-                    </Text>
-                  </View>
+          return (
+            <View key={product.id} style={s.card}>
 
-                  <View style={styles.stockControlsWrapper}>
-                    <View style={styles.stockSection}>
-                      <View style={styles.stockSectionHeader}>
-                        <Ionicons name="cube" size={14} color={STOCK_COLORS.primary} />
-                        <Text style={styles.stockLabel}>Total Stock</Text>
-                      </View>
-                      <SimplifiedStockControl
-                        value={product.total_stock}
-                        onDecrease={() => handleStockChange(product.id, 'total_stock', Math.max(0, product.total_stock - 1))}
-                        onIncrease={() => handleStockChange(product.id, 'total_stock', product.total_stock + 1)}
-                        onChange={(value) => handleStockChange(product.id, 'total_stock', value)}
-                        onCustomAdd={() => setCustomAmountModal({
-                          visible: true,
-                          productId: product.id,
-                          productName: product.name,
-                          currentStock: product.total_stock,
-                          stockType: 'total_stock'
-                        })}
-                        disabled={isUpdating}
-                        type="total"
-                      />
-                    </View>
+              {/* Product header */}
+              <View style={s.cardTop}>
+                <View style={s.imgWrap}>
+                  {imgUri
+                    ? <Image source={{ uri: imgUri }} style={s.img} />
+                    : <View style={s.imgPlaceholder}><Ionicons name="cube-outline" size={24} color="#9ca3af" /></View>
+                  }
+                  <View style={[s.imgDot, { backgroundColor: status.color }]} />
+                </View>
 
-                    <View style={styles.stockSection}>
-                      <View style={styles.stockSectionHeader}>
-                        <Ionicons name="globe" size={14} color={STOCK_COLORS.success} />
-                        <Text style={styles.stockLabel}>Online Stock</Text>
-                      </View>
-                      <SimplifiedStockControl
-                        value={product.online_stock}
-                        onDecrease={() => handleStockChange(product.id, 'online_stock', Math.max(0, product.online_stock - 1))}
-                        onIncrease={() => handleStockChange(product.id, 'online_stock', Math.min(product.online_stock + 1, product.total_stock))}
-                        onChange={(value) => handleStockChange(product.id, 'online_stock', value)}
-                        onCustomAdd={() => setCustomAmountModal({
-                          visible: true,
-                          productId: product.id,
-                          productName: product.name,
-                          currentStock: product.online_stock,
-                          stockType: 'online_stock'
-                        })}
-                        disabled={isUpdating}
-                        maxValue={product.total_stock}
-                        type="online"
-                      />
-                    </View>
-                  </View>
-
-                  {isUpdating && (
-                    <View style={styles.updatingIndicator}>
-                      <LinearGradient colors={[STOCK_COLORS.primary, STOCK_COLORS.primaryLight]} style={styles.updatingGradient}>
-                        <ActivityIndicator size="small" color="#fff" />
-                        <Text style={styles.updatingText}>Updating stock levels...</Text>
-                      </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.productName} numberOfLines={2}>{product.name}</Text>
+                  {!!product.model_name && (
+                    <View style={s.metaRow}>
+                      <Ionicons name="car-outline" size={11} color="#9ca3af" />
+                      <Text style={s.metaText} numberOfLines={1}>{product.model_name}</Text>
                     </View>
                   )}
-                </LinearGradient>
+                  <View style={s.metaRow}>
+                    {!!product.sku && (
+                      <Text style={s.skuText}>{product.sku}</Text>
+                    )}
+                    {!!product.price && (
+                      <Text style={s.priceText}>₹{product.price.toLocaleString('en-IN')}</Text>
+                    )}
+                  </View>
+                </View>
+
+                <View style={[s.statusPill, { backgroundColor: status.bg }]}>
+                  <Ionicons name={status.icon} size={10} color={status.color} />
+                  <Text style={[s.statusPillText, { color: status.color }]}>{status.label}</Text>
+                </View>
               </View>
-            );
-          })
-        ) : (
-          <View style={styles.emptyState}>
-            <LinearGradient colors={[STOCK_COLORS.primary, STOCK_COLORS.primaryLight]} style={styles.emptyIcon}>
-              <Ionicons name="cube-outline" size={48} color="#fff" />
-            </LinearGradient>
-            <Text style={styles.emptyTitle}>No products found</Text>
-            <Text style={styles.emptyDescription}>
-              {searchTerm || stockFilter !== 'all'
-                ? 'No products match your current search or filter criteria. Try adjusting your filters or search terms.'
-                : "You haven't added any products to your store yet. Start by adding your first product to manage inventory."}
+
+              {/* Progress bar */}
+              <View style={s.progressWrap}>
+                <View style={s.progressTrack}>
+                  <View style={[s.progressFill, { width: `${progress}%`, backgroundColor: status.color }]} />
+                </View>
+                <Text style={s.progressText}>{product.online_stock} of {product.total_stock} available online</Text>
+              </View>
+
+              {/* Stock controls */}
+              <View style={s.controlsWrap}>
+                <View style={s.controlSection}>
+                  <View style={s.controlHead}>
+                    <Ionicons name="cube-outline" size={13} color="#3b82f6" />
+                    <Text style={s.controlLabel}>Total Stock</Text>
+                  </View>
+                  <StockControl
+                    value={product.total_stock}
+                    color="#3b82f6"
+                    disabled={updating}
+                    onDecrease={() => handleStockChange(product.id, 'total_stock', product.total_stock - 1)}
+                    onIncrease={() => handleStockChange(product.id, 'total_stock', product.total_stock + 1)}
+                    onChange={v => handleStockChange(product.id, 'total_stock', v)}
+                    onCustom={() => setCustomModal({ productId: product.id, productName: product.name, currentStock: product.total_stock, stockType: 'total_stock' })}
+                  />
+                </View>
+
+                <View style={s.controlSection}>
+                  <View style={s.controlHead}>
+                    <Ionicons name="globe-outline" size={13} color="#059669" />
+                    <Text style={s.controlLabel}>Online Stock</Text>
+                  </View>
+                  <StockControl
+                    value={product.online_stock}
+                    color="#059669"
+                    disabled={updating}
+                    maxValue={product.total_stock}
+                    onDecrease={() => handleStockChange(product.id, 'online_stock', product.online_stock - 1)}
+                    onIncrease={() => handleStockChange(product.id, 'online_stock', product.online_stock + 1)}
+                    onChange={v => handleStockChange(product.id, 'online_stock', v)}
+                    onCustom={() => setCustomModal({ productId: product.id, productName: product.name, currentStock: product.online_stock, stockType: 'online_stock' })}
+                  />
+                </View>
+              </View>
+
+              {/* Updating overlay */}
+              {updating && (
+                <View style={s.updatingBanner}>
+                  <ActivityIndicator size="small" color="#3b82f6" />
+                  <Text style={s.updatingText}>Updating stock levels...</Text>
+                </View>
+              )}
+            </View>
+          );
+        }) : (
+          <View style={s.centered}>
+            <View style={s.emptyIcon}>
+              <Ionicons name="cube-outline" size={36} color="#d1d5db" />
+            </View>
+            <Text style={s.emptyTitle}>No products found</Text>
+            <Text style={s.emptySub}>
+              {search || filter !== 'all'
+                ? 'No products match your current filters.'
+                : "You haven't added any products yet."}
             </Text>
-            {(searchTerm || stockFilter !== 'all') && (
-              <TouchableOpacity
-                style={styles.clearFiltersButton}
-                onPress={() => {
-                  setSearchTerm('');
-                  setStockFilter('all');
-                }}
-              >
-                <LinearGradient colors={[STOCK_COLORS.primary, STOCK_COLORS.primaryLight]} style={styles.clearFiltersGradient}>
-                  <Ionicons name="refresh" size={16} color="#fff" />
-                  <Text style={styles.clearFiltersText}>Clear All Filters</Text>
-                </LinearGradient>
+            {(search || filter !== 'all') && (
+              <TouchableOpacity style={s.clearBtn} onPress={() => { setSearch(''); setFilter('all'); }}>
+                <Ionicons name="refresh-outline" size={15} color="#3b82f6" />
+                <Text style={s.clearBtnText}>Clear Filters</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -854,343 +620,201 @@ const StockManagementScreen: React.FC = () => {
   );
 };
 
-// ===================================================================
-// ✅ STYLES
-// ===================================================================
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: STOCK_COLORS.background,
-  },
+// ── Styles ────────────────────────────────────────────────────────────────────
 
-  // Stock Control
-  stockControlContainer: { gap: 10 },
-  stockControlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  controlButton: {
-    width: 40,
-    height: 40,
-    borderWidth: 2,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
-      android: { elevation: 2 },
-    }),
-  },
-  controlButtonDisabled: { backgroundColor: STOCK_COLORS.borderLight, borderColor: STOCK_COLORS.border, elevation: 0, shadowOpacity: 0 },
-  stockValueContainer: {
-    borderWidth: 2,
-    borderRadius: 10,
-    backgroundColor: STOCK_COLORS.surface,
-    minWidth: 70,
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 },
-      android: { elevation: 1 },
-    }),
-  },
-  stockValueInput: { height: 40, textAlign: 'center', fontSize: 18, fontWeight: '700', color: STOCK_COLORS.textPrimary, paddingHorizontal: 8 },
-  stockValueDisabled: { backgroundColor: STOCK_COLORS.borderLight, color: STOCK_COLORS.textMuted },
-  customButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadowDark, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 4 },
-      android: { elevation: 2 },
-    }),
-  },
-  customButtonDisabled: { backgroundColor: STOCK_COLORS.borderLight, elevation: 0, shadowOpacity: 0 },
-  customButtonText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+const s = StyleSheet.create({
+  screen:  { flex: 1, backgroundColor: '#f1f5f9' },
+  centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  loadingText: { fontSize: 14, color: '#6b7280', fontWeight: '500' },
 
-  // Custom Amount Modal
-  customAmountModal: {
-    backgroundColor: STOCK_COLORS.surface,
-    borderRadius: 20,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadowDark, shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.3, shadowRadius: 30 },
-      android: { elevation: 15 },
-    }),
+  // Stat bar
+  statBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'white', marginHorizontal: 14, marginTop: 12,
+    borderRadius: 12, paddingVertical: 12, paddingHorizontal: 8,
+    borderWidth: 1, borderColor: '#f3f4f6',
   },
-  customAmountHeader: { paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalTitleContainer: { flex: 1, marginRight: 8 },
-  modalSubtitle: { fontSize: 12, color: 'rgba(255, 255, 255, 0.85)', fontWeight: '500', marginTop: 2 },
-  customAmountBody: { maxHeight: 500 },
-  currentStockDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 14,
-    backgroundColor: STOCK_COLORS.borderLight,
-    borderRadius: 10,
-    marginHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 16,
-  },
-  currentStockLabel: { fontSize: 13, fontWeight: '600', color: STOCK_COLORS.textSecondary },
-  currentStockValue: { fontSize: 18, fontWeight: '700', color: STOCK_COLORS.primary },
-  operationSelector: { flexDirection: 'row', gap: 8, marginHorizontal: 20, marginBottom: 16 },
-  operationButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: STOCK_COLORS.primary,
-    backgroundColor: 'transparent',
-  },
-  operationButtonActive: { backgroundColor: STOCK_COLORS.primary, borderColor: STOCK_COLORS.primary },
-  operationButtonText: { fontSize: 12, fontWeight: '600', color: STOCK_COLORS.primary },
-  operationButtonTextActive: { color: '#fff' },
-  amountInputContainer: { marginHorizontal: 20, marginBottom: 16 },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: STOCK_COLORS.textSecondary, marginBottom: 8 },
-  amountInput: {
-    borderWidth: 2,
-    borderColor: STOCK_COLORS.primary,
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-    color: STOCK_COLORS.textPrimary,
-    backgroundColor: STOCK_COLORS.borderLight,
-  },
-  previewText: { fontSize: 12, color: STOCK_COLORS.success, fontWeight: '600', textAlign: 'center', marginTop: 8 },
-  presetsContainer: { marginHorizontal: 20, marginBottom: 16 },
-  presetsLabel: { fontSize: 11, fontWeight: '600', color: STOCK_COLORS.textSecondary, marginBottom: 8 },
-  presetsRow: { flexDirection: 'row', gap: 6 },
-  presetButton: {
-    flex: 1,
-    paddingVertical: 8,
-    backgroundColor: `${STOCK_COLORS.primary}10`,
-    borderWidth: 1,
-    borderColor: STOCK_COLORS.primary,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  presetButtonText: { fontSize: 12, fontWeight: '700', color: STOCK_COLORS.primary },
-  modalActionButtons: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginVertical: 20 },
-
-  // Compact Stats
-  compactStatsContainer: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    borderRadius: 12,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 3 },
-      android: { elevation: 2 },
-    }),
-  },
-  compactStatsGradient: { paddingVertical: 12, paddingHorizontal: 8 },
-  compactStatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
-  compactStatItem: { alignItems: 'center', flex: 1 },
-  compactStatDivider: { width: 1, height: 30, backgroundColor: STOCK_COLORS.border },
-  compactStatNumber: { fontSize: 16, fontWeight: '700', color: STOCK_COLORS.textPrimary, marginBottom: 2 },
-  compactStatLabel: { fontSize: 10, color: STOCK_COLORS.textSecondary, fontWeight: '500' },
+  statItem:    { flex: 1, alignItems: 'center' },
+  statDivider: { width: 1, height: 28, backgroundColor: '#f3f4f6' },
+  statVal:     { fontSize: 18, fontWeight: '900' },
+  statLabel:   { fontSize: 10, color: '#9ca3af', fontWeight: '600', marginTop: 2 },
 
   // Error
-  errorContainer: { marginHorizontal: 16, marginBottom: 8, borderRadius: 10, overflow: 'hidden' },
-  errorGradient: { flexDirection: 'row', alignItems: 'center', padding: 12 },
-  errorIconContainer: { marginRight: 8 },
-  errorText: { flex: 1, color: STOCK_COLORS.danger, fontSize: 12, fontWeight: '500', lineHeight: 16 },
-  errorClose: { marginLeft: 8, padding: 4 },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fca5a5',
+    marginHorizontal: 14, marginTop: 10, padding: 12, borderRadius: 10,
+  },
+  errorText: { flex: 1, fontSize: 12, color: '#dc2626', fontWeight: '500' },
 
-  // Search & Filter
-  searchFilterRow: { paddingHorizontal: 16, marginBottom: 12, gap: 10 },
-  compactSearchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: STOCK_COLORS.surface,
-    borderWidth: 1,
-    borderColor: STOCK_COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2 },
-      android: { elevation: 1 },
-    }),
-  },
-  compactSearchInput: { flex: 1, fontSize: 14, color: STOCK_COLORS.textPrimary, fontWeight: '500', padding: 0 },
-  compactFilterScroll: { flexGrow: 0 },
-  compactFilterContainer: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-  compactFilterTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 4,
-    backgroundColor: STOCK_COLORS.surface,
-    borderWidth: 1,
-    borderColor: STOCK_COLORS.border,
-  },
-  compactActiveFilterTab: {
-    borderColor: 'transparent',
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadowDark, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2 },
-      android: { elevation: 2 },
-    }),
-  },
-  compactFilterText: { fontSize: 11, fontWeight: '600', color: STOCK_COLORS.textSecondary },
-  compactActiveFilterText: { color: '#fff' },
-  compactFilterBadge: { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-  compactFilterCount: { fontSize: 10, fontWeight: '700' },
+  // Search + filter
+// ── Replace these styles in StyleSheet s ─────────────────────────────────────
 
-  // Products List
-  productsList: { flex: 1 },
-  productsContent: { paddingHorizontal: 16, paddingBottom: 24 },
-  productCard: {
-    marginBottom: 16,
-    borderRadius: 14,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 8 },
-      android: { elevation: 3 },
-    }),
-  },
-  productCardGradient: { padding: 16 },
-  productHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14, gap: 12 },
-  productImageContainer: { position: 'relative' },
-  productImage: { width: 56, height: 56, borderRadius: 10, borderWidth: 1, borderColor: STOCK_COLORS.border },
-  stockIndicator: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: STOCK_COLORS.surface,
-  },
-  productDetails: { flex: 1, gap: 4 },
-  productName: { fontSize: 15, fontWeight: '700', color: STOCK_COLORS.textPrimary, lineHeight: 20, marginBottom: 2 },
-  productMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  productModel: { fontSize: 12, color: STOCK_COLORS.textSecondary, fontWeight: '500', flex: 1 },
-  productMetaBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
-  productMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  productSku: { fontSize: 11, color: STOCK_COLORS.textTertiary, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  productPrice: { fontSize: 12, fontWeight: '700', color: STOCK_COLORS.success },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, gap: 4, borderWidth: 1 },
-  statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
-  stockProgressContainer: { marginBottom: 16 },
-  stockProgressBar: { height: 5, backgroundColor: STOCK_COLORS.borderLight, borderRadius: 2.5, overflow: 'hidden', marginBottom: 6 },
-  stockProgressFill: { height: '100%', borderRadius: 2.5 },
-  stockProgressText: { fontSize: 11, color: STOCK_COLORS.textSecondary, fontWeight: '500', textAlign: 'center' },
-  stockControlsWrapper: { gap: 16 },
-  stockSection: { backgroundColor: STOCK_COLORS.borderLight, padding: 12, borderRadius: 12 },
-  stockSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6 },
-  stockLabel: { fontSize: 12, fontWeight: '600', color: STOCK_COLORS.textSecondary },
-  updatingIndicator: { marginTop: 12, borderRadius: 10, overflow: 'hidden' },
-  updatingGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, gap: 8 },
-  updatingText: { fontSize: 12, color: '#fff', fontWeight: '600' },
+toolBar: {
+  paddingHorizontal: 14,
+  marginTop: 12,
+  gap: 10,
+},
+searchBox: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+  backgroundColor: 'white',
+  borderRadius: 12,
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+  paddingHorizontal: 12,
+  paddingVertical: 11,
+},
+searchInput: {
+  flex: 1,
+  fontSize: 14,
+  color: '#111827',
+  padding: 0,
+},
 
-  // Loading & Empty States
-  loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 20 },
-  loadingGradient: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 40, borderRadius: 20, minWidth: 220 },
-  loadingText: { marginTop: 16, fontSize: 16, color: '#fff', fontWeight: '700', textAlign: 'center' },
-  loadingSubtext: { marginTop: 4, fontSize: 13, color: 'rgba(255, 255, 255, 0.85)', textAlign: 'center' },
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 20 },
-  emptyIcon: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: STOCK_COLORS.textPrimary, marginBottom: 10, textAlign: 'center' },
-  emptyDescription: { fontSize: 14, color: STOCK_COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
-  clearFiltersButton: { borderRadius: 12, overflow: 'hidden', marginTop: 8 },
-  clearFiltersGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 8 },
-  clearFiltersText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+// ── Filter row
+filterRow: {
+  flexDirection: 'row',
+  gap: 8,
+  paddingVertical: 2,      // prevents clipped shadows
+  paddingHorizontal: 1,
+},
+filterTab: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  backgroundColor: 'white',
+  borderWidth: 1.5,
+  borderColor: '#e5e7eb',
+  paddingHorizontal: 13,
+  paddingVertical: 9,
+  borderRadius: 10,
+  // shadow so inactive tabs don't look flat
+  ...Platform.select({
+    ios: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 3,
+    },
+    android: { elevation: 2 },
+  }),
+},
+filterTabLabel: {
+  fontSize: 13,
+  fontWeight: '700',
+  color: '#6b7280',
+},
+filterTabLabelActive: {
+  color: '#ffffff',
+},
+filterCount: {
+  minWidth: 20,
+  height: 20,
+  borderRadius: 10,
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingHorizontal: 5,
+},
+filterCountText: {
+  fontSize: 11,
+  fontWeight: '800',
+},
+  filterTabText: { fontSize: 11, fontWeight: '700', color: '#6b7280' },
+  filterBadge: { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  filterBadgeText: { fontSize: 10, fontWeight: '700' },
 
-  // Modal Styles
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: {
-    backgroundColor: STOCK_COLORS.surface,
-    borderRadius: 20,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '70%',
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: STOCK_COLORS.shadowDark, shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.3, shadowRadius: 30 },
-      android: { elevation: 15 },
-    }),
+  // List
+  list:        { flex: 1, marginTop: 12 },
+  listContent: { paddingHorizontal: 14, paddingBottom: 40 },
+
+  // Card
+  card: {
+    backgroundColor: 'white', borderRadius: 14, padding: 14,
+    marginBottom: 14, borderWidth: 1, borderColor: '#f3f4f6',
   },
-  modalHeader: { paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalHeaderContent: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  modalIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#fff', flex: 1 },
-  closeButton: { padding: 8, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.15)', marginLeft: 8 },
-  modalBody: { maxHeight: 400, paddingBottom: 20 },
-  modalMessage: {
-    fontSize: 15,
-    color: STOCK_COLORS.textPrimary,
-    marginBottom: 18,
-    marginTop: 20,
-    marginHorizontal: 20,
-    textAlign: 'center',
-    lineHeight: 22,
-    fontWeight: '500',
-  },
-  formGroup: { marginBottom: 20, marginHorizontal: 20 },
-  label: { fontSize: 13, fontWeight: '600', color: STOCK_COLORS.textSecondary, marginBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  textarea: {
-    borderWidth: 2,
-    borderColor: STOCK_COLORS.border,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 14,
-    textAlignVertical: 'top',
-    minHeight: 90,
-    backgroundColor: STOCK_COLORS.borderLight,
-    color: STOCK_COLORS.textPrimary,
-  },
-  buttonContainer: { flexDirection: 'row', gap: 10, marginHorizontal: 20 },
-  buttonSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: STOCK_COLORS.textSecondary,
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 6,
-  },
-  buttonPrimary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: STOCK_COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 6,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  buttonSecondaryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  buttonPrimaryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  cardTop:   { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  imgWrap:   { position: 'relative' },
+  img:        { width: 52, height: 52, borderRadius: 10, borderWidth: 1, borderColor: '#f3f4f6' },
+  imgPlaceholder: { width: 52, height: 52, borderRadius: 10, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center' },
+  imgDot:    { position: 'absolute', top: -3, right: -3, width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'white' },
+  productName: { fontSize: 14, fontWeight: '800', color: '#111827', lineHeight: 20, marginBottom: 4 },
+  metaRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  metaText:  { fontSize: 11, color: '#9ca3af', flex: 1 },
+  skuText:   { fontSize: 10, color: '#9ca3af', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  priceText: { fontSize: 12, fontWeight: '700', color: '#059669' },
+  statusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  statusPillText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
+
+  // Progress
+  progressWrap:  { marginBottom: 14 },
+  progressTrack: { height: 5, backgroundColor: '#f3f4f6', borderRadius: 3, overflow: 'hidden', marginBottom: 5 },
+  progressFill:  { height: '100%', borderRadius: 3 },
+  progressText:  { fontSize: 11, color: '#9ca3af', textAlign: 'center' },
+
+  // Controls
+  controlsWrap:  { gap: 12 },
+  controlSection: { backgroundColor: '#f9fafb', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#f3f4f6' },
+  controlHead:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  controlLabel:  { fontSize: 12, fontWeight: '700', color: '#374151' },
+
+  // Updating banner
+  updatingBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', marginTop: 10, backgroundColor: '#eff6ff', borderRadius: 8, paddingVertical: 10 },
+  updatingText:   { fontSize: 12, color: '#3b82f6', fontWeight: '600' },
+
+  // Empty
+  emptyIcon:  { width: 72, height: 72, borderRadius: 36, backgroundColor: '#f9fafb', justifyContent: 'center', alignItems: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  emptySub:   { fontSize: 13, color: '#9ca3af', textAlign: 'center', lineHeight: 20 },
+  clearBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#eff6ff', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  clearBtnText: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
+});
+
+// ── StockControl styles ───────────────────────────────────────────────────────
+
+const sc = StyleSheet.create({
+  row:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  circleBtn: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: 'white' },
+  circleBtnDim: { borderColor: '#e5e7eb', backgroundColor: '#f9fafb' },
+  inputWrap: { minWidth: 68, borderWidth: 2, borderRadius: 10, backgroundColor: 'white' },
+  input:     { height: 38, textAlign: 'center', fontSize: 17, fontWeight: '800', color: '#111827', paddingHorizontal: 8 },
+  customBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 8 },
+  customBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+});
+
+// ── Modal styles ──────────────────────────────────────────────────────────────
+
+const m = StyleSheet.create({
+  overlay:    { flex: 1, backgroundColor: 'rgba(15,23,42,0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  sheet:      { backgroundColor: 'white', borderRadius: 18, width: '100%', maxWidth: 400, maxHeight: '80%', overflow: 'hidden' },
+  head:       { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  headIcon:   { width: 34, height: 34, borderRadius: 9, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
+  headTitle:  { fontSize: 16, fontWeight: '800', color: '#111827', flex: 1 },
+  headSub:    { fontSize: 12, color: '#9ca3af', marginTop: 1 },
+  closeBtn:   { width: 30, height: 30, borderRadius: 8, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center' },
+  currentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb', padding: 14, borderRadius: 10, marginBottom: 16 },
+  currentLabel: { fontSize: 13, fontWeight: '600', color: '#6b7280' },
+  currentVal:   { fontSize: 20, fontWeight: '900', color: '#3b82f6' },
+  toggleRow:  { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  toggleBtn:  { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 2, borderColor: '#3b82f6', backgroundColor: 'white' },
+  toggleBtnActive: { backgroundColor: '#3b82f6' },
+  toggleText: { fontSize: 12, fontWeight: '700', color: '#3b82f6' },
+  toggleTextActive: { color: '#fff' },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8 },
+  input:      { borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '700', color: '#111827', backgroundColor: '#f9fafb' },
+  textarea:   { minHeight: 80, textAlignVertical: 'top', fontWeight: '400', fontSize: 14 },
+  preview:    { fontSize: 12, fontWeight: '700', color: '#059669', textAlign: 'center', marginTop: 8 },
+  presetsLabel: { fontSize: 11, fontWeight: '700', color: '#9ca3af', marginBottom: 8, textTransform: 'uppercase' },
+  presetsRow: { flexDirection: 'row', gap: 6 },
+  preset:     { flex: 1, paddingVertical: 8, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, alignItems: 'center' },
+  presetText: { fontSize: 12, fontWeight: '800', color: '#3b82f6' },
+  btnRow:     { flexDirection: 'row', gap: 10, marginTop: 20 },
+  cancelBtn:  { flex: 1, paddingVertical: 13, backgroundColor: '#f3f4f6', borderRadius: 10, alignItems: 'center' },
+  cancelBtnText: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  confirmBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, backgroundColor: '#3b82f6', borderRadius: 10 },
+  confirmBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  confirmMsg: { fontSize: 14, color: '#374151', lineHeight: 22, textAlign: 'center', marginBottom: 16 },
 });
 
 export default StockManagementScreen;

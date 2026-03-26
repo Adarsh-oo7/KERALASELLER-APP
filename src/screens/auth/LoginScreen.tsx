@@ -1,200 +1,167 @@
 // src/screens/auth/LoginScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  StyleSheet,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ScrollView, StatusBar, Animated,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AuthService from '../../services/AuthService';
 
-type LoginScreenProps = {
+type Props = {
   navigation: StackNavigationProp<any>;
   onLoginSuccess?: () => void;
 };
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess }) => {
-  const insets = useSafeAreaInsets();
-  const [phone, setPhone] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [phoneError, setPhoneError] = useState<string>('');
-  const [passwordError, setPasswordError] = useState<string>('');
+// ── Error helpers ─────────────────────────────────────────────────────────────
 
-  const validatePhone = (text: string): boolean => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length === 0) {
-      setPhoneError('');
-      return false;
-    }
-    if (cleaned.length !== 10) {
-      setPhoneError('Phone number must be 10 digits');
-      return false;
-    }
-    if (!/^[6-9]/.test(cleaned)) {
-      setPhoneError('Phone must start with 6, 7, 8, or 9');
-      return false;
-    }
-    setPhoneError('');
-    return true;
+const getErrorMessage = (error: any): string => {
+  if (error.message === 'Network Error') return 'No internet connection. Check your network.';
+  switch (error.response?.status) {
+    case 401: return 'Incorrect phone number or password.';
+    case 404: return 'Account not found. Please register first.';
+    case 429: return 'Too many attempts. Please wait and try again.';
+    default:
+      if (error.response?.status >= 500) return 'Server error. Please try again shortly.';
+      return error.response?.data?.message ?? error.response?.data?.error ?? 'Login failed. Please try again.';
+  }
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+const BENEFITS = [
+  { icon: 'shield-checkmark-outline', text: 'Zero commission fees',           color: '#10b981' },
+  { icon: 'globe-outline',            text: 'Reach customers across Kerala',  color: '#3b82f6' },
+  { icon: 'phone-portrait-outline',   text: 'Easy mobile store management',   color: '#8b5cf6' },
+  { icon: 'trending-up-outline',      text: 'SEO-optimized store pages',      color: '#f59e0b' },
+] as const;
+
+const LoginScreen: React.FC<Props> = ({ navigation, onLoginSuccess }) => {
+  const insets = useSafeAreaInsets();
+
+  const [phone,         setPhone]         = useState('');
+  const [password,      setPassword]      = useState('');
+  const [loading,       setLoading]       = useState(false);
+  const [showPassword,  setShowPassword]  = useState(false);
+  const [phoneError,    setPhoneError]    = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [formError,     setFormError]     = useState('');
+
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const passwordRef = useRef<TextInput>(null);
+
+  // ── Validation ──────────────────────────────────────────────────────────
+
+  const validatePhone = (val: string): boolean => {
+    if (!val) { setPhoneError('Phone number is required'); return false; }
+    if (val.length !== 10) { setPhoneError('Must be 10 digits'); return false; }
+    if (!/^[6-9]/.test(val)) { setPhoneError('Must start with 6, 7, 8, or 9'); return false; }
+    setPhoneError(''); return true;
   };
 
   const handlePhoneChange = (text: string) => {
     const cleaned = text.replace(/\D/g, '').slice(0, 10);
     setPhone(cleaned);
-    if (cleaned.length > 0) {
-      validatePhone(cleaned);
-    } else {
-      setPhoneError('');
-    }
+    setFormError('');
+    if (cleaned.length > 0) validatePhone(cleaned);
+    else setPhoneError('');
   };
 
-  const getErrorMessage = (error: any): string => {
-    if (error.response?.status === 401) {
-      return 'Invalid phone number or password. Please try again.';
-    }
-    if (error.response?.status === 404) {
-      return 'Account not found. Please register first.';
-    }
-    if (error.response?.status === 429) {
-      return 'Too many login attempts. Please try again later.';
-    }
-    if (error.response?.status >= 500) {
-      return 'Server error. Please try again in a few moments.';
-    }
-    if (error.message === 'Network Error') {
-      return 'No internet connection. Please check your network.';
-    }
-    
-    return error.response?.data?.message 
-      || error.response?.data?.error 
-      || 'Login failed. Please try again.';
+  // ── Shake animation on error ────────────────────────────────────────────
+
+  const shake = () => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8,  duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6,  duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -6, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0,  duration: 60, useNativeDriver: true }),
+    ]).start();
   };
 
-  const handleLogin = async (): Promise<void> => {
-    setPhoneError('');
-    setPasswordError('');
+  // ── Submit ──────────────────────────────────────────────────────────────
 
-    if (!phone) {
-      setPhoneError('Phone number is required');
-      return;
-    }
-
-    if (!password) {
-      setPasswordError('Password is required');
-      return;
-    }
-
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (!validatePhone(cleanPhone)) {
-      return;
-    }
+  const handleLogin = async () => {
+    setFormError('');
+    const phoneOk = validatePhone(phone);
+    if (!password) setPasswordError('Password is required');
+    if (!phoneOk || !password) { shake(); return; }
 
     setLoading(true);
     try {
-      console.log('🔍 Attempting login with:', { phone: cleanPhone });
-      
-      const response = await AuthService.login(cleanPhone, password);
-      
-      console.log('✅ Login successful');
-      
-      if (onLoginSuccess) {
-        onLoginSuccess();
-      }
-      
-      // Navigate based on store status
+      const response = await AuthService.login(phone, password);
+      onLoginSuccess?.();
+
       if (response.store_exists && response.store_profile_complete) {
-        Alert.alert(
-          'Welcome Back!',
-          'Login successful! Redirecting to your dashboard.',
-          [{
-            text: 'Continue',
-            onPress: () => navigation.replace('Dashboard')
-          }]
-        );
-      } else if (response.store_exists) {
-        Alert.alert(
-          'Complete Your Profile',
-          'Please complete your store setup.',
-          [{
-            text: 'Continue',
-            onPress: () => navigation.replace('CreateShop')
-          }]
-        );
+        navigation.replace('Dashboard');
       } else {
-        Alert.alert(
-          'Create Your Store',
-          'Let\'s set up your seller account!',
-          [{
-            text: 'Get Started',
-            onPress: () => navigation.replace('CreateShop')
-          }]
-        );
+        navigation.replace('CreateShop');
       }
-      
     } catch (error: any) {
-      console.error('❌ Login failed:', error);
-      Alert.alert('Login Failed', getErrorMessage(error));
+      setFormError(getErrorMessage(error));
+      shake();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRegister = (): void => {
-    navigation.navigate('Register');
-  };
+  const phoneComplete  = phone.length === 10 && !phoneError;
+  const formReady      = phoneComplete && password.length >= 1;
 
-  const handleForgotPassword = (): void => {
-    navigation.navigate('ForgotPassword');
-  };
+  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
-      
-      <KeyboardAvoidingView 
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
+    <View style={[s.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo Header */}
-          <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>KERALA</Text>
-              <Text style={styles.logoTextSecondary}>SELLERS</Text>
+
+          {/* ── Brand ── */}
+          <View style={s.brand}>
+            <View style={s.logoWrap}>
+              <View style={s.logoBg}>
+                <Text style={s.logoK}>K</Text>
+              </View>
+              <View>
+                <Text style={s.logoLine1}>KERALA</Text>
+                <Text style={s.logoLine2}>SELLERS</Text>
+              </View>
             </View>
-            <Text style={styles.subtitle}>Seller Login</Text>
+            <Text style={s.tagline}>Your store, your rules.</Text>
           </View>
 
-          {/* Login Form */}
-          <View style={styles.formCard}>
-            {/* Phone Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={[
-                styles.inputContainer,
-                phoneError ? styles.inputError : null
-              ]}>
-                <Text style={styles.prefix}>+91</Text>
+          {/* ── Form card ── */}
+          <Animated.View style={[s.card, { transform: [{ translateX: shakeAnim }] }]}>
+
+            <Text style={s.cardTitle}>Welcome back 👋</Text>
+            <Text style={s.cardSub}>Sign in to manage your store</Text>
+
+            {/* Global error */}
+            {!!formError && (
+              <View style={s.formError}>
+                <Ionicons name="alert-circle" size={15} color="#991b1b" />
+                <Text style={s.formErrorText}>{formError}</Text>
+              </View>
+            )}
+
+            {/* Phone */}
+            <View style={s.field}>
+              <Text style={s.label}>Phone Number</Text>
+              <View style={[s.inputRow, !!phoneError && s.inputRowError, phoneComplete && s.inputRowOk]}>
+                <View style={s.prefixWrap}>
+                  <Text style={s.prefix}>🇮🇳 +91</Text>
+                </View>
                 <TextInput
-                  style={styles.input}
-                  placeholder="9876543210"
-                  placeholderTextColor="#9CA3AF"
+                  style={s.input}
+                  placeholder="98765 43210"
+                  placeholderTextColor="#9ca3af"
                   value={phone}
                   onChangeText={handlePhoneChange}
                   keyboardType="number-pad"
@@ -202,323 +169,182 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onLoginSuccess })
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!loading}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
                 />
+                {phoneComplete && (
+                  <Ionicons name="checkmark-circle" size={18} color="#10b981" style={s.fieldIcon} />
+                )}
               </View>
-              {phoneError ? (
-                <Text style={styles.errorText}>{phoneError}</Text>
-              ) : null}
+              {!!phoneError && (
+                <View style={s.fieldError}>
+                  <Ionicons name="alert-circle-outline" size={12} color="#ef4444" />
+                  <Text style={s.fieldErrorText}>{phoneError}</Text>
+                </View>
+              )}
             </View>
 
-            {/* Password Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
-              <View style={[
-                styles.inputContainer,
-                passwordError ? styles.inputError : null
-              ]}>
+            {/* Password */}
+            <View style={s.field}>
+              <Text style={s.label}>Password</Text>
+              <View style={[s.inputRow, !!passwordError && s.inputRowError]}>
                 <TextInput
-                  style={styles.passwordInput}
+                  ref={passwordRef}
+                  style={s.input}
                   placeholder="Enter your password"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor="#9ca3af"
                   value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    if (passwordError) setPasswordError('');
-                  }}
+                  onChangeText={t => { setPassword(t); setPasswordError(''); setFormError(''); }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!loading}
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
                 />
-                <TouchableOpacity 
-                  style={styles.eyeButton}
-                  onPress={() => setShowPassword(!showPassword)}
+                <TouchableOpacity
+                  onPress={() => setShowPassword(v => !v)}
+                  style={s.eyeBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons 
-                    name={showPassword ? 'eye-outline' : 'eye-off-outline'} 
-                    size={20} 
-                    color="#6B7280" 
+                  <Ionicons
+                    name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                    size={19}
+                    color="#9ca3af"
                   />
                 </TouchableOpacity>
               </View>
-              {passwordError ? (
-                <Text style={styles.errorText}>{passwordError}</Text>
-              ) : null}
+              {!!passwordError && (
+                <View style={s.fieldError}>
+                  <Ionicons name="alert-circle-outline" size={12} color="#ef4444" />
+                  <Text style={s.fieldErrorText}>{passwordError}</Text>
+                </View>
+              )}
             </View>
 
-            {/* Forgot Password */}
+            {/* Forgot */}
             <TouchableOpacity
-              style={styles.forgotButton}
-              onPress={handleForgotPassword}
+              style={s.forgotBtn}
+              onPress={() => navigation.navigate('ForgotPassword')}
               disabled={loading}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
+              <Text style={s.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
 
-            {/* Login Button */}
+            {/* Submit */}
             <TouchableOpacity
-              style={[styles.loginButton, loading && styles.buttonDisabled]}
+              style={[s.loginBtn, (!formReady || loading) && s.loginBtnDim]}
               onPress={handleLogin}
               disabled={loading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               {loading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator color="white" size="small" />
-                  <Text style={styles.buttonText}>Logging in...</Text>
-                </View>
+                <><ActivityIndicator color="white" size="small" /><Text style={s.loginBtnText}>Signing in…</Text></>
               ) : (
-                <View style={styles.buttonContent}>
-                  <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.buttonText}>Login</Text>
-                </View>
+                <><Ionicons name="log-in-outline" size={19} color="white" /><Text style={s.loginBtnText}>Sign In</Text></>
               )}
             </TouchableOpacity>
 
-            {/* Register Link */}
-            <View style={styles.registerContainer}>
-              <Text style={styles.registerPrompt}>New to Kerala Sellers?</Text>
-              <TouchableOpacity
-                style={styles.registerButton}
-                onPress={handleRegister}
-                disabled={loading}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.registerText}>Create Account</Text>
+            {/* Register */}
+            <View style={s.registerRow}>
+              <Text style={s.registerPrompt}>New to Kerala Sellers? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')} disabled={loading}>
+                <Text style={s.registerLink}>Create Account</Text>
               </TouchableOpacity>
+            </View>
+
+          </Animated.View>
+
+          {/* ── Benefits ── */}
+          <View style={s.benefitsCard}>
+            <Text style={s.benefitsTitle}>Why sellers love us</Text>
+            <View style={s.benefitsGrid}>
+              {BENEFITS.map(b => (
+                <View key={b.text} style={s.benefitItem}>
+                  <View style={[s.benefitIconWrap, { backgroundColor: b.color + '18' }]}>
+                    <Ionicons name={b.icon as any} size={20} color={b.color} />
+                  </View>
+                  <Text style={s.benefitText}>{b.text}</Text>
+                </View>
+              ))}
             </View>
           </View>
 
-          {/* Benefits Section */}
-          <View style={styles.benefitsCard}>
-            <Text style={styles.benefitsTitle}>Why Kerala Sellers?</Text>
-            <View style={styles.benefitItem}>
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={styles.benefitText}>Zero commission fees</Text>
-            </View>
-            <View style={styles.benefitItem}>
-              <Ionicons name="globe-outline" size={18} color="#10B981" />
-              <Text style={styles.benefitText}>Reach customers across Kerala</Text>
-            </View>
-            <View style={styles.benefitItem}>
-              <Ionicons name="phone-portrait-outline" size={18} color="#10B981" />
-              <Text style={styles.benefitText}>Easy mobile store management</Text>
-            </View>
-            <View style={styles.benefitItem}>
-              <Ionicons name="trending-up-outline" size={18} color="#10B981" />
-              <Text style={styles.benefitText}>SEO-optimized store pages</Text>
-            </View>
-          </View>
+          {/* Footer */}
+          <Text style={s.footer}>Kerala Sellers · Built for local businesses</Text>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-  },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  logoContainer: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 30,
-    paddingVertical: 20,
-    borderRadius: 16,
-    marginBottom: 16,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  logoText: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 3,
-    textAlign: 'center',
-  },
-  logoTextSecondary: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#DBEAFE',
-    letterSpacing: 4,
-    textAlign: 'center',
-    marginTop: -4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 16,
-  },
-  inputError: {
-    borderColor: '#EF4444',
-  },
-  prefix: {
-    fontSize: 16,
-    color: '#1F2937',
-    fontWeight: '600',
-    marginRight: 8,
-    paddingRight: 8,
-    borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    paddingVertical: 14,
-    fontWeight: '500',
-  },
-  passwordInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    paddingVertical: 14,
-    paddingRight: 40,
-    fontWeight: '500',
-  },
-  eyeButton: {
-    position: 'absolute',
-    right: 16,
-    padding: 4,
-  },
-  errorText: {
-    fontSize: 12,
-    color: '#EF4444',
-    marginTop: 4,
-  },
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginBottom: 20,
-    padding: 4,
-  },
-  forgotText: {
-    color: '#3B82F6',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loginButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  registerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 8,
-  },
-  registerPrompt: {
-    color: '#6B7280',
-    fontSize: 14,
-    marginRight: 4,
-  },
-  registerButton: {
-    padding: 4,
-  },
-  registerText: {
-    color: '#3B82F6',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  benefitsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  benefitsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  benefitItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 8,
-  },
-  benefitText: {
-    fontSize: 14,
-    color: '#374151',
-    marginLeft: 12,
-    fontWeight: '500',
-  },
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  root:           { flex: 1, backgroundColor: '#f8fafc' },
+  scroll:         { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40 },
+
+  // Brand
+  brand:          { alignItems: 'center', paddingTop: 44, paddingBottom: 32 },
+  logoWrap:       { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10 },
+  logoBg:         { width: 54, height: 54, borderRadius: 16, backgroundColor: '#3b82f6', alignItems: 'center', justifyContent: 'center',
+                    shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 8 },
+  logoK:          { fontSize: 30, fontWeight: '900', color: 'white' },
+  logoLine1:      { fontSize: 22, fontWeight: '900', color: '#1f2937', letterSpacing: 4 },
+  logoLine2:      { fontSize: 15, fontWeight: '700', color: '#3b82f6', letterSpacing: 5, marginTop: -2 },
+  tagline:        { fontSize: 14, color: '#9ca3af', fontWeight: '400', letterSpacing: 0.3 },
+
+  // Card
+  card:           { backgroundColor: 'white', borderRadius: 24, padding: 24, marginBottom: 20,
+                    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 4 },
+  cardTitle:      { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  cardSub:        { fontSize: 14, color: '#6b7280', marginBottom: 22 },
+
+  // Form error banner
+  formError:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', borderRadius: 10, padding: 12, marginBottom: 16 },
+  formErrorText:  { flex: 1, fontSize: 13, color: '#991b1b', fontWeight: '500' },
+
+  // Fields
+  field:          { marginBottom: 16 },
+  label:          { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 7 },
+  inputRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 14, minHeight: 52 },
+  inputRowError:  { borderColor: '#ef4444', backgroundColor: '#fff5f5' },
+  inputRowOk:     { borderColor: '#10b981' },
+  prefixWrap:     { marginRight: 10, paddingRight: 10, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
+  prefix:         { fontSize: 14, fontWeight: '600', color: '#374151' },
+  input:          { flex: 1, fontSize: 15, color: '#111827', fontWeight: '500', paddingVertical: 0 },
+  fieldIcon:      { marginLeft: 6 },
+  eyeBtn:         { padding: 4, marginLeft: 4 },
+  fieldError:     { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
+  fieldErrorText: { fontSize: 12, color: '#ef4444' },
+
+  // Forgot
+  forgotBtn:      { alignSelf: 'flex-end', marginBottom: 20 },
+  forgotText:     { fontSize: 13, color: '#3b82f6', fontWeight: '600' },
+
+  // Login button
+  loginBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#3b82f6', paddingVertical: 15, borderRadius: 14, marginBottom: 18,
+                    shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
+  loginBtnDim:    { backgroundColor: '#93c5fd', shadowOpacity: 0, elevation: 0 },
+  loginBtnText:   { fontSize: 16, fontWeight: '700', color: 'white' },
+
+  // Register
+  registerRow:    { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  registerPrompt: { fontSize: 14, color: '#6b7280' },
+  registerLink:   { fontSize: 14, color: '#3b82f6', fontWeight: '700' },
+
+  // Benefits
+  benefitsCard:   { backgroundColor: 'white', borderRadius: 20, padding: 20, marginBottom: 20,
+                    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  benefitsTitle:  { fontSize: 14, fontWeight: '700', color: '#6b7280', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+  benefitsGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  benefitItem:    { width: '46%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#f9fafb', borderRadius: 12, padding: 12 },
+  benefitIconWrap:{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  benefitText:    { flex: 1, fontSize: 12, color: '#374151', fontWeight: '500', lineHeight: 16 },
+
+  // Footer
+  footer:         { textAlign: 'center', fontSize: 12, color: '#d1d5db', marginBottom: 8 },
 });
 
 export default LoginScreen;

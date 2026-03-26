@@ -41,7 +41,12 @@ const getDevelopmentWebSocketURL = (): string => {
 };
 
 const detectEnvironment = (): 'development' | 'production' => {
-  console.log('🚀 FORCED: Production mode (LIVE SERVER)');
+  if (__DEV__) {
+    console.log('🛠️ Development mode → Local server');
+    console.log('📡 Will connect to:', getDevelopmentBaseURL());
+    return 'development';
+  }
+  console.log('🚀 Production mode → Live server');
   console.log('📡 Will connect to:', getProductionBaseURL());
   return 'production';
 };

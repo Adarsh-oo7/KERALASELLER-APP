@@ -11,12 +11,15 @@ import {
   TextInput,
   Image,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import ProductService from '../../services/ProductService';
 import { ApiError } from '../../types/api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type ProductsScreenProps = {
   navigation: StackNavigationProp<any>;
@@ -53,7 +56,6 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
     try {
       setError('');
       const response = await ProductService.getProducts();
-      
       let productsData: Product[] = [];
       if (Array.isArray(response.data)) {
         productsData = response.data;
@@ -62,7 +64,6 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
       } else if (response.data.products && Array.isArray(response.data.products)) {
         productsData = response.data.products;
       }
-
       setProducts(productsData);
       setFilteredProducts(productsData);
     } catch (error: any) {
@@ -80,7 +81,6 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
 
   useEffect(() => {
     let filtered = [...products];
-
     if (searchTerm.trim()) {
       filtered = filtered.filter(product =>
         product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -88,920 +88,485 @@ const ProductsScreen: React.FC<ProductsScreenProps> = ({ navigation }) => {
         product.sku?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-
     switch (filterType) {
       case 'low_stock':
-        filtered = filtered.filter(product => product.online_stock > 0 && product.online_stock <= 5);
+        filtered = filtered.filter(p => p.online_stock > 0 && p.online_stock <= 5);
         break;
       case 'out_of_stock':
-        filtered = filtered.filter(product => product.online_stock <= 0);
+        filtered = filtered.filter(p => p.online_stock <= 0);
         break;
       case 'in_stock':
-        filtered = filtered.filter(product => product.online_stock > 5);
+        filtered = filtered.filter(p => p.online_stock > 5);
         break;
     }
-
     filtered.sort((a, b) => {
-      let aValue, bValue;
+      let aValue: any, bValue: any;
       switch (sortBy) {
         case 'price':
           aValue = parseFloat(a.price || '0');
           bValue = parseFloat(b.price || '0');
           break;
         case 'stock':
-          aValue = parseInt(a.online_stock?.toString() || '0');
-          bValue = parseInt(b.online_stock?.toString() || '0');
+          aValue = a.online_stock ?? 0;
+          bValue = b.online_stock ?? 0;
           break;
         default:
           aValue = (a.name || '').toLowerCase();
           bValue = (b.name || '').toLowerCase();
-          break;
       }
       if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-
     setFilteredProducts(filtered);
   }, [products, searchTerm, filterType, sortBy, sortOrder]);
 
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchProducts();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { fetchProducts(); }, []));
 
-  const onRefresh = (): void => {
-    setRefreshing(true);
-    fetchProducts();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchProducts(); };
 
-  const handleDelete = async (productId: number): Promise<void> => {
-    Alert.alert(
-      'Delete Product',
-      'Are you sure you want to delete this product?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingId(productId);
-            try {
-              await ProductService.deleteProduct(productId);
-              fetchProducts();
-            } catch (error: any) {
-              Alert.alert('Error', 'Failed to delete product');
-            } finally {
-              setDeletingId(null);
-            }
+  const handleDelete = (productId: number) => {
+    Alert.alert('Delete Product', 'Are you sure you want to delete this product?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          setDeletingId(productId);
+          try {
+            await ProductService.deleteProduct(productId);
+            fetchProducts();
+          } catch {
+            Alert.alert('Error', 'Failed to delete product');
+          } finally {
+            setDeletingId(null);
           }
         }
-      ]
-    );
+      }
+    ]);
   };
 
-  const getStockStatus = (onlineStock: number) => {
-    if (onlineStock <= 0) return { label: 'Out', color: '#ef4444', bgColor: '#fee2e2' };
-    if (onlineStock <= 5) return { label: 'Low', color: '#f59e0b', bgColor: '#fef3c7' };
-    return { label: 'Stock', color: '#10b981', bgColor: '#d1fae5' };
+  const getStockStatus = (stock: number) => {
+    if (stock <= 0) return { label: 'Out of Stock', color: '#dc2626', bgColor: '#fef2f2', dot: '#dc2626' };
+    if (stock <= 5) return { label: 'Low Stock', color: '#d97706', bgColor: '#fffbeb', dot: '#f59e0b' };
+    return { label: 'In Stock', color: '#059669', bgColor: '#f0fdf4', dot: '#10b981' };
   };
 
-  const getFilterCounts = () => {
-    return {
-      all: products.length,
-      low_stock: products.filter(p => p.online_stock > 0 && p.online_stock <= 5).length,
-      out_of_stock: products.filter(p => p.online_stock <= 0).length,
-      in_stock: products.filter(p => p.online_stock > 5).length
-    };
-  };
+  const getFilterCounts = () => ({
+    all: products.length,
+    low_stock: products.filter(p => p.online_stock > 0 && p.online_stock <= 5).length,
+    out_of_stock: products.filter(p => p.online_stock <= 0).length,
+    in_stock: products.filter(p => p.online_stock > 5).length,
+  });
 
   const getAnalytics = () => {
     const totalProducts = products.length;
-    const totalValue = products.reduce((sum, p) => 
-      sum + (parseFloat(p.price || '0') * parseInt(p.online_stock?.toString() || '0')), 0
-    );
-    const averagePrice = totalProducts > 0 
-      ? products.reduce((sum, p) => sum + parseFloat(p.price || '0'), 0) / totalProducts 
-      : 0;
+    const totalValue = products.reduce((sum, p) =>
+      sum + (parseFloat(p.price || '0') * (p.online_stock ?? 0)), 0);
+    const averagePrice = totalProducts > 0
+      ? products.reduce((sum, p) => sum + parseFloat(p.price || '0'), 0) / totalProducts : 0;
     const lowStockCount = products.filter(p => p.online_stock > 0 && p.online_stock <= 5).length;
-
     return { totalProducts, totalValue, averagePrice, lowStockCount };
   };
 
-  const toggleSortOrder = () => {
-    setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-  };
-
+  // ── Analytics Row ──────────────────────────────────────────────
   const renderAnalytics = () => {
-    const analytics = getAnalytics();
-    
+    const { totalProducts, totalValue, averagePrice, lowStockCount } = getAnalytics();
+    const cards = [
+      { icon: 'cube-outline' as const, color: '#3b82f6', bg: '#eff6ff', label: 'Products', value: totalProducts.toString() },
+      { icon: 'cash-outline' as const, color: '#059669', bg: '#f0fdf4', label: 'Inv. Value', value: totalValue >= 1000 ? `₹${(totalValue / 1000).toFixed(1)}k` : `₹${Math.round(totalValue)}` },
+      { icon: 'trending-up-outline' as const, color: '#d97706', bg: '#fffbeb', label: 'Avg Price', value: `₹${Math.round(averagePrice)}` },
+      { icon: 'alert-circle-outline' as const, color: '#dc2626', bg: '#fef2f2', label: 'Low Stock', value: lowStockCount.toString() },
+    ];
     return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.analyticsContainer}
-        contentContainerStyle={styles.analyticsContent}
-      >
-        <View style={styles.analyticsCard}>
-          <Ionicons name="cube" size={18} color="#3b82f6" />
-          <Text style={styles.analyticsLabel}>Products</Text>
-          <Text style={styles.analyticsValue}>{analytics.totalProducts}</Text>
-        </View>
-
-        <View style={styles.analyticsCard}>
-          <Ionicons name="cash" size={18} color="#10b981" />
-          <Text style={styles.analyticsLabel}>Value</Text>
-          <Text style={styles.analyticsValue}>
-            ₹{analytics.totalValue >= 1000 
-              ? (analytics.totalValue / 1000).toFixed(1) + 'k' 
-              : Math.round(analytics.totalValue)}
-          </Text>
-        </View>
-
-        <View style={styles.analyticsCard}>
-          <Ionicons name="trending-up" size={18} color="#f59e0b" />
-          <Text style={styles.analyticsLabel}>Avg</Text>
-          <Text style={styles.analyticsValue}>
-            ₹{Math.round(analytics.averagePrice)}
-          </Text>
-        </View>
-
-        <View style={styles.analyticsCard}>
-          <Ionicons name="alert-circle" size={18} color="#ef4444" />
-          <Text style={styles.analyticsLabel}>Low</Text>
-          <Text style={styles.analyticsValue}>{analytics.lowStockCount}</Text>
-        </View>
-      </ScrollView>
+      <View style={styles.analyticsRow}>
+        {cards.map((card, i) => (
+          <View key={i} style={[styles.analyticsCard, { backgroundColor: card.bg }]}>
+            <View style={[styles.analyticsIconWrap, { backgroundColor: card.color + '20' }]}>
+              <Ionicons name={card.icon} size={16} color={card.color} />
+            </View>
+            <Text style={styles.analyticsValue}>{card.value}</Text>
+            <Text style={styles.analyticsLabel}>{card.label}</Text>
+          </View>
+        ))}
+      </View>
     );
   };
 
-  const renderSortButton = () => (
-    <View style={styles.sortButtonContainer}>
-      <TouchableOpacity
-        style={styles.sortButton}
-        onPress={() => setShowSortMenu(!showSortMenu)}
-      >
-        <Ionicons name="swap-vertical" size={16} color="#6b7280" />
-        <Text style={styles.sortButtonText}>
-          {sortBy === 'name' ? 'Name' : sortBy === 'price' ? 'Price' : 'Stock'}
-        </Text>
-        <Ionicons 
-          name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
-          size={16} 
-          color="#6b7280" 
-        />
-      </TouchableOpacity>
-
-      {showSortMenu && (
-        <View style={styles.sortMenu}>
-          <TouchableOpacity
-            style={[styles.sortMenuItem, sortBy === 'name' && styles.sortMenuItemActive]}
-            onPress={() => { setSortBy('name'); setShowSortMenu(false); }}
-          >
-            <Text style={styles.sortMenuItemText}>Name</Text>
-            {sortBy === 'name' && <Ionicons name="checkmark" size={16} color="#3b82f6" />}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sortMenuItem, sortBy === 'price' && styles.sortMenuItemActive]}
-            onPress={() => { setSortBy('price'); setShowSortMenu(false); }}
-          >
-            <Text style={styles.sortMenuItemText}>Price</Text>
-            {sortBy === 'price' && <Ionicons name="checkmark" size={16} color="#3b82f6" />}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sortMenuItem, sortBy === 'stock' && styles.sortMenuItemActive]}
-            onPress={() => { setSortBy('stock'); setShowSortMenu(false); }}
-          >
-            <Text style={styles.sortMenuItemText}>Stock</Text>
-            {sortBy === 'stock' && <Ionicons name="checkmark" size={16} color="#3b82f6" />}
-          </TouchableOpacity>
-
-          <View style={styles.sortMenuDivider} />
-
-          <TouchableOpacity
-            style={styles.sortMenuItem}
-            onPress={() => { toggleSortOrder(); setShowSortMenu(false); }}
-          >
-            <Text style={styles.sortMenuItemText}>
-              {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-            </Text>
-            <Ionicons 
-              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
-              size={16} 
-              color="#3b82f6" 
-            />
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-
-  const renderProduct = ({ item }: { item: Product }) => {
-    const stockStatus = getStockStatus(item.online_stock);
-    const isDeleting = deletingId === item.id;
-
-    return (
-      <TouchableOpacity
-        activeOpacity={0.95}
-        onPress={() => navigation.navigate('ProductDetails', { 
-          productId: item.id.toString(), 
-          product: item 
-        })}
-      >
-        <View style={styles.productCard}>
-          <View style={styles.productHeader}>
-            <View style={styles.imageContainer}>
-              <Image 
-                source={{ 
-                  uri: item.main_image_url || item.image_url || 'https://via.placeholder.com/70x70/e9ecef/6c757d?text=No+Image'
-                }} 
-                style={styles.productImage}
-              />
-              <View style={[styles.stockBadge, { backgroundColor: stockStatus.bgColor }]}>
-                <Text style={[styles.stockBadgeText, { color: stockStatus.color }]}>
-                  {stockStatus.label}
-                </Text>
-              </View>
-            </View>
-            
-            <View style={styles.productInfo}>
-              <Text style={styles.productName} numberOfLines={2}>
-                {item.name || 'Unnamed Product'}
-              </Text>
-              {item.model_name && (
-                <Text style={styles.modelName} numberOfLines={1}>
-                  {item.model_name}
-                </Text>
-              )}
-              
-              <View style={styles.priceRow}>
-                <Text style={styles.price}>
-                  ₹{parseFloat(item.price || '0').toLocaleString('en-IN')}
-                </Text>
-                {item.mrp && parseFloat(item.mrp) > parseFloat(item.price) && (
-                  <Text style={styles.mrp}>
-                    ₹{parseFloat(item.mrp).toLocaleString('en-IN')}
-                  </Text>
-                )}
-              </View>
-
-              <Text style={styles.stockText}>
-                Stock: {item.online_stock || 0} / {item.total_stock || 0}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                navigation.navigate('AddProduct', { product: item });
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="pencil" size={16} color="white" />
-              <Text style={styles.editButtonText}>Edit</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
-              onPress={(e) => {
-                e.stopPropagation();
-                handleDelete(item.id);
-              }}
-              disabled={isDeleting}
-              activeOpacity={0.7}
-            >
-              {isDeleting ? (
-                <ActivityIndicator color="white" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="trash" size={16} color="white" />
-                  <Text style={styles.deleteButtonText}>Delete</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderFilterTabs = () => {
-    const filterCounts = getFilterCounts();
+  // ── Filter + Sort Bar ──────────────────────────────────────────
+  const renderFilterSortBar = () => {
+    const counts = getFilterCounts();
     const filters = [
-      { key: 'all', label: `All (${filterCounts.all})` },
-      { key: 'in_stock', label: `In Stock (${filterCounts.in_stock})` },
-      { key: 'low_stock', label: `Low (${filterCounts.low_stock})` },
-      { key: 'out_of_stock', label: `Out (${filterCounts.out_of_stock})` },
-    ] as const;
-
+      { key: 'all' as const, label: `All`, count: counts.all },
+      { key: 'in_stock' as const, label: `In Stock`, count: counts.in_stock },
+      { key: 'low_stock' as const, label: `Low`, count: counts.low_stock },
+      { key: 'out_of_stock' as const, label: `Out`, count: counts.out_of_stock },
+    ];
     return (
-      <View style={styles.filterContainer}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScrollContainer}
-        >
-          {filters.map((filter) => (
+      <View style={styles.filterSortBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScrollContent}>
+          {filters.map(f => (
             <TouchableOpacity
-              key={filter.key}
-              style={[
-                styles.filterTab,
-                filterType === filter.key && styles.activeFilterTab
-              ]}
-              onPress={() => setFilterType(filter.key)}
+              key={f.key}
+              style={[styles.filterChip, filterType === f.key && styles.filterChipActive]}
+              onPress={() => setFilterType(f.key)}
             >
-              <Text style={[
-                styles.filterTabText,
-                filterType === filter.key && styles.activeFilterTabText
-              ]}>
-                {filter.label}
+              <Text style={[styles.filterChipText, filterType === f.key && styles.filterChipTextActive]}>
+                {f.label}
               </Text>
+              <View style={[styles.filterBadge, filterType === f.key && styles.filterBadgeActive]}>
+                <Text style={[styles.filterBadgeText, filterType === f.key && styles.filterBadgeTextActive]}>
+                  {f.count}
+                </Text>
+              </View>
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* Sort button on same row */}
+        <View style={styles.sortWrap}>
+          <TouchableOpacity style={styles.sortBtn} onPress={() => setShowSortMenu(v => !v)}>
+            <Ionicons name="funnel-outline" size={14} color="#6b7280" />
+            <Text style={styles.sortBtnText}>
+              {sortBy === 'name' ? 'Name' : sortBy === 'price' ? 'Price' : 'Stock'}
+            </Text>
+            <Ionicons name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} size={12} color="#6b7280" />
+          </TouchableOpacity>
+          {showSortMenu && (
+            <View style={styles.sortMenu}>
+              {(['name', 'price', 'stock'] as const).map(s => (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.sortItem, sortBy === s && styles.sortItemActive]}
+                  onPress={() => { setSortBy(s); setShowSortMenu(false); }}
+                >
+                  <Text style={[styles.sortItemText, sortBy === s && styles.sortItemTextActive]}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </Text>
+                  {sortBy === s && <Ionicons name="checkmark" size={14} color="#3b82f6" />}
+                </TouchableOpacity>
+              ))}
+              <View style={styles.sortDivider} />
+              <TouchableOpacity
+                style={styles.sortItem}
+                onPress={() => { setSortOrder(o => o === 'asc' ? 'desc' : 'asc'); setShowSortMenu(false); }}
+              >
+                <Text style={styles.sortItemText}>{sortOrder === 'asc' ? '↑ Ascending' : '↓ Descending'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="cube-outline" size={64} color="#9ca3af" style={styles.emptyIcon} />
+  // ── Product Card ───────────────────────────────────────────────
+  const renderProduct = ({ item }: { item: Product }) => {
+    const stock = getStockStatus(item.online_stock);
+    const isDeleting = deletingId === item.id;
+    const discount = item.mrp && parseFloat(item.mrp) > parseFloat(item.price)
+      ? Math.round(((parseFloat(item.mrp) - parseFloat(item.price)) / parseFloat(item.mrp)) * 100)
+      : null;
+
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={0.92}
+        onPress={() => navigation.navigate('ProductDetails', { productId: item.id.toString(), product: item })}
+      >
+        {/* Left: Image */}
+        <Image
+          source={{ uri: item.main_image_url || item.image_url || 'https://via.placeholder.com/80x80/f3f4f6/9ca3af?text=No+Img' }}
+          style={styles.cardImage}
+        />
+
+        {/* Center: Info */}
+        <View style={styles.cardBody}>
+          <Text style={styles.cardName} numberOfLines={2}>{item.name || 'Unnamed Product'}</Text>
+          {item.model_name ? (
+            <Text style={styles.cardModel} numberOfLines={1}>{item.model_name}</Text>
+          ) : null}
+
+          {/* Price row */}
+          <View style={styles.cardPriceRow}>
+            <Text style={styles.cardPrice}>₹{parseFloat(item.price || '0').toLocaleString('en-IN')}</Text>
+            {item.mrp && parseFloat(item.mrp) > parseFloat(item.price) && (
+              <Text style={styles.cardMrp}>₹{parseFloat(item.mrp).toLocaleString('en-IN')}</Text>
+            )}
+            {discount && (
+              <View style={styles.discountBadge}>
+                <Text style={styles.discountText}>{discount}% off</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Stock row */}
+          <View style={styles.cardStockRow}>
+            <View style={[styles.stockDot, { backgroundColor: stock.dot }]} />
+            <Text style={[styles.cardStockLabel, { color: stock.color }]}>{stock.label}</Text>
+            <Text style={styles.cardStockCount}> · {item.online_stock}/{item.total_stock}</Text>
+          </View>
+        </View>
+
+        {/* Right: Actions */}
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.actionEdit}
+            onPress={e => { e.stopPropagation(); navigation.navigate('AddProduct', { product: item }); }}
+          >
+            <Ionicons name="pencil" size={14} color="#3b82f6" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionDelete, isDeleting && { opacity: 0.5 }]}
+            onPress={e => { e.stopPropagation(); handleDelete(item.id); }}
+            disabled={isDeleting}
+          >
+            {isDeleting
+              ? <ActivityIndicator size="small" color="#dc2626" />
+              : <Ionicons name="trash" size={14} color="#dc2626" />
+            }
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // ── Empty State ────────────────────────────────────────────────
+  const renderEmpty = () => (
+    <View style={styles.emptyWrap}>
+      <View style={styles.emptyIconWrap}>
+        <Ionicons name="cube-outline" size={40} color="#9ca3af" />
+      </View>
       <Text style={styles.emptyTitle}>
         {searchTerm || filterType !== 'all' ? 'No products found' : 'No Products Yet'}
       </Text>
-      <Text style={styles.emptyDescription}>
-        {searchTerm || filterType !== 'all'
-          ? 'Try adjusting your filters'
-          : 'Add your first product to get started'}
+      <Text style={styles.emptyDesc}>
+        {searchTerm || filterType !== 'all' ? 'Try adjusting your search or filters' : 'Add your first product to get started'}
       </Text>
-      
       {searchTerm || filterType !== 'all' ? (
-        <TouchableOpacity 
-          style={styles.clearButton}
-          onPress={() => {
-            setSearchTerm('');
-            setFilterType('all');
-          }}
-        >
-          <Text style={styles.clearButtonText}>Clear Filters</Text>
+        <TouchableOpacity style={styles.emptyBtn} onPress={() => { setSearchTerm(''); setFilterType('all'); }}>
+          <Text style={styles.emptyBtnText}>Clear Filters</Text>
         </TouchableOpacity>
       ) : (
-        <TouchableOpacity 
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddProduct')}
-        >
-          <Ionicons name="add-circle" size={20} color="white" />
-          <Text style={styles.addButtonText}>Add Product</Text>
+        <TouchableOpacity style={[styles.emptyBtn, { backgroundColor: '#3b82f6' }]} onPress={() => navigation.navigate('AddProduct')}>
+          <Ionicons name="add" size={16} color="white" />
+          <Text style={[styles.emptyBtnText, { color: 'white' }]}>Add Product</Text>
         </TouchableOpacity>
       )}
     </View>
   );
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading products...</Text>
-      </View>
-    );
-  }
+  // ── Loading ────────────────────────────────────────────────────
+  if (isLoading) return (
+    <View style={styles.centered}>
+      <ActivityIndicator size="large" color="#3b82f6" />
+      <Text style={styles.loadingText}>Loading products...</Text>
+    </View>
+  );
 
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={48} color="#ef4444" />
-        <Text style={styles.errorTitle}>Error Loading Products</Text>
-        <Text style={styles.errorMessage}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchProducts}>
-          <Ionicons name="refresh" size={18} color="white" />
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+  // ── Error ──────────────────────────────────────────────────────
+  if (error) return (
+    <View style={styles.centered}>
+      <View style={styles.errorIconWrap}>
+        <Ionicons name="cloud-offline-outline" size={40} color="#dc2626" />
       </View>
-    );
-  }
+      <Text style={styles.errorTitle}>Couldn't Load Products</Text>
+      <Text style={styles.errorMsg}>{error}</Text>
+      <TouchableOpacity style={styles.retryBtn} onPress={fetchProducts}>
+        <Ionicons name="refresh" size={16} color="white" />
+        <Text style={styles.retryBtnText}>Retry</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
+  // ── Main ───────────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
-      <View style={styles.headerInfo}>
-        <View style={styles.headerContent}>
-          <Text style={styles.title}>Products ({filteredProducts.length})</Text>
-          <Text style={styles.subtitle}>Manage inventory</Text>
+    <View style={styles.screen}>
+
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>My Products</Text>
+          <Text style={styles.headerSub}>{filteredProducts.length} of {products.length} items</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.addProductButton}
-          onPress={() => navigation.navigate('AddProduct')}
-        >
+        <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('AddProduct')}>
           <Ionicons name="add" size={18} color="white" />
-          <Text style={styles.addProductButtonText}>Add</Text>
+          <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Analytics */}
       {products.length > 0 && renderAnalytics()}
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search" size={20} color="#9ca3af" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search products..."
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            placeholderTextColor="#9ca3af"
-          />
-          {searchTerm.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchTerm('')} style={styles.clearSearchButton}>
-              <Ionicons name="close-circle" size={20} color="#9ca3af" />
-            </TouchableOpacity>
-          )}
-        </View>
+      {/* Search */}
+      <View style={styles.searchBar}>
+        <Ionicons name="search-outline" size={18} color="#9ca3af" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name, model or SKU..."
+          placeholderTextColor="#9ca3af"
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+        />
+        {searchTerm.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchTerm('')}>
+            <Ionicons name="close-circle" size={18} color="#9ca3af" />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {products.length > 0 && renderSortButton()}
+      {/* Filter + Sort */}
+      {renderFilterSortBar()}
 
-      {renderFilterTabs()}
-
+      {/* List */}
       <FlatList
         data={filteredProducts}
         renderItem={renderProduct}
-        keyExtractor={(item) => item.id.toString()}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={filteredProducts.length === 0 ? styles.emptyListContainer : styles.listContainer}
-        ListEmptyComponent={renderEmptyState}
+        keyExtractor={item => item.id.toString()}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3b82f6" />}
+        contentContainerStyle={filteredProducts.length === 0 ? styles.emptyContainer : styles.listContent}
+        ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
       />
     </View>
   );
 };
 
-// ✅ OPTIMIZED STYLES - Proper Spacing & Better UX
-
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f8fafc' 
+  screen: { flex: 1, backgroundColor: '#f1f5f9' },
+
+  // Loading / Error
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24, backgroundColor: '#f1f5f9' },
+  loadingText: { fontSize: 14, color: '#6b7280', fontWeight: '500' },
+  errorIconWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#fef2f2', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  errorTitle: { fontSize: 17, fontWeight: '700', color: '#1f2937' },
+  errorMsg: { fontSize: 13, color: '#6b7280', textAlign: 'center', lineHeight: 20 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#3b82f6', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 4 },
+  retryBtnText: { color: 'white', fontSize: 14, fontWeight: '600' },
+
+  // Header
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: 'white',
+    borderBottomWidth: 1, borderBottomColor: '#e5e7eb',
   },
-  
-  loadingContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#f8fafc', 
-    gap: 16 
-  },
-  loadingText: { 
-    fontSize: 15, 
-    color: '#6b7280',
-    fontWeight: '500'
-  },
-  
-  errorContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    padding: 24, 
-    backgroundColor: '#f8fafc', 
-    gap: 16 
-  },
-  errorTitle: { 
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    color: '#ef4444',
-    marginTop: 8
-  },
-  errorMessage: { 
-    fontSize: 15, 
-    color: '#6b7280', 
-    textAlign: 'center',
-    lineHeight: 22
-  },
-  retryButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#3b82f6', 
-    paddingHorizontal: 24, 
-    paddingVertical: 12, 
-    borderRadius: 10, 
+  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
+  headerSub: { fontSize: 12, color: '#9ca3af', marginTop: 2, fontWeight: '500' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#3b82f6', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  addBtnText: { color: 'white', fontSize: 13, fontWeight: '700' },
+
+  // Analytics — 4-column fixed grid
+  analyticsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     gap: 8,
-    marginTop: 8
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
   },
-  retryButtonText: { 
-    color: 'white', 
-    fontSize: 15, 
-    fontWeight: '600' 
-  },
-  
-  // ✅ FIXED: Header with better spacing
-  headerInfo: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingHorizontal: 16, 
-    paddingVertical: 12,  // ✅ Reduced from 16
-    backgroundColor: 'white', 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#e5e7eb' 
-  },
-  headerContent: { 
-    flex: 1 
-  },
-  title: { 
-    fontSize: 18,  // ✅ Reduced from 20
-    fontWeight: '700', 
-    color: '#1f2937', 
-    marginBottom: 2  // ✅ Reduced from 4
-  },
-  subtitle: { 
-    fontSize: 12,  // ✅ Reduced from 13
-    color: '#6b7280',
-    fontWeight: '500'
-  },
-  addProductButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#3b82f6', 
-    paddingHorizontal: 14,  // ✅ Reduced from 16
-    paddingVertical: 9,  // ✅ Reduced from 10
-    borderRadius: 10, 
-    gap: 6 
-  },
-  addProductButtonText: { 
-    color: 'white', 
-    fontSize: 13,  // ✅ Reduced from 14
-    fontWeight: '600' 
-  },
-  
-  // ✅ FIXED: Analytics cards - more compact
-  analyticsContainer: { 
-    marginHorizontal: 16, 
-    marginTop: 8,
-    marginBottom: 12,  // ✅ Reduced from 16
-  },
-  analyticsContent: { 
-    gap: 10,  // ✅ Reduced from 12
-    paddingRight: 16,
-  },
-  analyticsCard: { 
-    backgroundColor: 'white', 
-    paddingVertical: 10,  // ✅ Increased from 8 for better touch target
-    paddingHorizontal: 14,  // ✅ Reduced from 16
-    borderRadius: 10, 
-    minWidth: 95,  // ✅ Reduced from 100
+  analyticsCard: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,  // ✅ Increased from 3
-    borderWidth: 1, 
-    borderColor: '#e5e7eb',
+    gap: 4,
+  },
+  analyticsIconWrap: { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  analyticsValue: { fontSize: 14, fontWeight: '800', color: '#111827' },
+  analyticsLabel: { fontSize: 9, color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', textAlign: 'center' },
+
+  // Search
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 12, marginVertical: 10,
+    backgroundColor: 'white',
+    borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb',
+    paddingHorizontal: 12, height: 42,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: '#374151', paddingVertical: 0 },
+
+  // Filter + Sort bar
+  filterSortBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'white',
+    borderBottomWidth: 1, borderBottomColor: '#e5e7eb',
+    paddingVertical: 8,
+  },
+  filterScrollContent: { paddingLeft: 12, paddingRight: 8, gap: 6 },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: '#e5e7eb',
+    backgroundColor: '#f9fafb',
+  },
+  filterChipActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
+  filterChipText: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
+  filterChipTextActive: { color: 'white' },
+  filterBadge: { backgroundColor: '#e5e7eb', borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
+  filterBadgeActive: { backgroundColor: 'rgba(255,255,255,0.3)' },
+  filterBadgeText: { fontSize: 10, color: '#6b7280', fontWeight: '700' },
+  filterBadgeTextActive: { color: 'white' },
+
+  // Sort
+  sortWrap: { paddingRight: 12, paddingLeft: 4, position: 'relative' },
+  sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#f9fafb' },
+  sortBtnText: { fontSize: 11, color: '#6b7280', fontWeight: '600' },
+  sortMenu: { position: 'absolute', top: 36, right: 0, backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 6, zIndex: 999, minWidth: 140 },
+  sortItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 14 },
+  sortItemActive: { backgroundColor: '#eff6ff' },
+  sortItemText: { fontSize: 13, color: '#374151', fontWeight: '500' },
+  sortItemTextActive: { color: '#3b82f6', fontWeight: '700' },
+  sortDivider: { height: 1, backgroundColor: '#f3f4f6' },
+
+  // Card
+  card: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    gap: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  analyticsLabel: { 
-    fontSize: 10, 
-    color: '#6b7280', 
-    textTransform: 'uppercase', 
-    letterSpacing: 0.5, 
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  analyticsValue: { 
-    fontSize: 16,  // ✅ Increased from 15 for better readability
-    fontWeight: '700', 
-    color: '#1f2937',
-    textAlign: 'center',
-  },
-
-  // ✅ FIXED: Sort button - more compact
-  sortButtonContainer: { 
-    paddingHorizontal: 16, 
-    paddingVertical: 10,  // ✅ Reduced from 12
-    backgroundColor: 'white', 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#e5e7eb', 
-    position: 'relative' 
-  },
-  sortButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 6,  // ✅ Reduced from 8
-    paddingVertical: 7,  // ✅ Reduced from 8
-    paddingHorizontal: 10,  // ✅ Reduced from 12
-    backgroundColor: '#f9fafb', 
-    borderWidth: 1, 
-    borderColor: '#d1d5db', 
-    borderRadius: 8,  // ✅ Reduced from 10
-    alignSelf: 'flex-start' 
-  },
-  sortButtonText: { 
-    fontSize: 13,  // ✅ Reduced from 14
-    color: '#374151', 
-    fontWeight: '600' 
-  },
-  sortMenu: { 
-    position: 'absolute', 
-    top: 50,  // ✅ Adjusted for new padding
-    left: 16, 
-    backgroundColor: 'white', 
-    borderRadius: 10, 
-    borderWidth: 1, 
-    borderColor: '#e5e7eb', 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.1, 
-    shadowRadius: 8, 
-    elevation: 5, 
-    zIndex: 1000, 
-    minWidth: 160 
-  },
-  sortMenuItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    paddingVertical: 10,  // ✅ Reduced from 12
-    paddingHorizontal: 14  // ✅ Reduced from 16
-  },
-  sortMenuItemActive: { 
-    backgroundColor: '#eff6ff' 
-  },
-  sortMenuItemText: { 
-    fontSize: 14, 
-    color: '#374151',
-    fontWeight: '500'
-  },
-  sortMenuDivider: { 
-    height: 1, 
-    backgroundColor: '#e5e7eb', 
-    marginVertical: 4 
-  },
-  
-  // ✅ FIXED: Search - more compact
-  searchContainer: { 
-    paddingHorizontal: 16, 
-    paddingVertical: 10,  // ✅ Reduced from 12
-    backgroundColor: 'white', 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#e5e7eb' 
-  },
-  searchInputContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    borderWidth: 1, 
-    borderColor: '#d1d5db', 
-    borderRadius: 10, 
-    backgroundColor: '#f9fafb', 
-    paddingHorizontal: 12,
-    height: 42  // ✅ Reduced from 44
-  },
-  searchIcon: { 
-    marginRight: 8 
-  },
-  searchInput: { 
-    flex: 1, 
-    fontSize: 14,  // ✅ Reduced from 15
-    color: '#374151',
-    paddingVertical: 0
-  },
-  clearSearchButton: { 
-    padding: 4 
-  },
-  
-  // ✅ FIXED: Filter tabs - more compact
-  filterContainer: { 
-    backgroundColor: 'white', 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#e5e7eb', 
-    paddingVertical: 10  // ✅ Reduced from 12
-  },
-  filterScrollContainer: { 
-    paddingHorizontal: 16, 
-    gap: 8 
-  },
-  filterTab: { 
-    paddingHorizontal: 14,  // ✅ Reduced from 16
-    paddingVertical: 7,  // ✅ Reduced from 8
-    borderRadius: 20, 
-    backgroundColor: '#f3f4f6', 
-    minWidth: 75  // ✅ Reduced from 80
-  },
-  activeFilterTab: { 
-    backgroundColor: '#3b82f6' 
-  },
-  filterTabText: { 
-    fontSize: 12, 
-    color: '#6b7280', 
-    fontWeight: '600', 
-    textAlign: 'center' 
-  },
-  activeFilterTabText: { 
-    color: 'white' 
-  },
-  
-  // ✅ FIXED: List container spacing
-  listContainer: { 
-    padding: 14,  // ✅ Reduced from 16
-    paddingBottom: 24  // ✅ Reduced from 32
-  },
-  emptyListContainer: { 
-    flex: 1 
-  },
-  
-  // ✅ FIXED: Product card - better spacing & no overlap
-  productCard: { 
-    backgroundColor: 'white', 
-    borderRadius: 12, 
-    padding: 12,  // ✅ Reduced from 14
-    marginBottom: 12, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.08, 
-    shadowRadius: 4, 
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
     elevation: 2,
-    borderWidth: 1,
-    borderColor: '#f3f4f6'
   },
-  productHeader: { 
-    flexDirection: 'row', 
-    marginBottom: 10,  // ✅ Reduced from 12
-    gap: 12  // ✅ Added gap instead of marginRight
-  },
-  
-  // ✅ FIXED: Image container
-  imageContainer: { 
-    position: 'relative', 
-    marginRight: 0  // ✅ Removed (using gap instead)
-  },
-  productImage: { 
-    width: 64,  // ✅ Reduced from 72
-    height: 64,  // ✅ Reduced from 72
-    borderRadius: 32,  // ✅ Adjusted
-    backgroundColor: '#f3f4f6',
-    borderWidth: 2,
-    borderColor: '#e5e7eb',
-  },
-  stockBadge: { 
-    position: 'absolute', 
-    bottom: -2, 
-    right: -2, 
-    paddingHorizontal: 6,  // ✅ Reduced from 7
-    paddingVertical: 2,  // ✅ Reduced from 3
-    borderRadius: 10,  // ✅ Reduced from 12
-    borderWidth: 2,
-    borderColor: 'white',
-  },
-  stockBadgeText: { 
-    fontSize: 9, 
-    fontWeight: '700', 
-    textTransform: 'uppercase',
-    letterSpacing: 0.3
-  },
-  
-  productInfo: { 
-    flex: 1, 
-    justifyContent: 'space-between',
-    minWidth: 0  // ✅ Added to prevent overflow
-  },
-  productName: { 
-    fontSize: 15,  // ✅ Reduced from 16
-    fontWeight: '600', 
-    color: '#1f2937', 
-    marginBottom: 3,  // ✅ Reduced from 4
-    lineHeight: 20,  // ✅ Reduced from 22
-    flexWrap: 'wrap'  // ✅ Added
-  },
-  modelName: { 
-    fontSize: 12, 
-    color: '#6b7280', 
-    marginBottom: 5,  // ✅ Reduced from 6
-    fontWeight: '500',
-    flexShrink: 1  // ✅ Added
-  },
-  priceRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 6,  // ✅ Reduced from 8
-    marginBottom: 3,  // ✅ Reduced from 4
-    flexWrap: 'wrap'  // ✅ Added
-  },
-  price: { 
-    fontSize: 16,  // ✅ Reduced from 17
-    fontWeight: '700', 
-    color: '#059669',
-    flexShrink: 1  // ✅ Added
-  },
-  mrp: { 
-    fontSize: 12, 
-    color: '#9ca3af', 
-    textDecorationLine: 'line-through',
-    fontWeight: '500',
-    flexShrink: 1  // ✅ Added
-  },
-  stockText: { 
-    fontSize: 12, 
-    color: '#6b7280',
-    fontWeight: '500'
-  },
-  
-  // ✅ FIXED: Action buttons - better spacing
-  actionButtons: { 
-    flexDirection: 'row', 
-    gap: 8,  // ✅ Reduced from 10
-    marginTop: 4  // ✅ Reduced from 6
-  },
-  editButton: { 
-    flex: 1, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    backgroundColor: '#6b7280', 
-    paddingVertical: 9,  // ✅ Reduced from 10
-    borderRadius: 8,  // ✅ Reduced from 10
-    gap: 6 
-  },
-  editButtonText: { 
-    color: 'white', 
-    fontSize: 13,  // ✅ Reduced from 14
-    fontWeight: '600' 
-  },
-  deleteButton: { 
-    flex: 1, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    backgroundColor: '#ef4444', 
-    paddingVertical: 9,  // ✅ Reduced from 10
-    borderRadius: 8,  // ✅ Reduced from 10
-    gap: 6 
-  },
-  deleteButtonDisabled: { 
-    opacity: 0.6 
-  },
-  deleteButtonText: { 
-    color: 'white', 
-    fontSize: 13,  
-    fontWeight: '600' 
-  },
-  
-  emptyState: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    padding: 40 
-  },
-  emptyIcon: { 
-    marginBottom: 16 
-  },
-  emptyTitle: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    color: '#374151', 
-    marginBottom: 8, 
-    textAlign: 'center' 
-  },
-  emptyDescription: { 
-    fontSize: 14, 
-    color: '#6b7280', 
-    textAlign: 'center', 
-    lineHeight: 20, 
-    marginBottom: 24,
-    paddingHorizontal: 20
-  },
-  clearButton: { 
-    backgroundColor: '#6b7280', 
-    paddingHorizontal: 24, 
-    paddingVertical: 12, 
-    borderRadius: 10 
-  },
-  clearButtonText: { 
-    color: 'white', 
-    fontSize: 14, 
-    fontWeight: '600' 
-  },
-  addButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#3b82f6', 
-    paddingHorizontal: 24, 
-    paddingVertical: 12, 
-    borderRadius: 10, 
-    gap: 8 
-  },
-  addButtonText: { 
-    color: 'white', 
-    fontSize: 15, 
-    fontWeight: '600' 
-  },
-});
+  cardImage: { width: 60, height: 60, borderRadius: 10, backgroundColor: '#f3f4f6' },
+  cardBody: { flex: 1, gap: 3, minWidth: 0 },
+  cardName: { fontSize: 14, fontWeight: '700', color: '#111827', lineHeight: 18 },
+  cardModel: { fontSize: 11, color: '#9ca3af', fontWeight: '500' },
+  cardPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 },
+  cardPrice: { fontSize: 15, fontWeight: '800', color: '#059669' },
+  cardMrp: { fontSize: 11, color: '#9ca3af', textDecorationLine: 'line-through', fontWeight: '500' },
+  discountBadge: { backgroundColor: '#fef3c7', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
+  discountText: { fontSize: 10, color: '#d97706', fontWeight: '700' },
+  cardStockRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  stockDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
+  cardStockLabel: { fontSize: 11, fontWeight: '600' },
+  cardStockCount: { fontSize: 11, color: '#9ca3af', fontWeight: '500' },
 
+  // Card actions (right column)
+  cardActions: { gap: 8, alignItems: 'center' },
+  actionEdit: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
+  actionDelete: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#fef2f2', justifyContent: 'center', alignItems: 'center' },
+
+  // List
+  listContent: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 28 },
+  emptyContainer: { flex: 1 },
+
+  // Empty
+  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, gap: 10 },
+  emptyIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#1f2937', textAlign: 'center' },
+  emptyDesc: { fontSize: 13, color: '#6b7280', textAlign: 'center', lineHeight: 20 },
+  emptyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f3f4f6', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 6 },
+  emptyBtnText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+});
 
 export default ProductsScreen;
