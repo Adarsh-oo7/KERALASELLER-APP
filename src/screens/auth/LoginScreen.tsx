@@ -3,17 +3,18 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
   ActivityIndicator, StatusBar, ScrollView,
-  Animated, Image, Dimensions,
+  Animated, Image,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../../App';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL, ENDPOINTS } from '../../config/api';
-import Images from '../../images';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
-const { width } = Dimensions.get('window');
+// Inline require — safest on Windows Metro
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const LOGO = require('../../../assets/icon.png');
 
 export default function LoginScreen({ navigation }: Props) {
   const { signIn }              = useAuth();
@@ -48,7 +49,6 @@ export default function LoginScreen({ navigation }: Props) {
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.length !== 10) { setError('Enter a valid 10-digit phone number'); shake(); return; }
     if (!password.trim())         { setError('Password is required');                shake(); return; }
-
     setLoading(true);
     try {
       const res  = await fetch(`${API_BASE_URL}${ENDPOINTS.login}`, {
@@ -59,7 +59,6 @@ export default function LoginScreen({ navigation }: Props) {
       const text = await res.text();
       let data: any = {};
       try { data = JSON.parse(text); } catch {}
-
       if (res.ok && (data.access_token || data.access)) {
         await signIn({
           accessToken:  data.access_token  || data.access,
@@ -71,11 +70,9 @@ export default function LoginScreen({ navigation }: Props) {
         setError(msg); shake();
       }
     } catch (e: any) {
-      setError(
-        e.message?.includes('Network') || e.message?.includes('fetch')
-          ? 'Cannot connect to server. Check your internet.'
-          : e.message || 'Something went wrong'
-      );
+      setError(e.message?.includes('Network') || e.message?.includes('fetch')
+        ? 'Cannot connect to server. Check your internet.'
+        : e.message || 'Something went wrong');
       shake();
     } finally { setLoading(false); }
   };
@@ -84,23 +81,19 @@ export default function LoginScreen({ navigation }: Props) {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView style={S.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          contentContainerStyle={S.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* ─── Hero ─── */}
+        <ScrollView contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* Hero */}
           <Animated.View style={[S.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-            <Image source={Images.logo} style={S.logo} resizeMode="contain" />
+            <Image source={LOGO} style={S.logo} resizeMode="contain" />
             <Text style={S.appName}>Kerala Sellers</Text>
             <Text style={S.appTag}>Seller Portal</Text>
           </Animated.View>
 
-          {/* ─── Form card ─── */}
+          {/* Form */}
           <Animated.View style={[S.formWrap, { opacity: fadeAnim, transform: [{ translateX: shakeAnim }] }]}>
             <Text style={S.sectionTitle}>Sign in to your account</Text>
 
-            {/* Phone */}
             <Text style={S.fieldLabel}>Phone Number</Text>
             <View style={[S.fieldWrap, focused === 'phone' && S.fieldFocused]}>
               <Text style={S.fieldIcon}>📱</Text>
@@ -121,7 +114,6 @@ export default function LoginScreen({ navigation }: Props) {
               {phone.length === 10 && <Text style={S.checkMark}>✓</Text>}
             </View>
 
-            {/* Password */}
             <Text style={S.fieldLabel}>Password</Text>
             <View style={[S.fieldWrap, focused === 'pass' && S.fieldFocused]}>
               <Text style={S.fieldIcon}>🔒</Text>
@@ -139,16 +131,11 @@ export default function LoginScreen({ navigation }: Props) {
                 onBlur={() => setFocused(null)}
                 editable={!loading}
               />
-              <TouchableOpacity
-                onPress={() => setShowPass(!showPass)}
-                style={S.eyeBtn}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
+              <TouchableOpacity onPress={() => setShowPass(!showPass)} style={S.eyeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Text style={{ fontSize: 18, color: '#AEAEB2' }}>{showPass ? '👁' : '🙈'}</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Error */}
             {!!error && (
               <View style={S.errorBox}>
                 <Text style={S.errorDot}>•</Text>
@@ -156,33 +143,17 @@ export default function LoginScreen({ navigation }: Props) {
               </View>
             )}
 
-            {/* CTA */}
-            <TouchableOpacity
-              style={[S.cta, loading && S.ctaDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {loading
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={S.ctaText}>Sign In</Text>
-              }
+            <TouchableOpacity style={[S.cta, loading && S.ctaDisabled]} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
+              {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={S.ctaText}>Sign In</Text>}
             </TouchableOpacity>
 
-            {/* OR */}
             <View style={S.orRow}>
               <View style={S.orLine} />
               <Text style={S.orText}>or</Text>
               <View style={S.orLine} />
             </View>
 
-            {/* Register */}
-            <TouchableOpacity
-              style={S.secondaryBtn}
-              onPress={() => navigation.navigate('Register')}
-              disabled={loading}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={S.secondaryBtn} onPress={() => navigation.navigate('Register')} disabled={loading} activeOpacity={0.7}>
               <Text style={S.secondaryText}>Create a new account</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -197,37 +168,22 @@ export default function LoginScreen({ navigation }: Props) {
 const S = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#FFFFFF' },
   scroll:        { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 48 },
-
   hero:          { alignItems: 'center', paddingTop: 64, paddingBottom: 36 },
   logo:          { width: 88, height: 88, borderRadius: 20, marginBottom: 16 },
   appName:       { fontSize: 26, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.3 },
   appTag:        { fontSize: 14, color: '#8E8E93', marginTop: 4, fontWeight: '400' },
-
   formWrap: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
+    backgroundColor: '#F9F9F9', borderRadius: 20, padding: 24,
+    borderWidth: 1, borderColor: '#F0F0F0',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
   },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#1C1C1E', marginBottom: 20, letterSpacing: -0.2 },
-
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#3C3C43', marginBottom: 6, marginLeft: 2 },
+  sectionTitle:  { fontSize: 18, fontWeight: '600', color: '#1C1C1E', marginBottom: 20, letterSpacing: -0.2 },
+  fieldLabel:    { fontSize: 13, fontWeight: '600', color: '#3C3C43', marginBottom: 6, marginLeft: 2 },
   fieldWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E5EA',
-    paddingHorizontal: 14,
-    marginBottom: 16,
-    height: 54,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF',
+    borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E5EA',
+    paddingHorizontal: 14, marginBottom: 16, height: 54,
   },
   fieldFocused:  { borderColor: '#1C1C1E' },
   fieldIcon:     { fontSize: 17, marginRight: 8 },
@@ -236,49 +192,28 @@ const S = StyleSheet.create({
   fieldInput:    { flex: 1, fontSize: 16, color: '#1C1C1E', paddingVertical: 0 },
   checkMark:     { fontSize: 16, color: '#30D158', fontWeight: '700' },
   eyeBtn:        { paddingLeft: 6 },
-
   errorBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#FFF2F2',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    gap: 6,
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#FFF2F2', borderRadius: 10,
+    padding: 12, marginBottom: 12, gap: 6,
   },
-  errorDot:  { fontSize: 16, color: '#FF3B30', lineHeight: 20 },
-  errorText: { flex: 1, fontSize: 13, color: '#FF3B30', fontWeight: '500', lineHeight: 20 },
-
+  errorDot:      { fontSize: 16, color: '#FF3B30', lineHeight: 20 },
+  errorText:     { flex: 1, fontSize: 13, color: '#FF3B30', fontWeight: '500', lineHeight: 20 },
   cta: {
-    backgroundColor: '#1C1C1E',
-    borderRadius: 14,
-    height: 54,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 4,
+    backgroundColor: '#1C1C1E', borderRadius: 14, height: 54,
+    justifyContent: 'center', alignItems: 'center', marginTop: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18, shadowRadius: 10, elevation: 4,
   },
-  ctaDisabled:  { opacity: 0.55 },
-  ctaText:      { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: 0.2 },
-
-  orRow:  { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
-  orLine: { flex: 1, height: 1, backgroundColor: '#E5E5EA' },
-  orText: { fontSize: 13, color: '#AEAEB2', marginHorizontal: 12, fontWeight: '500' },
-
+  ctaDisabled:   { opacity: 0.55 },
+  ctaText:       { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: 0.2 },
+  orRow:         { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  orLine:        { flex: 1, height: 1, backgroundColor: '#E5E5EA' },
+  orText:        { fontSize: 13, color: '#AEAEB2', marginHorizontal: 12, fontWeight: '500' },
   secondaryBtn: {
-    borderRadius: 14,
-    height: 54,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
+    borderRadius: 14, height: 54, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#E5E5EA', backgroundColor: '#FFFFFF',
   },
   secondaryText: { fontSize: 16, color: '#1C1C1E', fontWeight: '500' },
-
-  footerDomain: { textAlign: 'center', fontSize: 12, color: '#C7C7CC', marginTop: 32 },
+  footerDomain:  { textAlign: 'center', fontSize: 12, color: '#C7C7CC', marginTop: 32 },
 });
