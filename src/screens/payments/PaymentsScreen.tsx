@@ -1,30 +1,694 @@
+// // src/screens/payments/PaymentsScreen.tsx
+// import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// import {
+//   View, Text, StyleSheet, ScrollView, TouchableOpacity,
+//   ActivityIndicator, RefreshControl, Platform,
+// } from 'react-native';
+// import { Ionicons } from '@expo/vector-icons';
+// import { COLORS } from '../../constants/colors';
+// import { api } from '../../config/api';
+// import MainLayout from '../../components/layout/MainLayout';
+// import RazorpaySetupModal from '../../components/RazorpaySetupModal';
+
+// // ── Types ─────────────────────────────────────────────────────────────────────
+
+// interface GatewayInfo {
+//   connected: boolean;
+//   verified: boolean;
+//   status: string;
+//   account_id?: string;
+// }
+
+// interface GatewayStatus {
+//   razorpay: GatewayInfo;
+//   cashfree: GatewayInfo;
+//   primary_gateway: string | null;
+//   is_ready: boolean;
+// }
+
+// interface Payout {
+//   id: number;
+//   created_at: string;
+//   amount: string;
+//   gateway_display?: string;
+//   gateway_used: string;
+//   status: string;
+//   status_display?: string;
+//   order_id?: string;
+//   utr_number?: string;
+//   bank_reference?: string;
+//   description?: string;
+// }
+
+// interface Transaction {
+//   id: number;
+//   order_id: string;
+//   amount: string;
+//   commission: string;
+//   net_amount: string;
+//   gateway: string;
+//   status: string;
+//   created_at: string;
+//   settlement_status?: string;
+// }
+
+// type Tab = 'overview' | 'transactions' | 'settlements';
+
+// // ── Config ────────────────────────────────────────────────────────────────────
+
+// const SHADOW = Platform.select({
+//   ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8 },
+//   android: { elevation: 3 },
+// });
+
+// const DEFAULT_GATEWAY: GatewayStatus = {
+//   razorpay: { connected: false, verified: false, status: 'pending' },
+//   cashfree: { connected: false, verified: false, status: 'pending' },
+//   primary_gateway: null,
+//   is_ready: false,
+// };
+
+// const statusColor = (s: string) => ({
+//   text:   s === 'success' ? '#065f46' : s === 'pending' ? '#92400e' : '#991b1b',
+//   bg:     s === 'success' ? '#dcfce7' : s === 'pending' ? '#fef3c7' : '#fee2e2',
+//   border: s === 'success' ? '#86efac' : s === 'pending' ? '#fcd34d' : '#fca5a5',
+// });
+
+// const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// // ── Sub-components ────────────────────────────────────────────────────────────
+
+// const Toast: React.FC<{ msg: string; type: 'success' | 'error' }> = ({ msg, type }) => (
+//   <View style={[t.toast, type === 'success' ? t.toastSuccess : t.toastError]}>
+//     <Ionicons
+//       name={type === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+//       size={16}
+//       color={type === 'success' ? '#065f46' : '#991b1b'}
+//     />
+//     <Text style={[t.toastText, { color: type === 'success' ? '#065f46' : '#991b1b' }]}>{msg}</Text>
+//   </View>
+// );
+
+// const t = StyleSheet.create({
+//   toast:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1 },
+//   toastSuccess: { backgroundColor: '#f0fdf4', borderColor: '#86efac' },
+//   toastError:   { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
+//   toastText:    { flex: 1, fontSize: 13, fontWeight: '600' },
+// });
+
+// // ── Main Component ────────────────────────────────────────────────────────────
+
+// export default function PaymentsScreen({ navigation }: { navigation: any }) {
+//   const [activeTab, setActiveTab]             = useState<Tab>('overview');
+//   const [gatewayStatus, setGatewayStatus]     = useState<GatewayStatus>(DEFAULT_GATEWAY);
+//   const [payouts, setPayouts]                 = useState<Payout[]>([]);
+//   const [transactions, setTransactions]       = useState<Transaction[]>([]);
+//   const [loading, setLoading]                 = useState(true);
+//   const [refreshing, setRefreshing]           = useState(false);
+//   const [successMsg, setSuccessMsg]           = useState('');
+//   const [errorMsg, setErrorMsg]               = useState('');
+//   const [razorpayModal, setRazorpayModal]     = useState(false);
+//   const [editMode, setEditMode]               = useState(false);
+
+//   // ── Data ──────────────────────────────────────────────────────────────────
+
+//   const fetchData = useCallback(async () => {
+//     setRefreshing(true);
+//     try {
+//       const [statusRes, settlementsRes, txnRes] = await Promise.allSettled([
+//         api.getGatewayStatus(),
+//         api.getLiveSettlements(),
+//         api.getTransactions(),
+//       ]);
+
+//       setGatewayStatus(statusRes.status === 'fulfilled' ? statusRes.value : DEFAULT_GATEWAY);
+
+//       if (settlementsRes.status === 'fulfilled') {
+//         const d = settlementsRes.value;
+//         const arr = d?.settlements || d?.items || d?.payouts || d || [];
+//         setPayouts(Array.isArray(arr) ? arr : []);
+//       } else { setPayouts([]); }
+
+//       if (txnRes.status === 'fulfilled') {
+//         const d = txnRes.value;
+//         const arr = d?.transactions || d?.items || d || [];
+//         setTransactions(Array.isArray(arr) ? arr : []);
+//       } else { setTransactions([]); }
+
+//       setErrorMsg('');
+//     } catch {
+//       setErrorMsg('Failed to load payment data. Pull to refresh.');
+//     } finally {
+//       setRefreshing(false);
+//       setLoading(false);
+//     }
+//   }, []);
+
+//   useEffect(() => { fetchData(); }, [fetchData]);
+
+//   useEffect(() => {
+//     if (!successMsg) return;
+//     const t = setTimeout(() => setSuccessMsg(''), 3000);
+//     return () => clearTimeout(t);
+//   }, [successMsg]);
+
+//   useEffect(() => {
+//     if (!errorMsg) return;
+//     const t = setTimeout(() => setErrorMsg(''), 5000);
+//     return () => clearTimeout(t);
+//   }, [errorMsg]);
+
+//   // ── Handlers ─────────────────────────────────────────────────────────────
+
+//   const openRazorpay  = useCallback(() => { setEditMode(false); setRazorpayModal(true); }, []);
+//   const editRazorpay  = useCallback(() => { setEditMode(true);  setRazorpayModal(true); }, []);
+//   const closeRazorpay = useCallback(() => { setRazorpayModal(false); setEditMode(false); }, []);
+
+//   const onRazorpaySuccess = useCallback(() => {
+//     setSuccessMsg(editMode ? 'Razorpay keys updated successfully!' : 'Connected to Razorpay!');
+//     setEditMode(false);
+//     fetchData();
+//   }, [editMode, fetchData]);
+
+//   // ── Memos ─────────────────────────────────────────────────────────────────
+
+//   const payoutSummary = useMemo(() => {
+//     const byStatus = (s: string) => payouts.filter(p => p.status === s);
+//     const sum      = (arr: Payout[]) => arr.reduce((n, p) => n + parseFloat(p.amount || '0'), 0);
+//     const success  = byStatus('success');
+//     const pending  = byStatus('pending');
+//     const failed   = byStatus('failed');
+//     return {
+//       successCount: success.length, successAmt: sum(success),
+//       pendingCount: pending.length, pendingAmt: sum(pending),
+//       failedCount:  failed.length,  failedAmt:  sum(failed),
+//       total: sum(payouts),
+//     };
+//   }, [payouts]);
+
+//   const txnSummary = useMemo(() => ({
+//     totalSales:    transactions.reduce((n, t) => n + parseFloat(t.amount     || '0'), 0),
+//     commission:    transactions.reduce((n, t) => n + parseFloat(t.commission || '0'), 0),
+//     netEarnings:   transactions.reduce((n, t) => n + parseFloat(t.net_amount || '0'), 0),
+//     count:         transactions.length,
+//   }), [transactions]);
+
+//   // ── Loading ───────────────────────────────────────────────────────────────
+
+//   if (loading) return (
+//     <MainLayout navigation={navigation} currentTab="payments" headerTitle="Payments">
+//       <View style={s.loadingWrap}>
+//         <View style={s.loadingIconWrap}>
+//           <ActivityIndicator size="large" color="#3b82f6" />
+//         </View>
+//         <Text style={s.loadingTitle}>Loading Payments</Text>
+//         <Text style={s.loadingSubtitle}>Fetching your payment data...</Text>
+//       </View>
+//     </MainLayout>
+//   );
+
+//   const rp = gatewayStatus.razorpay;
+
+//   // ── Render ────────────────────────────────────────────────────────────────
+
+//   return (
+//     <MainLayout navigation={navigation} currentTab="payments" headerTitle="Payments">
+//       <RazorpaySetupModal
+//         visible={razorpayModal}
+//         onClose={closeRazorpay}
+//         onSuccess={onRazorpaySuccess}
+//         editMode={editMode}
+//       />
+
+//       <ScrollView
+//         style={s.screen}
+//         showsVerticalScrollIndicator={false}
+//         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor="#3b82f6" />}
+//       >
+//         {/* ── Page header ── */}
+//         <View style={s.pageHeader}>
+//           <View style={s.pageHeaderIcon}>
+//             <Ionicons name="card-outline" size={22} color="#3b82f6" />
+//           </View>
+//           <View style={{ flex: 1 }}>
+//             <Text style={s.pageTitle}>Payment Gateways</Text>
+//             <Text style={s.pageSubtitle}>Manage payments, transactions & settlements</Text>
+//           </View>
+//           {gatewayStatus.is_ready && (
+//             <View style={s.readyBadge}>
+//               <View style={s.readyDot} />
+//               <Text style={s.readyText}>Live</Text>
+//             </View>
+//           )}
+//         </View>
+
+//         {/* ── Toasts ── */}
+//         {!!successMsg && <Toast msg={successMsg} type="success" />}
+//         {!!errorMsg   && <Toast msg={errorMsg}   type="error" />}
+
+//         {/* ── Tab bar ── */}
+//         <View style={s.tabs}>
+//           {([
+//             { key: 'overview',      label: 'Overview',      icon: 'grid-outline' },
+//             { key: 'transactions',  label: 'Transactions',  icon: 'swap-horizontal-outline' },
+//             { key: 'settlements',   label: 'Settlements',   icon: 'wallet-outline' },
+//           ] as { key: Tab; label: string; icon: any }[]).map(tab => (
+//             <TouchableOpacity
+//               key={tab.key}
+//               style={[s.tab, activeTab === tab.key && s.tabActive]}
+//               onPress={() => setActiveTab(tab.key)}
+//               activeOpacity={0.8}
+//             >
+//               <Ionicons
+//                 name={tab.icon}
+//                 size={16}
+//                 color={activeTab === tab.key ? '#3b82f6' : '#9ca3af'}
+//               />
+//               <Text style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>
+//                 {tab.label}
+//               </Text>
+//             </TouchableOpacity>
+//           ))}
+//         </View>
+
+//         {/* ════════════════════ OVERVIEW ════════════════════ */}
+//         {activeTab === 'overview' && (
+//           <>
+//             {/* Summary stats */}
+//             <View style={s.statsRow}>
+//               <View style={[s.statCard, { borderLeftColor: '#3b82f6' }]}>
+//                 <Text style={s.statLabel}>Total Sales</Text>
+//                 <Text style={[s.statVal, { color: '#3b82f6' }]}>₹{fmt(txnSummary.totalSales)}</Text>
+//                 <Text style={s.statSub}>{txnSummary.count} orders</Text>
+//               </View>
+//               <View style={[s.statCard, { borderLeftColor: '#059669' }]}>
+//                 <Text style={s.statLabel}>Net Earnings</Text>
+//                 <Text style={[s.statVal, { color: '#059669' }]}>₹{fmt(txnSummary.netEarnings)}</Text>
+//                 <Text style={s.statSub}>After commission</Text>
+//               </View>
+//             </View>
+
+//             {/* Gateway cards */}
+//             <View style={s.sectionHead}>
+//               <Text style={s.sectionTitle}>Payment Gateways</Text>
+//             </View>
+
+//             {/* Razorpay */}
+//             <View style={[s.gatewayCard, rp.verified && s.gatewayCardActive]}>
+//               <View style={s.gatewayTop}>
+//                 <View style={s.gatewayLeft}>
+//                   <View style={[s.gatewayIconWrap, { backgroundColor: '#eff6ff' }]}>
+//                     <Ionicons name="card-outline" size={20} color="#3b82f6" />
+//                   </View>
+//                   <View>
+//                     <Text style={s.gatewayName}>Razorpay</Text>
+//                     <Text style={s.gatewayTag}>Online Payment Gateway</Text>
+//                   </View>
+//                 </View>
+//                 <View style={[s.gStatusPill, { backgroundColor: rp.verified ? '#dcfce7' : '#fef3c7', borderColor: rp.verified ? '#86efac' : '#fcd34d' }]}>
+//                   <View style={[s.gStatusDot, { backgroundColor: rp.verified ? '#059669' : '#d97706' }]} />
+//                   <Text style={[s.gStatusText, { color: rp.verified ? '#065f46' : '#92400e' }]}>
+//                     {rp.verified ? 'Live' : rp.status?.toUpperCase() || 'PENDING'}
+//                   </Text>
+//                 </View>
+//               </View>
+
+//               {rp.account_id && (
+//                 <View style={s.accountRow}>
+//                   <Ionicons name="id-card-outline" size={13} color="#9ca3af" />
+//                   <Text style={s.accountId}>{rp.account_id}</Text>
+//                 </View>
+//               )}
+
+//               <View style={s.gatewayActions}>
+//                 {!rp.connected ? (
+//                   <TouchableOpacity style={s.primaryBtn} onPress={openRazorpay} activeOpacity={0.8}>
+//                     <Ionicons name="link-outline" size={15} color="white" />
+//                     <Text style={s.primaryBtnText}>Connect Razorpay</Text>
+//                   </TouchableOpacity>
+//                 ) : (
+//                   <View style={s.actionRow}>
+//                     <TouchableOpacity style={[s.secondaryBtn, { flex: 1 }]} onPress={editRazorpay} activeOpacity={0.8}>
+//                       <Ionicons name="create-outline" size={14} color="#3b82f6" />
+//                       <Text style={s.secondaryBtnText}>Edit Keys</Text>
+//                     </TouchableOpacity>
+//                     <View style={[s.connectedBtn, { flex: 1 }]}>
+//                       <Ionicons name="checkmark-circle-outline" size={14} color="#059669" />
+//                       <Text style={s.connectedBtnText}>Connected</Text>
+//                     </View>
+//                   </View>
+//                 )}
+//               </View>
+//             </View>
+
+//             {/* Cashfree */}
+//             <View style={[s.gatewayCard, { opacity: 0.65 }]}>
+//               <View style={s.comingSoonBadge}>
+//                 <Ionicons name="time-outline" size={12} color="#92400e" />
+//                 <Text style={s.comingSoonText}>Coming Soon</Text>
+//               </View>
+//               <View style={s.gatewayTop}>
+//                 <View style={s.gatewayLeft}>
+//                   <View style={[s.gatewayIconWrap, { backgroundColor: '#f0fdf4' }]}>
+//                     <Ionicons name="card-outline" size={20} color="#10b981" />
+//                   </View>
+//                   <View>
+//                     <Text style={s.gatewayName}>Cashfree</Text>
+//                     <Text style={s.gatewayTag}>Payouts & Settlements</Text>
+//                   </View>
+//                 </View>
+//                 <View style={[s.gStatusPill, { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' }]}>
+//                   <View style={[s.gStatusDot, { backgroundColor: '#9ca3af' }]} />
+//                   <Text style={[s.gStatusText, { color: '#6b7280' }]}>Soon</Text>
+//                 </View>
+//               </View>
+//               <Text style={s.comingSoonDesc}>
+//                 Automatic weekly payouts directly to your bank account — launching soon.
+//               </Text>
+//               <View style={[s.primaryBtn, { backgroundColor: '#e5e7eb' }]}>
+//                 <Ionicons name="hourglass-outline" size={14} color="#9ca3af" />
+//                 <Text style={[s.primaryBtnText, { color: '#9ca3af' }]}>Not Available Yet</Text>
+//               </View>
+//             </View>
+
+//             {/* How it works */}
+//             <View style={s.howCard}>
+//               <View style={s.howHead}>
+//                 <Ionicons name="information-circle-outline" size={18} color="#3b82f6" />
+//                 <Text style={s.howTitle}>How Settlements Work</Text>
+//               </View>
+//               {[
+//                 { icon: 'flash-outline',          color: '#3b82f6', text: 'Instant Payouts directly to your account' },
+//                 { icon: 'trending-up-outline',    color: '#059669', text: '0% Commission — keep 100% of sales' },
+//                 { icon: 'bar-chart-outline',      color: '#7c3aed', text: 'Real-time tracking for all transactions' },
+//                 { icon: 'shield-checkmark-outline', color: '#10b981', text: 'Bank-grade security & encryption' },
+//                 { icon: 'phone-portrait-outline', color: '#f59e0b', text: 'Mobile-first payments management' },
+//               ].map((item, i) => (
+//                 <View key={i} style={s.howRow}>
+//                   <View style={[s.howIconWrap, { backgroundColor: item.color + '15' }]}>
+//                     <Ionicons name={item.icon as any} size={15} color={item.color} />
+//                   </View>
+//                   <Text style={s.howText}>{item.text}</Text>
+//                 </View>
+//               ))}
+//             </View>
+//           </>
+//         )}
+
+//         {/* ════════════════════ TRANSACTIONS ════════════════════ */}
+//         {activeTab === 'transactions' && (
+//           <>
+//             {/* Summary */}
+//             <View style={s.statsRow}>
+//               <View style={[s.statCard, { borderLeftColor: '#3b82f6' }]}>
+//                 <Text style={s.statLabel}>Total Sales</Text>
+//                 <Text style={[s.statVal, { color: '#3b82f6' }]}>₹{fmt(txnSummary.totalSales)}</Text>
+//                 <Text style={s.statSub}>{txnSummary.count} transactions</Text>
+//               </View>
+//               <View style={[s.statCard, { borderLeftColor: '#dc2626' }]}>
+//                 <Text style={s.statLabel}>Commission</Text>
+//                 <Text style={[s.statVal, { color: '#dc2626' }]}>₹{fmt(txnSummary.commission)}</Text>
+//                 <Text style={s.statSub}>Platform fee</Text>
+//               </View>
+//             </View>
+//             <View style={[s.statsRow, { marginTop: 0 }]}>
+//               <View style={[s.statCard, { borderLeftColor: '#059669', flex: 1 }]}>
+//                 <Text style={s.statLabel}>Net Earnings</Text>
+//                 <Text style={[s.statVal, { color: '#059669' }]}>₹{fmt(txnSummary.netEarnings)}</Text>
+//                 <Text style={s.statSub}>After all deductions</Text>
+//               </View>
+//             </View>
+
+//             {/* Table */}
+//             <View style={s.listCard}>
+//               <Text style={s.listTitle}>Transaction History</Text>
+//               {transactions.length > 0 ? (
+//                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+//                   <View>
+//                     {/* Table header */}
+//                     <View style={s.tHead}>
+//                       {['Date', 'Order ID', 'Amount', 'Commission', 'Net', 'Gateway', 'Status'].map((h, i) => (
+//                         <Text key={i} style={[s.tHeadCell, { width: [90, 110, 90, 90, 90, 90, 80][i] }]}>{h}</Text>
+//                       ))}
+//                     </View>
+//                     {/* Rows */}
+//                     {transactions.map((tx, idx) => {
+//                       const sc = statusColor(tx.status);
+//                       return (
+//                         <View key={tx.id} style={[s.tRow, idx % 2 === 0 && s.tRowAlt]}>
+//                           <Text style={[s.tCell, { width: 90 }]}>
+//                             {new Date(tx.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+//                           </Text>
+//                           <Text style={[s.tCell, { width: 110 }]} numberOfLines={1}>
+//                             #{tx.order_id.slice(0, 10)}
+//                           </Text>
+//                           <Text style={[s.tCell, { width: 90, fontWeight: '700', color: '#111827' }]}>
+//                             ₹{parseFloat(tx.amount).toLocaleString('en-IN')}
+//                           </Text>
+//                           <Text style={[s.tCell, { width: 90, color: '#dc2626' }]}>
+//                             -₹{parseFloat(tx.commission).toLocaleString('en-IN')}
+//                           </Text>
+//                           <Text style={[s.tCell, { width: 90, fontWeight: '700', color: '#059669' }]}>
+//                             ₹{parseFloat(tx.net_amount).toLocaleString('en-IN')}
+//                           </Text>
+//                           <Text style={[s.tCell, { width: 90 }]}>{tx.gateway}</Text>
+//                           <View style={{ width: 80, justifyContent: 'center' }}>
+//                             <View style={[s.pill, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+//                               <Text style={[s.pillText, { color: sc.text }]}>{tx.status}</Text>
+//                             </View>
+//                           </View>
+//                         </View>
+//                       );
+//                     })}
+//                   </View>
+//                 </ScrollView>
+//               ) : (
+//                 <EmptyState icon="receipt-outline" title="No transactions yet" sub="Your sales transactions will appear here" />
+//               )}
+//             </View>
+//           </>
+//         )}
+
+//         {/* ════════════════════ SETTLEMENTS ════════════════════ */}
+//         {activeTab === 'settlements' && (
+//           <>
+//             {/* Summary */}
+//             <View style={s.statsRow}>
+//               <View style={[s.statCard, { borderLeftColor: '#059669' }]}>
+//                 <Text style={s.statLabel}>Settled</Text>
+//                 <Text style={[s.statVal, { color: '#059669' }]}>₹{fmt(payoutSummary.successAmt)}</Text>
+//                 <Text style={s.statSub}>{payoutSummary.successCount} payouts</Text>
+//               </View>
+//               <View style={[s.statCard, { borderLeftColor: '#d97706' }]}>
+//                 <Text style={s.statLabel}>Pending</Text>
+//                 <Text style={[s.statVal, { color: '#d97706' }]}>₹{fmt(payoutSummary.pendingAmt)}</Text>
+//                 <Text style={s.statSub}>{payoutSummary.pendingCount} payouts</Text>
+//               </View>
+//             </View>
+
+//             {payoutSummary.failedCount > 0 && (
+//               <View style={[s.statsRow, { marginTop: 0 }]}>
+//                 <View style={[s.statCard, { borderLeftColor: '#dc2626', flex: 1 }]}>
+//                   <Text style={s.statLabel}>Failed</Text>
+//                   <Text style={[s.statVal, { color: '#dc2626' }]}>₹{fmt(payoutSummary.failedAmt)}</Text>
+//                   <Text style={s.statSub}>{payoutSummary.failedCount} payouts</Text>
+//                 </View>
+//               </View>
+//             )}
+
+//             {/* Payout list */}
+//             <View style={s.listCard}>
+//               <Text style={s.listTitle}>Settlement History</Text>
+//               {payouts.length > 0 ? (
+//                 <View style={{ gap: 12 }}>
+//                   {payouts.map(payout => {
+//                     const sc = statusColor(payout.status);
+//                     return (
+//                       <View key={payout.id} style={s.payoutCard}>
+//                         <View style={s.payoutTop}>
+//                           <View>
+//                             <Text style={s.payoutAmount}>₹{parseFloat(payout.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+//                             <Text style={s.payoutDate}>
+//                               {new Date(payout.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+//                             </Text>
+//                           </View>
+//                           <View style={[s.pill, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+//                             <Text style={[s.pillText, { color: sc.text }]}>
+//                               {payout.status_display || payout.status}
+//                             </Text>
+//                           </View>
+//                         </View>
+
+//                         <View style={s.payoutDivider} />
+
+//                         <View style={{ gap: 6 }}>
+//                           <PayoutRow label="Gateway" value={payout.gateway_display || payout.gateway_used} />
+//                           {!!payout.utr_number    && <PayoutRow label="UTR"      value={payout.utr_number} mono />}
+//                           {!!payout.bank_reference && <PayoutRow label="Bank Ref" value={payout.bank_reference} mono />}
+//                           {!!payout.description   && <PayoutRow label="Note"     value={payout.description} />}
+//                         </View>
+//                       </View>
+//                     );
+//                   })}
+//                 </View>
+//               ) : (
+//                 <EmptyState icon="time-outline" title="No settlements yet" sub="Your payouts will appear here once processed" />
+//               )}
+//             </View>
+//           </>
+//         )}
+
+//         <View style={{ height: 40 }} />
+//       </ScrollView>
+//     </MainLayout>
+//   );
+// }
+
+// // ── Small helpers ─────────────────────────────────────────────────────────────
+
+// const PayoutRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
+//   <View style={pr.row}>
+//     <Text style={pr.label}>{label}</Text>
+//     <Text style={[pr.value, mono && pr.mono]} numberOfLines={1}>{value}</Text>
+//   </View>
+// );
+
+// const pr = StyleSheet.create({
+//   row:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+//   label: { fontSize: 12, color: '#9ca3af', fontWeight: '500' },
+//   value: { fontSize: 13, color: '#111827', fontWeight: '600', maxWidth: '65%', textAlign: 'right' },
+//   mono:  { fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 12 },
+// });
+
+// const EmptyState: React.FC<{ icon: any; title: string; sub: string }> = ({ icon, title, sub }) => (
+//   <View style={e.wrap}>
+//     <View style={e.iconWrap}>
+//       <Ionicons name={icon} size={32} color="#d1d5db" />
+//     </View>
+//     <Text style={e.title}>{title}</Text>
+//     <Text style={e.sub}>{sub}</Text>
+//   </View>
+// );
+
+// const e = StyleSheet.create({
+//   wrap:     { alignItems: 'center', paddingVertical: 40, gap: 10 },
+//   iconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f9fafb', alignItems: 'center', justifyContent: 'center' },
+//   title:    { fontSize: 15, fontWeight: '700', color: '#374151' },
+//   sub:      { fontSize: 13, color: '#9ca3af', textAlign: 'center' },
+// });
+
+// // ── Styles ────────────────────────────────────────────────────────────────────
+
+// const s = StyleSheet.create({
+//   screen:           { flex: 1, backgroundColor: '#f1f5f9' },
+
+//   // Loading
+//   loadingWrap:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
+//   loadingIconWrap:  { width: 64, height: 64, borderRadius: 32, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+//   loadingTitle:     { fontSize: 17, fontWeight: '800', color: '#111827' },
+//   loadingSubtitle:  { fontSize: 13, color: '#9ca3af' },
+
+//   // Page header
+//   pageHeader:       { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+//   pageHeaderIcon:   { width: 42, height: 42, borderRadius: 21, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+//   pageTitle:        { fontSize: 17, fontWeight: '900', color: '#111827' },
+//   pageSubtitle:     { fontSize: 12, color: '#9ca3af', marginTop: 1 },
+//   readyBadge:       { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#dcfce7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#86efac' },
+//   readyDot:         { width: 7, height: 7, borderRadius: 4, backgroundColor: '#059669' },
+//   readyText:        { fontSize: 11, fontWeight: '800', color: '#065f46' },
+
+//   // Tabs
+//   tabs:             { flexDirection: 'row', backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 10, gap: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+//   tab:              { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 9, backgroundColor: '#f9fafb' },
+//   tabActive:        { backgroundColor: '#eff6ff', ...SHADOW },
+//   tabLabel:         { fontSize: 12, fontWeight: '700', color: '#9ca3af' },
+//   tabLabelActive:   { color: '#3b82f6' },
+
+//   // Stats
+//   statsRow:         { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 16 },
+//   statCard:         { flex: 1, backgroundColor: 'white', borderRadius: 12, padding: 14, borderLeftWidth: 3, ...SHADOW },
+//   statLabel:        { fontSize: 11, fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 },
+//   statVal:          { fontSize: 20, fontWeight: '900', marginBottom: 3 },
+//   statSub:          { fontSize: 11, color: '#9ca3af' },
+
+//   // Section head
+//   sectionHead:      { paddingHorizontal: 16, marginTop: 20, marginBottom: 10 },
+//   sectionTitle:     { fontSize: 14, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 },
+
+//   // Gateway cards
+//   gatewayCard:      { backgroundColor: 'white', borderRadius: 14, padding: 16, marginHorizontal: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', ...SHADOW },
+//   gatewayCardActive: { borderColor: '#3b82f6', borderWidth: 1.5 },
+//   gatewayTop:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+//   gatewayLeft:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+//   gatewayIconWrap:  { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+//   gatewayName:      { fontSize: 16, fontWeight: '800', color: '#111827' },
+//   gatewayTag:       { fontSize: 11, color: '#9ca3af', marginTop: 1 },
+//   gStatusPill:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
+//   gStatusDot:       { width: 6, height: 6, borderRadius: 3 },
+//   gStatusText:      { fontSize: 11, fontWeight: '800' },
+//   accountRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f9fafb', borderRadius: 8, padding: 10, marginBottom: 14 },
+//   accountId:        { fontSize: 12, color: '#6b7280', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+//   gatewayActions:   {},
+//   actionRow:        { flexDirection: 'row', gap: 8 },
+
+//   // Buttons
+//   primaryBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: '#3b82f6', paddingVertical: 12, borderRadius: 10 },
+//   primaryBtnText:   { fontSize: 14, fontWeight: '700', color: 'white' },
+//   secondaryBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#eff6ff', borderWidth: 1.5, borderColor: '#3b82f6', paddingVertical: 11, borderRadius: 10 },
+//   secondaryBtnText: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
+//   connectedBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#f0fdf4', borderWidth: 1.5, borderColor: '#86efac', paddingVertical: 11, borderRadius: 10 },
+//   connectedBtnText: { fontSize: 13, fontWeight: '700', color: '#059669' },
+
+//   // Cashfree coming soon
+//   comingSoonBadge:  { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fcd34d', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, marginBottom: 10 },
+//   comingSoonText:   { fontSize: 11, fontWeight: '700', color: '#92400e' },
+//   comingSoonDesc:   { fontSize: 12, color: '#9ca3af', lineHeight: 18, marginBottom: 12 },
+
+//   // How it works
+//   howCard:          { backgroundColor: 'white', borderRadius: 14, padding: 16, marginHorizontal: 16, marginTop: 4, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', ...SHADOW },
+//   howHead:          { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+//   howTitle:         { fontSize: 14, fontWeight: '800', color: '#111827' },
+//   howRow:           { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+//   howIconWrap:      { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+//   howText:          { flex: 1, fontSize: 13, color: '#374151', lineHeight: 18 },
+
+//   // List card (transactions / settlements)
+//   listCard:         { backgroundColor: 'white', borderRadius: 14, padding: 16, marginHorizontal: 16, marginTop: 4, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', ...SHADOW },
+//   listTitle:        { fontSize: 15, fontWeight: '800', color: '#111827', marginBottom: 14 },
+
+//   // Table
+//   tHead:            { flexDirection: 'row', backgroundColor: '#f9fafb', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 8, marginBottom: 4 },
+//   tHeadCell:        { fontSize: 11, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' },
+//   tRow:             { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' },
+//   tRowAlt:          { backgroundColor: '#fafafa' },
+//   tCell:            { fontSize: 12, color: '#374151' },
+
+//   // Pill (status badge)
+//   pill:             { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+//   pillText:         { fontSize: 11, fontWeight: '700' },
+
+//   // Payout card
+//   payoutCard:       { backgroundColor: '#f9fafb', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#e5e7eb' },
+//   payoutTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+//   payoutAmount:     { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 2 },
+//   payoutDate:       { fontSize: 12, color: '#9ca3af' },
+//   payoutDivider:    { height: 1, backgroundColor: '#e5e7eb', marginBottom: 10 },
+// });
 // src/screens/payments/PaymentsScreen.tsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Platform,
+  ActivityIndicator, RefreshControl, Platform, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../constants/colors';
+import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../../config/api';
 import MainLayout from '../../components/layout/MainLayout';
 import RazorpaySetupModal from '../../components/RazorpaySetupModal';
+import { usePayment } from '../../context/PaymentContext';
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface GatewayInfo {
-  connected: boolean;
-  verified: boolean;
-  status: string;
-  account_id?: string;
-}
-
-interface GatewayStatus {
-  razorpay: GatewayInfo;
-  cashfree: GatewayInfo;
-  primary_gateway: string | null;
-  is_ready: boolean;
-}
 
 interface Payout {
   id: number;
@@ -54,86 +718,145 @@ interface Transaction {
 
 type Tab = 'overview' | 'transactions' | 'settlements';
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const SHADOW = Platform.select({
-  ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8 },
-  android: { elevation: 3 },
+const SHADOW_SM = Platform.select({
+  ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+  android: { elevation: 2 },
+});
+const SHADOW_MD = Platform.select({
+  ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 12 },
+  android: { elevation: 5 },
 });
 
-const DEFAULT_GATEWAY: GatewayStatus = {
-  razorpay: { connected: false, verified: false, status: 'pending' },
-  cashfree: { connected: false, verified: false, status: 'pending' },
-  primary_gateway: null,
-  is_ready: false,
+const fmt    = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtShort = (n: number) => n >= 100000
+  ? `₹${(n / 100000).toFixed(1)}L`
+  : n >= 1000 ? `₹${(n / 1000).toFixed(1)}K` : `₹${fmt(n)}`;
+
+const statusConfig = (s: string) => {
+  switch (s) {
+    case 'success':  return { text: '#065f46', bg: '#ecfdf5', border: '#6ee7b7', icon: 'checkmark-circle', label: 'Success' };
+    case 'pending':  return { text: '#92400e', bg: '#fffbeb', border: '#fcd34d', icon: 'time',              label: 'Pending' };
+    case 'failed':   return { text: '#991b1b', bg: '#fef2f2', border: '#fca5a5', icon: 'close-circle',     label: 'Failed'  };
+    default:         return { text: '#374151', bg: '#f3f4f6', border: '#d1d5db', icon: 'ellipse-outline',  label: s        };
+  }
 };
 
-const statusColor = (s: string) => ({
-  text:   s === 'success' ? '#065f46' : s === 'pending' ? '#92400e' : '#991b1b',
-  bg:     s === 'success' ? '#dcfce7' : s === 'pending' ? '#fef3c7' : '#fee2e2',
-  border: s === 'success' ? '#86efac' : s === 'pending' ? '#fcd34d' : '#fca5a5',
-});
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatDateShort = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+const PulseDot: React.FC<{ color: string }> = ({ color }) => {
+  const anim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1.8, duration: 900, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1,   duration: 900, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <View style={{ width: 10, height: 10, alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.View style={{
+        position: 'absolute', width: 10, height: 10, borderRadius: 5,
+        backgroundColor: color, opacity: 0.3, transform: [{ scale: anim }],
+      }} />
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+    </View>
+  );
+};
 
 const Toast: React.FC<{ msg: string; type: 'success' | 'error' }> = ({ msg, type }) => (
-  <View style={[t.toast, type === 'success' ? t.toastSuccess : t.toastError]}>
-    <Ionicons
-      name={type === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-      size={16}
-      color={type === 'success' ? '#065f46' : '#991b1b'}
-    />
-    <Text style={[t.toastText, { color: type === 'success' ? '#065f46' : '#991b1b' }]}>{msg}</Text>
+  <View style={[ts.toast, type === 'success' ? ts.toastSuccess : ts.toastError]}>
+    <Ionicons name={type === 'success' ? 'checkmark-circle' : 'alert-circle'} size={16}
+      color={type === 'success' ? '#059669' : '#dc2626'} />
+    <Text style={[ts.toastText, { color: type === 'success' ? '#065f46' : '#991b1b' }]}>{msg}</Text>
   </View>
 );
-
-const t = StyleSheet.create({
-  toast:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1 },
-  toastSuccess: { backgroundColor: '#f0fdf4', borderColor: '#86efac' },
+const ts = StyleSheet.create({
+  toast:        { flexDirection: 'row', alignItems: 'center', gap: 8, mx: 16, marginHorizontal: 16, marginTop: 10, padding: 13, borderRadius: 12, borderWidth: 1 },
+  toastSuccess: { backgroundColor: '#ecfdf5', borderColor: '#6ee7b7' },
   toastError:   { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
   toastText:    { flex: 1, fontSize: 13, fontWeight: '600' },
 });
 
-// ── Main Component ────────────────────────────────────────────────────────────
+const StatusPill: React.FC<{ status: string; small?: boolean }> = ({ status, small }) => {
+  const c = statusConfig(status);
+  return (
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: small ? 7 : 10, paddingVertical: small ? 3 : 5, borderRadius: 99, borderWidth: 1, backgroundColor: c.bg, borderColor: c.border }]}>
+      <Ionicons name={c.icon as any} size={small ? 10 : 12} color={c.text} />
+      <Text style={{ fontSize: small ? 10 : 11, fontWeight: '700', color: c.text }}>{c.label}</Text>
+    </View>
+  );
+};
+
+const EmptyState: React.FC<{ icon: any; title: string; sub: string; action?: { label: string; onPress: () => void } }> = ({ icon, title, sub, action }) => (
+  <View style={em.wrap}>
+    <View style={em.iconCircle}>
+      <Ionicons name={icon} size={30} color="#cbd5e1" />
+    </View>
+    <Text style={em.title}>{title}</Text>
+    <Text style={em.sub}>{sub}</Text>
+    {action && (
+      <TouchableOpacity style={em.btn} onPress={action.onPress} activeOpacity={0.8}>
+        <Text style={em.btnText}>{action.label}</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
+const em = StyleSheet.create({
+  wrap:       { alignItems: 'center', paddingVertical: 48, gap: 10 },
+  iconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  title:      { fontSize: 16, fontWeight: '800', color: '#1e293b' },
+  sub:        { fontSize: 13, color: '#94a3b8', textAlign: 'center', maxWidth: 220, lineHeight: 19 },
+  btn:        { marginTop: 6, backgroundColor: '#3b82f6', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
+  btnText:    { color: 'white', fontWeight: '700', fontSize: 13 },
+});
+
+// ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function PaymentsScreen({ navigation }: { navigation: any }) {
-  const [activeTab, setActiveTab]             = useState<Tab>('overview');
-  const [gatewayStatus, setGatewayStatus]     = useState<GatewayStatus>(DEFAULT_GATEWAY);
-  const [payouts, setPayouts]                 = useState<Payout[]>([]);
-  const [transactions, setTransactions]       = useState<Transaction[]>([]);
-  const [loading, setLoading]                 = useState(true);
-  const [refreshing, setRefreshing]           = useState(false);
-  const [successMsg, setSuccessMsg]           = useState('');
-  const [errorMsg, setErrorMsg]               = useState('');
-  const [razorpayModal, setRazorpayModal]     = useState(false);
-  const [editMode, setEditMode]               = useState(false);
+  const { gatewayStatus, refreshGatewayStatus } = usePayment();
 
-  // ── Data ──────────────────────────────────────────────────────────────────
+  const [activeTab,      setActiveTab]      = useState<Tab>('overview');
+  const [payouts,        setPayouts]        = useState<Payout[]>([]);
+  const [transactions,   setTransactions]   = useState<Transaction[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [successMsg,     setSuccessMsg]     = useState('');
+  const [errorMsg,       setErrorMsg]       = useState('');
+  const [razorpayModal,  setRazorpayModal]  = useState(false);
+  const [editMode,       setEditMode]       = useState(false);
+  const [txFilter,       setTxFilter]       = useState<'all' | 'success' | 'pending' | 'failed'>('all');
+
+  // ── Fetch ────────────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [statusRes, settlementsRes, txnRes] = await Promise.allSettled([
-        api.getGatewayStatus(),
+      const [settlementsRes, txnRes] = await Promise.allSettled([
         api.getLiveSettlements(),
         api.getTransactions(),
       ]);
-
-      setGatewayStatus(statusRes.status === 'fulfilled' ? statusRes.value : DEFAULT_GATEWAY);
+      await refreshGatewayStatus();
 
       if (settlementsRes.status === 'fulfilled') {
-        const d = settlementsRes.value;
+        const d   = settlementsRes.value;
         const arr = d?.settlements || d?.items || d?.payouts || d || [];
         setPayouts(Array.isArray(arr) ? arr : []);
-      } else { setPayouts([]); }
+      } else setPayouts([]);
 
       if (txnRes.status === 'fulfilled') {
-        const d = txnRes.value;
+        const d   = txnRes.value;
         const arr = d?.transactions || d?.items || d || [];
         setTransactions(Array.isArray(arr) ? arr : []);
-      } else { setTransactions([]); }
+      } else setTransactions([]);
 
       setErrorMsg('');
     } catch {
@@ -142,20 +865,20 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
       setRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [refreshGatewayStatus]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
     if (!successMsg) return;
-    const t = setTimeout(() => setSuccessMsg(''), 3000);
-    return () => clearTimeout(t);
+    const id = setTimeout(() => setSuccessMsg(''), 3000);
+    return () => clearTimeout(id);
   }, [successMsg]);
 
   useEffect(() => {
     if (!errorMsg) return;
-    const t = setTimeout(() => setErrorMsg(''), 5000);
-    return () => clearTimeout(t);
+    const id = setTimeout(() => setErrorMsg(''), 5000);
+    return () => clearTimeout(id);
   }, [errorMsg]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -165,49 +888,50 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
   const closeRazorpay = useCallback(() => { setRazorpayModal(false); setEditMode(false); }, []);
 
   const onRazorpaySuccess = useCallback(() => {
-    setSuccessMsg(editMode ? 'Razorpay keys updated successfully!' : 'Connected to Razorpay!');
+    setSuccessMsg(editMode ? 'Razorpay keys updated!' : 'Razorpay connected!');
     setEditMode(false);
     fetchData();
   }, [editMode, fetchData]);
 
   // ── Memos ─────────────────────────────────────────────────────────────────
 
+  const txnSummary = useMemo(() => ({
+    totalSales:  transactions.reduce((n, t) => n + parseFloat(t.amount     || '0'), 0),
+    commission:  transactions.reduce((n, t) => n + parseFloat(t.commission || '0'), 0),
+    netEarnings: transactions.reduce((n, t) => n + parseFloat(t.net_amount || '0'), 0),
+    count:       transactions.length,
+  }), [transactions]);
+
   const payoutSummary = useMemo(() => {
-    const byStatus = (s: string) => payouts.filter(p => p.status === s);
-    const sum      = (arr: Payout[]) => arr.reduce((n, p) => n + parseFloat(p.amount || '0'), 0);
-    const success  = byStatus('success');
-    const pending  = byStatus('pending');
-    const failed   = byStatus('failed');
+    const by  = (s: string) => payouts.filter(p => p.status === s);
+    const sum = (arr: Payout[]) => arr.reduce((n, p) => n + parseFloat(p.amount || '0'), 0);
+    const ok  = by('success'), pend = by('pending'), fail = by('failed');
     return {
-      successCount: success.length, successAmt: sum(success),
-      pendingCount: pending.length, pendingAmt: sum(pending),
-      failedCount:  failed.length,  failedAmt:  sum(failed),
-      total: sum(payouts),
+      successAmt: sum(ok),   successCount: ok.length,
+      pendingAmt: sum(pend), pendingCount: pend.length,
+      failedAmt:  sum(fail), failedCount:  fail.length,
     };
   }, [payouts]);
 
-  const txnSummary = useMemo(() => ({
-    totalSales:    transactions.reduce((n, t) => n + parseFloat(t.amount     || '0'), 0),
-    commission:    transactions.reduce((n, t) => n + parseFloat(t.commission || '0'), 0),
-    netEarnings:   transactions.reduce((n, t) => n + parseFloat(t.net_amount || '0'), 0),
-    count:         transactions.length,
-  }), [transactions]);
+  const filteredTxns = useMemo(() =>
+    txFilter === 'all' ? transactions : transactions.filter(t => t.status === txFilter),
+  [transactions, txFilter]);
+
+  const rp = gatewayStatus.razorpay;
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
   if (loading) return (
     <MainLayout navigation={navigation} currentTab="payments" headerTitle="Payments">
       <View style={s.loadingWrap}>
-        <View style={s.loadingIconWrap}>
+        <LinearGradient colors={['#eff6ff', '#dbeafe']} style={s.loadingIcon}>
           <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
+        </LinearGradient>
         <Text style={s.loadingTitle}>Loading Payments</Text>
-        <Text style={s.loadingSubtitle}>Fetching your payment data...</Text>
+        <Text style={s.loadingSubtitle}>Fetching your financial data...</Text>
       </View>
     </MainLayout>
   );
-
-  const rp = gatewayStatus.razorpay;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -225,33 +949,61 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor="#3b82f6" />}
       >
-        {/* ── Page header ── */}
-        <View style={s.pageHeader}>
-          <View style={s.pageHeaderIcon}>
-            <Ionicons name="card-outline" size={22} color="#3b82f6" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.pageTitle}>Payment Gateways</Text>
-            <Text style={s.pageSubtitle}>Manage payments, transactions & settlements</Text>
-          </View>
-          {gatewayStatus.is_ready && (
-            <View style={s.readyBadge}>
-              <View style={s.readyDot} />
-              <Text style={s.readyText}>Live</Text>
+
+        {/* ── Hero Banner ── */}
+        <LinearGradient
+          colors={['#1e40af', '#3b82f6', '#60a5fa']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={s.hero}
+        >
+          {/* Top row */}
+          <View style={s.heroTop}>
+            <View>
+              <Text style={s.heroLabel}>Total Earnings</Text>
+              <Text style={s.heroAmount}>₹{fmt(txnSummary.netEarnings)}</Text>
             </View>
-          )}
-        </View>
+            {gatewayStatus.is_ready ? (
+              <View style={s.liveBadge}>
+                <PulseDot color="#10b981" />
+                <Text style={s.liveBadgeText}>Live</Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={s.setupBadge} onPress={openRazorpay} activeOpacity={0.85}>
+                <Ionicons name="warning-outline" size={13} color="#f59e0b" />
+                <Text style={s.setupBadgeText}>Setup Required</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* 3 mini stats */}
+          <View style={s.heroStats}>
+            <View style={s.heroStat}>
+              <Text style={s.heroStatVal}>{fmtShort(txnSummary.totalSales)}</Text>
+              <Text style={s.heroStatLabel}>Sales</Text>
+            </View>
+            <View style={s.heroStatDivider} />
+            <View style={s.heroStat}>
+              <Text style={s.heroStatVal}>{txnSummary.count}</Text>
+              <Text style={s.heroStatLabel}>Orders</Text>
+            </View>
+            <View style={s.heroStatDivider} />
+            <View style={s.heroStat}>
+              <Text style={s.heroStatVal}>{fmtShort(payoutSummary.pendingAmt)}</Text>
+              <Text style={s.heroStatLabel}>Pending</Text>
+            </View>
+          </View>
+        </LinearGradient>
 
         {/* ── Toasts ── */}
         {!!successMsg && <Toast msg={successMsg} type="success" />}
         {!!errorMsg   && <Toast msg={errorMsg}   type="error" />}
 
         {/* ── Tab bar ── */}
-        <View style={s.tabs}>
+        <View style={s.tabBar}>
           {([
-            { key: 'overview',      label: 'Overview',      icon: 'grid-outline' },
-            { key: 'transactions',  label: 'Transactions',  icon: 'swap-horizontal-outline' },
-            { key: 'settlements',   label: 'Settlements',   icon: 'wallet-outline' },
+            { key: 'overview',     label: 'Overview',      icon: 'grid-outline'             },
+            { key: 'transactions', label: 'Transactions',  icon: 'swap-horizontal-outline'  },
+            { key: 'settlements',  label: 'Settlements',   icon: 'wallet-outline'           },
           ] as { key: Tab; label: string; icon: any }[]).map(tab => (
             <TouchableOpacity
               key={tab.key}
@@ -259,418 +1011,380 @@ export default function PaymentsScreen({ navigation }: { navigation: any }) {
               onPress={() => setActiveTab(tab.key)}
               activeOpacity={0.8}
             >
-              <Ionicons
-                name={tab.icon}
-                size={16}
-                color={activeTab === tab.key ? '#3b82f6' : '#9ca3af'}
-              />
-              <Text style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>
-                {tab.label}
-              </Text>
+              <Ionicons name={tab.icon} size={15} color={activeTab === tab.key ? '#3b82f6' : '#94a3b8'} />
+              <Text style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>{tab.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ════════════════════ OVERVIEW ════════════════════ */}
+        {/* ════════ OVERVIEW ════════ */}
         {activeTab === 'overview' && (
-          <>
-            {/* Summary stats */}
-            <View style={s.statsRow}>
-              <View style={[s.statCard, { borderLeftColor: '#3b82f6' }]}>
-                <Text style={s.statLabel}>Total Sales</Text>
-                <Text style={[s.statVal, { color: '#3b82f6' }]}>₹{fmt(txnSummary.totalSales)}</Text>
-                <Text style={s.statSub}>{txnSummary.count} orders</Text>
-              </View>
-              <View style={[s.statCard, { borderLeftColor: '#059669' }]}>
-                <Text style={s.statLabel}>Net Earnings</Text>
-                <Text style={[s.statVal, { color: '#059669' }]}>₹{fmt(txnSummary.netEarnings)}</Text>
-                <Text style={s.statSub}>After commission</Text>
-              </View>
+          <View style={s.section}>
+
+            {/* Quick stats row */}
+            <View style={s.quickStats}>
+              <QuickStat label="Net Earned"  value={fmtShort(txnSummary.netEarnings)} color="#059669" icon="trending-up-outline" />
+              <QuickStat label="Commission"  value={fmtShort(txnSummary.commission)}  color="#dc2626" icon="remove-circle-outline" />
+              <QuickStat label="Settled"     value={fmtShort(payoutSummary.successAmt)} color="#7c3aed" icon="checkmark-done-outline" />
             </View>
 
-            {/* Gateway cards */}
-            <View style={s.sectionHead}>
-              <Text style={s.sectionTitle}>Payment Gateways</Text>
-            </View>
+            {/* Razorpay Gateway Card */}
+            <Text style={s.sectionLabel}>Payment Gateways</Text>
 
-            {/* Razorpay */}
-            <View style={[s.gatewayCard, rp.verified && s.gatewayCardActive]}>
-              <View style={s.gatewayTop}>
-                <View style={s.gatewayLeft}>
-                  <View style={[s.gatewayIconWrap, { backgroundColor: '#eff6ff' }]}>
-                    <Ionicons name="card-outline" size={20} color="#3b82f6" />
-                  </View>
-                  <View>
-                    <Text style={s.gatewayName}>Razorpay</Text>
-                    <Text style={s.gatewayTag}>Online Payment Gateway</Text>
-                  </View>
+            <View style={[s.gatewayCard, rp.verified && s.gatewayCardLive]}>
+              {rp.verified && (
+                <View style={s.gatewayLiveBanner}>
+                  <PulseDot color="#059669" />
+                  <Text style={s.gatewayLiveText}>Gateway is Live & Accepting Payments</Text>
                 </View>
-                <View style={[s.gStatusPill, { backgroundColor: rp.verified ? '#dcfce7' : '#fef3c7', borderColor: rp.verified ? '#86efac' : '#fcd34d' }]}>
-                  <View style={[s.gStatusDot, { backgroundColor: rp.verified ? '#059669' : '#d97706' }]} />
-                  <Text style={[s.gStatusText, { color: rp.verified ? '#065f46' : '#92400e' }]}>
-                    {rp.verified ? 'Live' : rp.status?.toUpperCase() || 'PENDING'}
-                  </Text>
+              )}
+
+              <View style={s.gatewayBody}>
+                {/* Logo + name */}
+                <View style={s.gatewayLogoWrap}>
+                  <LinearGradient colors={['#dbeafe', '#eff6ff']} style={s.gatewayLogo}>
+                    <Ionicons name="card" size={22} color="#3b82f6" />
+                  </LinearGradient>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={s.gatewayName}>Razorpay</Text>
+                    <StatusPill status={rp.verified ? 'success' : 'pending'} small />
+                  </View>
+                  <Text style={s.gatewayTag}>Online Payments · UPI · Cards · NetBanking</Text>
                 </View>
               </View>
 
               {rp.account_id && (
-                <View style={s.accountRow}>
-                  <Ionicons name="id-card-outline" size={13} color="#9ca3af" />
-                  <Text style={s.accountId}>{rp.account_id}</Text>
+                <View style={s.accountChip}>
+                  <Ionicons name="id-card-outline" size={12} color="#64748b" />
+                  <Text style={s.accountChipText}>{rp.account_id}</Text>
                 </View>
               )}
 
-              <View style={s.gatewayActions}>
+              <View style={s.gatewayFooter}>
                 {!rp.connected ? (
-                  <TouchableOpacity style={s.primaryBtn} onPress={openRazorpay} activeOpacity={0.8}>
-                    <Ionicons name="link-outline" size={15} color="white" />
-                    <Text style={s.primaryBtnText}>Connect Razorpay</Text>
+                  <TouchableOpacity style={s.connectBtn} onPress={openRazorpay} activeOpacity={0.85}>
+                    <Ionicons name="link-outline" size={16} color="white" />
+                    <Text style={s.connectBtnText}>Connect Razorpay</Text>
                   </TouchableOpacity>
                 ) : (
-                  <View style={s.actionRow}>
-                    <TouchableOpacity style={[s.secondaryBtn, { flex: 1 }]} onPress={editRazorpay} activeOpacity={0.8}>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity style={s.editBtn} onPress={editRazorpay} activeOpacity={0.8}>
                       <Ionicons name="create-outline" size={14} color="#3b82f6" />
-                      <Text style={s.secondaryBtnText}>Edit Keys</Text>
+                      <Text style={s.editBtnText}>Edit Keys</Text>
                     </TouchableOpacity>
-                    <View style={[s.connectedBtn, { flex: 1 }]}>
-                      <Ionicons name="checkmark-circle-outline" size={14} color="#059669" />
-                      <Text style={s.connectedBtnText}>Connected</Text>
+                    <View style={s.connectedTag}>
+                      <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                      <Text style={s.connectedTagText}>Connected</Text>
                     </View>
                   </View>
                 )}
               </View>
             </View>
 
-            {/* Cashfree */}
-            <View style={[s.gatewayCard, { opacity: 0.65 }]}>
-              <View style={s.comingSoonBadge}>
-                <Ionicons name="time-outline" size={12} color="#92400e" />
-                <Text style={s.comingSoonText}>Coming Soon</Text>
-              </View>
-              <View style={s.gatewayTop}>
-                <View style={s.gatewayLeft}>
-                  <View style={[s.gatewayIconWrap, { backgroundColor: '#f0fdf4' }]}>
-                    <Ionicons name="card-outline" size={20} color="#10b981" />
-                  </View>
-                  <View>
-                    <Text style={s.gatewayName}>Cashfree</Text>
-                    <Text style={s.gatewayTag}>Payouts & Settlements</Text>
-                  </View>
+            {/* Cashfree — Coming Soon */}
+            <View style={s.cashfreeCard}>
+              <View style={s.cashfreeLeft}>
+                <View style={s.cashfreeLogo}>
+                  <Ionicons name="flash-outline" size={20} color="#10b981" />
                 </View>
-                <View style={[s.gStatusPill, { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb' }]}>
-                  <View style={[s.gStatusDot, { backgroundColor: '#9ca3af' }]} />
-                  <Text style={[s.gStatusText, { color: '#6b7280' }]}>Soon</Text>
+                <View>
+                  <Text style={s.gatewayName}>Cashfree</Text>
+                  <Text style={s.gatewayTag}>Payouts & Settlements</Text>
                 </View>
               </View>
-              <Text style={s.comingSoonDesc}>
-                Automatic weekly payouts directly to your bank account — launching soon.
-              </Text>
-              <View style={[s.primaryBtn, { backgroundColor: '#e5e7eb' }]}>
-                <Ionicons name="hourglass-outline" size={14} color="#9ca3af" />
-                <Text style={[s.primaryBtnText, { color: '#9ca3af' }]}>Not Available Yet</Text>
+              <View style={s.soonPill}>
+                <Text style={s.soonText}>Coming Soon</Text>
               </View>
             </View>
 
             {/* How it works */}
+            <Text style={s.sectionLabel}>How It Works</Text>
             <View style={s.howCard}>
-              <View style={s.howHead}>
-                <Ionicons name="information-circle-outline" size={18} color="#3b82f6" />
-                <Text style={s.howTitle}>How Settlements Work</Text>
-              </View>
               {[
-                { icon: 'flash-outline',          color: '#3b82f6', text: 'Instant Payouts directly to your account' },
-                { icon: 'trending-up-outline',    color: '#059669', text: '0% Commission — keep 100% of sales' },
-                { icon: 'bar-chart-outline',      color: '#7c3aed', text: 'Real-time tracking for all transactions' },
-                { icon: 'shield-checkmark-outline', color: '#10b981', text: 'Bank-grade security & encryption' },
-                { icon: 'phone-portrait-outline', color: '#f59e0b', text: 'Mobile-first payments management' },
-              ].map((item, i) => (
-                <View key={i} style={s.howRow}>
-                  <View style={[s.howIconWrap, { backgroundColor: item.color + '15' }]}>
-                    <Ionicons name={item.icon as any} size={15} color={item.color} />
+                { icon: 'storefront-outline',     color: '#3b82f6', title: 'Customer places order',       sub: 'Payment processed via Razorpay' },
+                { icon: 'card-outline',            color: '#7c3aed', title: 'Amount secured',              sub: 'Funds held in your Razorpay account' },
+                { icon: 'arrow-down-circle-outline', color: '#059669', title: 'Settled to your bank',     sub: 'Typically within 1–3 business days' },
+              ].map((step, i) => (
+                <View key={i} style={s.howStep}>
+                  <View style={[s.howStepIcon, { backgroundColor: step.color + '18' }]}>
+                    <Ionicons name={step.icon as any} size={18} color={step.color} />
                   </View>
-                  <Text style={s.howText}>{item.text}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.howStepTitle}>{step.title}</Text>
+                    <Text style={s.howStepSub}>{step.sub}</Text>
+                  </View>
+                  {i < 2 && <View style={s.howConnector} />}
                 </View>
               ))}
             </View>
-          </>
+          </View>
         )}
 
-        {/* ════════════════════ TRANSACTIONS ════════════════════ */}
+        {/* ════════ TRANSACTIONS ════════ */}
         {activeTab === 'transactions' && (
-          <>
-            {/* Summary */}
-            <View style={s.statsRow}>
-              <View style={[s.statCard, { borderLeftColor: '#3b82f6' }]}>
-                <Text style={s.statLabel}>Total Sales</Text>
-                <Text style={[s.statVal, { color: '#3b82f6' }]}>₹{fmt(txnSummary.totalSales)}</Text>
-                <Text style={s.statSub}>{txnSummary.count} transactions</Text>
-              </View>
-              <View style={[s.statCard, { borderLeftColor: '#dc2626' }]}>
-                <Text style={s.statLabel}>Commission</Text>
-                <Text style={[s.statVal, { color: '#dc2626' }]}>₹{fmt(txnSummary.commission)}</Text>
-                <Text style={s.statSub}>Platform fee</Text>
-              </View>
+          <View style={s.section}>
+
+            {/* Summary cards */}
+            <View style={s.summaryRow}>
+              <SummaryCard label="Total Sales" value={fmt(txnSummary.totalSales)} accent="#3b82f6" sub={`${txnSummary.count} orders`} />
+              <SummaryCard label="Net Earned"  value={fmt(txnSummary.netEarnings)} accent="#059669" sub="After fee" />
             </View>
-            <View style={[s.statsRow, { marginTop: 0 }]}>
-              <View style={[s.statCard, { borderLeftColor: '#059669', flex: 1 }]}>
-                <Text style={s.statLabel}>Net Earnings</Text>
-                <Text style={[s.statVal, { color: '#059669' }]}>₹{fmt(txnSummary.netEarnings)}</Text>
-                <Text style={s.statSub}>After all deductions</Text>
-              </View>
+            <View style={[s.summaryRow, { marginTop: 0 }]}>
+              <SummaryCard label="Platform Fee" value={fmt(txnSummary.commission)} accent="#dc2626" sub="Commission" fullWidth />
             </View>
 
-            {/* Table */}
-            <View style={s.listCard}>
-              <Text style={s.listTitle}>Transaction History</Text>
-              {transactions.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View>
-                    {/* Table header */}
-                    <View style={s.tHead}>
-                      {['Date', 'Order ID', 'Amount', 'Commission', 'Net', 'Gateway', 'Status'].map((h, i) => (
-                        <Text key={i} style={[s.tHeadCell, { width: [90, 110, 90, 90, 90, 90, 80][i] }]}>{h}</Text>
-                      ))}
+            {/* Filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+              {(['all', 'success', 'pending', 'failed'] as const).map(f => (
+                <TouchableOpacity
+                  key={f}
+                  style={[s.filterChip, txFilter === f && s.filterChipActive]}
+                  onPress={() => setTxFilter(f)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.filterChipText, txFilter === f && s.filterChipTextActive]}>
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {f !== 'all' && ` (${transactions.filter(t => t.status === f).length})`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Transaction cards */}
+            {filteredTxns.length > 0 ? (
+              <View style={s.cardList}>
+                {filteredTxns.map((tx, idx) => (
+                  <View key={tx.id} style={s.txCard}>
+                    <View style={s.txCardLeft}>
+                      <View style={s.txOrderIcon}>
+                        <Ionicons name="receipt-outline" size={15} color="#3b82f6" />
+                      </View>
+                      <View>
+                        <Text style={s.txOrderId}>#{tx.order_id.slice(0, 12)}</Text>
+                        <Text style={s.txDate}>{formatDateShort(tx.created_at)} · {tx.gateway}</Text>
+                      </View>
                     </View>
-                    {/* Rows */}
-                    {transactions.map((tx, idx) => {
-                      const sc = statusColor(tx.status);
-                      return (
-                        <View key={tx.id} style={[s.tRow, idx % 2 === 0 && s.tRowAlt]}>
-                          <Text style={[s.tCell, { width: 90 }]}>
-                            {new Date(tx.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                          </Text>
-                          <Text style={[s.tCell, { width: 110 }]} numberOfLines={1}>
-                            #{tx.order_id.slice(0, 10)}
-                          </Text>
-                          <Text style={[s.tCell, { width: 90, fontWeight: '700', color: '#111827' }]}>
-                            ₹{parseFloat(tx.amount).toLocaleString('en-IN')}
-                          </Text>
-                          <Text style={[s.tCell, { width: 90, color: '#dc2626' }]}>
-                            -₹{parseFloat(tx.commission).toLocaleString('en-IN')}
-                          </Text>
-                          <Text style={[s.tCell, { width: 90, fontWeight: '700', color: '#059669' }]}>
-                            ₹{parseFloat(tx.net_amount).toLocaleString('en-IN')}
-                          </Text>
-                          <Text style={[s.tCell, { width: 90 }]}>{tx.gateway}</Text>
-                          <View style={{ width: 80, justifyContent: 'center' }}>
-                            <View style={[s.pill, { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                              <Text style={[s.pillText, { color: sc.text }]}>{tx.status}</Text>
-                            </View>
-                          </View>
-                        </View>
-                      );
-                    })}
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      <Text style={s.txAmount}>₹{parseFloat(tx.amount).toLocaleString('en-IN')}</Text>
+                      <StatusPill status={tx.status} small />
+                    </View>
                   </View>
-                </ScrollView>
-              ) : (
-                <EmptyState icon="receipt-outline" title="No transactions yet" sub="Your sales transactions will appear here" />
-              )}
-            </View>
-          </>
+                ))}
+              </View>
+            ) : (
+              <EmptyState
+                icon="receipt-outline"
+                title="No transactions"
+                sub={txFilter === 'all' ? 'Your sales will appear here once orders come in' : `No ${txFilter} transactions`}
+              />
+            )}
+          </View>
         )}
 
-        {/* ════════════════════ SETTLEMENTS ════════════════════ */}
+        {/* ════════ SETTLEMENTS ════════ */}
         {activeTab === 'settlements' && (
-          <>
-            {/* Summary */}
-            <View style={s.statsRow}>
-              <View style={[s.statCard, { borderLeftColor: '#059669' }]}>
-                <Text style={s.statLabel}>Settled</Text>
-                <Text style={[s.statVal, { color: '#059669' }]}>₹{fmt(payoutSummary.successAmt)}</Text>
-                <Text style={s.statSub}>{payoutSummary.successCount} payouts</Text>
-              </View>
-              <View style={[s.statCard, { borderLeftColor: '#d97706' }]}>
-                <Text style={s.statLabel}>Pending</Text>
-                <Text style={[s.statVal, { color: '#d97706' }]}>₹{fmt(payoutSummary.pendingAmt)}</Text>
-                <Text style={s.statSub}>{payoutSummary.pendingCount} payouts</Text>
-              </View>
-            </View>
+          <View style={s.section}>
 
+            {/* Summary */}
+            <View style={s.summaryRow}>
+              <SummaryCard label="Settled" value={fmt(payoutSummary.successAmt)} accent="#059669" sub={`${payoutSummary.successCount} payouts`} />
+              <SummaryCard label="Pending" value={fmt(payoutSummary.pendingAmt)} accent="#d97706" sub={`${payoutSummary.pendingCount} pending`} />
+            </View>
             {payoutSummary.failedCount > 0 && (
-              <View style={[s.statsRow, { marginTop: 0 }]}>
-                <View style={[s.statCard, { borderLeftColor: '#dc2626', flex: 1 }]}>
-                  <Text style={s.statLabel}>Failed</Text>
-                  <Text style={[s.statVal, { color: '#dc2626' }]}>₹{fmt(payoutSummary.failedAmt)}</Text>
-                  <Text style={s.statSub}>{payoutSummary.failedCount} payouts</Text>
-                </View>
+              <View style={[s.summaryRow, { marginTop: 0 }]}>
+                <SummaryCard label="Failed" value={fmt(payoutSummary.failedAmt)} accent="#dc2626" sub={`${payoutSummary.failedCount} failed`} fullWidth />
               </View>
             )}
 
-            {/* Payout list */}
-            <View style={s.listCard}>
-              <Text style={s.listTitle}>Settlement History</Text>
-              {payouts.length > 0 ? (
-                <View style={{ gap: 12 }}>
-                  {payouts.map(payout => {
-                    const sc = statusColor(payout.status);
-                    return (
-                      <View key={payout.id} style={s.payoutCard}>
-                        <View style={s.payoutTop}>
-                          <View>
-                            <Text style={s.payoutAmount}>₹{parseFloat(payout.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                            <Text style={s.payoutDate}>
-                              {new Date(payout.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </Text>
-                          </View>
-                          <View style={[s.pill, { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                            <Text style={[s.pillText, { color: sc.text }]}>
-                              {payout.status_display || payout.status}
-                            </Text>
-                          </View>
+            {/* Payout cards */}
+            {payouts.length > 0 ? (
+              <View style={s.cardList}>
+                {payouts.map(payout => {
+                  const sc = statusConfig(payout.status);
+                  return (
+                    <View key={payout.id} style={s.payoutCard}>
+                      <View style={s.payoutHeader}>
+                        <View>
+                          <Text style={s.payoutAmount}>₹{parseFloat(payout.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                          <Text style={s.payoutDate}>{formatDate(payout.created_at)}</Text>
                         </View>
-
-                        <View style={s.payoutDivider} />
-
-                        <View style={{ gap: 6 }}>
-                          <PayoutRow label="Gateway" value={payout.gateway_display || payout.gateway_used} />
-                          {!!payout.utr_number    && <PayoutRow label="UTR"      value={payout.utr_number} mono />}
-                          {!!payout.bank_reference && <PayoutRow label="Bank Ref" value={payout.bank_reference} mono />}
-                          {!!payout.description   && <PayoutRow label="Note"     value={payout.description} />}
-                        </View>
+                        <StatusPill status={payout.status} />
                       </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <EmptyState icon="time-outline" title="No settlements yet" sub="Your payouts will appear here once processed" />
-              )}
-            </View>
-          </>
+                      <View style={s.payoutDivider} />
+                      <View style={s.payoutMeta}>
+                        <MetaRow label="Via"      value={payout.gateway_display || payout.gateway_used} />
+                        {!!payout.utr_number    && <MetaRow label="UTR"      value={payout.utr_number}     mono />}
+                        {!!payout.bank_reference && <MetaRow label="Bank Ref" value={payout.bank_reference} mono />}
+                        {!!payout.description   && <MetaRow label="Note"     value={payout.description}              />}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <EmptyState
+                icon="wallet-outline"
+                title="No settlements yet"
+                sub="Payouts appear here once Razorpay processes your earnings"
+                action={!rp.connected ? { label: 'Connect Razorpay', onPress: openRazorpay } : undefined}
+              />
+            )}
+          </View>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 48 }} />
       </ScrollView>
     </MainLayout>
   );
 }
 
-// ── Small helpers ─────────────────────────────────────────────────────────────
+// ── Reusable sub-components ───────────────────────────────────────────────────
 
-const PayoutRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
-  <View style={pr.row}>
-    <Text style={pr.label}>{label}</Text>
-    <Text style={[pr.value, mono && pr.mono]} numberOfLines={1}>{value}</Text>
-  </View>
-);
-
-const pr = StyleSheet.create({
-  row:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  label: { fontSize: 12, color: '#9ca3af', fontWeight: '500' },
-  value: { fontSize: 13, color: '#111827', fontWeight: '600', maxWidth: '65%', textAlign: 'right' },
-  mono:  { fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 12 },
-});
-
-const EmptyState: React.FC<{ icon: any; title: string; sub: string }> = ({ icon, title, sub }) => (
-  <View style={e.wrap}>
-    <View style={e.iconWrap}>
-      <Ionicons name={icon} size={32} color="#d1d5db" />
+const QuickStat: React.FC<{ label: string; value: string; color: string; icon: any }> = ({ label, value, color, icon }) => (
+  <View style={[qs.card, { borderTopColor: color }]}>
+    <View style={[qs.iconWrap, { backgroundColor: color + '18' }]}>
+      <Ionicons name={icon} size={14} color={color} />
     </View>
-    <Text style={e.title}>{title}</Text>
-    <Text style={e.sub}>{sub}</Text>
+    <Text style={[qs.value, { color }]}>{value}</Text>
+    <Text style={qs.label}>{label}</Text>
+  </View>
+);
+const qs = StyleSheet.create({
+  card:    { flex: 1, backgroundColor: 'white', borderRadius: 12, padding: 12, borderTopWidth: 3, alignItems: 'center', gap: 4, ...SHADOW_SM },
+  iconWrap:{ width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  value:   { fontSize: 15, fontWeight: '900' },
+  label:   { fontSize: 10, color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+});
+
+const SummaryCard: React.FC<{ label: string; value: string; accent: string; sub: string; fullWidth?: boolean }> = ({ label, value, accent, sub, fullWidth }) => (
+  <View style={[sc.card, fullWidth && { flex: 1 }]}>
+    <View style={[sc.bar, { backgroundColor: accent }]} />
+    <View style={{ paddingLeft: 12 }}>
+      <Text style={sc.label}>{label}</Text>
+      <Text style={[sc.value, { color: accent }]}>₹{value}</Text>
+      <Text style={sc.sub}>{sub}</Text>
+    </View>
+  </View>
+);
+const sc = StyleSheet.create({
+  card:  { flex: 1, backgroundColor: 'white', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', ...SHADOW_SM },
+  bar:   { width: 4, height: 40, borderRadius: 2 },
+  label: { fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
+  value: { fontSize: 18, fontWeight: '900', marginBottom: 1 },
+  sub:   { fontSize: 11, color: '#94a3b8' },
+});
+
+const MetaRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: '500' }}>{label}</Text>
+    <Text style={{ fontSize: 12, color: '#1e293b', fontWeight: '600', maxWidth: '65%', textAlign: 'right',
+      fontFamily: mono ? (Platform.OS === 'ios' ? 'Courier' : 'monospace') : undefined,
+    }} numberOfLines={1}>{value}</Text>
   </View>
 );
 
-const e = StyleSheet.create({
-  wrap:     { alignItems: 'center', paddingVertical: 40, gap: 10 },
-  iconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f9fafb', alignItems: 'center', justifyContent: 'center' },
-  title:    { fontSize: 15, fontWeight: '700', color: '#374151' },
-  sub:      { fontSize: 13, color: '#9ca3af', textAlign: 'center' },
-});
-
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  screen:           { flex: 1, backgroundColor: '#f1f5f9' },
+  screen:       { flex: 1, backgroundColor: '#f1f5f9' },
 
   // Loading
-  loadingWrap:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
-  loadingIconWrap:  { width: 64, height: 64, borderRadius: 32, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
-  loadingTitle:     { fontSize: 17, fontWeight: '800', color: '#111827' },
-  loadingSubtitle:  { fontSize: 13, color: '#9ca3af' },
+  loadingWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
+  loadingIcon:  { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  loadingTitle: { fontSize: 17, fontWeight: '800', color: '#1e293b' },
+  loadingSubtitle: { fontSize: 13, color: '#94a3b8' },
 
-  // Page header
-  pageHeader:       { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'white', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  pageHeaderIcon:   { width: 42, height: 42, borderRadius: 21, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
-  pageTitle:        { fontSize: 17, fontWeight: '900', color: '#111827' },
-  pageSubtitle:     { fontSize: 12, color: '#9ca3af', marginTop: 1 },
-  readyBadge:       { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#dcfce7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#86efac' },
-  readyDot:         { width: 7, height: 7, borderRadius: 4, backgroundColor: '#059669' },
-  readyText:        { fontSize: 11, fontWeight: '800', color: '#065f46' },
+  // Hero
+  hero:         { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 28 },
+  heroTop:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+  heroLabel:    { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginBottom: 4 },
+  heroAmount:   { fontSize: 32, fontWeight: '900', color: 'white', letterSpacing: -0.5 },
+  liveBadge:    { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  liveBadgeText:{ fontSize: 12, fontWeight: '700', color: 'white' },
+  setupBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(245,158,11,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, borderWidth: 1, borderColor: 'rgba(245,158,11,0.4)' },
+  setupBadgeText:{ fontSize: 11, fontWeight: '700', color: '#fcd34d' },
+  heroStats:    { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: 14, gap: 0 },
+  heroStat:     { flex: 1, alignItems: 'center' },
+  heroStatVal:  { fontSize: 15, fontWeight: '900', color: 'white', marginBottom: 2 },
+  heroStatLabel:{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: '500' },
+  heroStatDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginVertical: 4 },
 
-  // Tabs
-  tabs:             { flexDirection: 'row', backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 10, gap: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  tab:              { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 9, backgroundColor: '#f9fafb' },
-  tabActive:        { backgroundColor: '#eff6ff', ...SHADOW },
-  tabLabel:         { fontSize: 12, fontWeight: '700', color: '#9ca3af' },
-  tabLabelActive:   { color: '#3b82f6' },
+  // Tab bar
+  tabBar:       { flexDirection: 'row', backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 8, gap: 6, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', ...SHADOW_SM },
+  tab:          { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 10, backgroundColor: '#f8fafc' },
+  tabActive:    { backgroundColor: '#eff6ff' },
+  tabLabel:     { fontSize: 11, fontWeight: '700', color: '#94a3b8' },
+  tabLabelActive: { color: '#3b82f6' },
 
-  // Stats
-  statsRow:         { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 16 },
-  statCard:         { flex: 1, backgroundColor: 'white', borderRadius: 12, padding: 14, borderLeftWidth: 3, ...SHADOW },
-  statLabel:        { fontSize: 11, fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 },
-  statVal:          { fontSize: 20, fontWeight: '900', marginBottom: 3 },
-  statSub:          { fontSize: 11, color: '#9ca3af' },
+  // Section
+  section:      { paddingTop: 16, gap: 0 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: 16, marginBottom: 10, marginTop: 6 },
 
-  // Section head
-  sectionHead:      { paddingHorizontal: 16, marginTop: 20, marginBottom: 10 },
-  sectionTitle:     { fontSize: 14, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 },
+  // Quick stats
+  quickStats:   { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 20 },
+
+  // Summary cards
+  summaryRow:   { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 10 },
 
   // Gateway cards
-  gatewayCard:      { backgroundColor: 'white', borderRadius: 14, padding: 16, marginHorizontal: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', ...SHADOW },
-  gatewayCardActive: { borderColor: '#3b82f6', borderWidth: 1.5 },
-  gatewayTop:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  gatewayLeft:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  gatewayIconWrap:  { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  gatewayName:      { fontSize: 16, fontWeight: '800', color: '#111827' },
-  gatewayTag:       { fontSize: 11, color: '#9ca3af', marginTop: 1 },
-  gStatusPill:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
-  gStatusDot:       { width: 6, height: 6, borderRadius: 3 },
-  gStatusText:      { fontSize: 11, fontWeight: '800' },
-  accountRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f9fafb', borderRadius: 8, padding: 10, marginBottom: 14 },
-  accountId:        { fontSize: 12, color: '#6b7280', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  gatewayActions:   {},
-  actionRow:        { flexDirection: 'row', gap: 8 },
+  gatewayCard:  { backgroundColor: 'white', borderRadius: 16, marginHorizontal: 16, marginBottom: 12, borderWidth: 1.5, borderColor: '#e2e8f0', overflow: 'hidden', ...SHADOW_MD },
+  gatewayCardLive: { borderColor: '#3b82f6' },
+  gatewayLiveBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f0fdf4', paddingHorizontal: 16, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#bbf7d0' },
+  gatewayLiveText: { fontSize: 12, fontWeight: '700', color: '#059669' },
+  gatewayBody:  { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, paddingBottom: 12 },
+  gatewayLogoWrap: {},
+  gatewayLogo:  { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  gatewayName:  { fontSize: 16, fontWeight: '800', color: '#1e293b', marginBottom: 2 },
+  gatewayTag:   { fontSize: 11, color: '#94a3b8', fontWeight: '500' },
+  accountChip:  { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f8fafc', marginHorizontal: 16, marginBottom: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
+  accountChipText: { fontSize: 12, color: '#64748b', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  gatewayFooter:{ paddingHorizontal: 16, paddingBottom: 16 },
+  connectBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#3b82f6', paddingVertical: 13, borderRadius: 12 },
+  connectBtnText:{ fontSize: 14, fontWeight: '800', color: 'white' },
+  editBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#eff6ff', borderWidth: 1.5, borderColor: '#bfdbfe', paddingVertical: 11, borderRadius: 10 },
+  editBtnText:  { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
+  connectedTag: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#f0fdf4', borderWidth: 1.5, borderColor: '#bbf7d0', paddingVertical: 11, borderRadius: 10 },
+  connectedTagText: { fontSize: 13, fontWeight: '700', color: '#059669' },
 
-  // Buttons
-  primaryBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: '#3b82f6', paddingVertical: 12, borderRadius: 10 },
-  primaryBtnText:   { fontSize: 14, fontWeight: '700', color: 'white' },
-  secondaryBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#eff6ff', borderWidth: 1.5, borderColor: '#3b82f6', paddingVertical: 11, borderRadius: 10 },
-  secondaryBtnText: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
-  connectedBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#f0fdf4', borderWidth: 1.5, borderColor: '#86efac', paddingVertical: 11, borderRadius: 10 },
-  connectedBtnText: { fontSize: 13, fontWeight: '700', color: '#059669' },
-
-  // Cashfree coming soon
-  comingSoonBadge:  { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fcd34d', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, marginBottom: 10 },
-  comingSoonText:   { fontSize: 11, fontWeight: '700', color: '#92400e' },
-  comingSoonDesc:   { fontSize: 12, color: '#9ca3af', lineHeight: 18, marginBottom: 12 },
+  // Cashfree
+  cashfreeCard: { backgroundColor: 'white', borderRadius: 16, marginHorizontal: 16, marginBottom: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#e2e8f0', opacity: 0.6, ...SHADOW_SM },
+  cashfreeLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cashfreeLogo: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#ecfdf5', alignItems: 'center', justifyContent: 'center' },
+  soonPill:     { backgroundColor: '#fef3c7', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 99, borderWidth: 1, borderColor: '#fcd34d' },
+  soonText:     { fontSize: 11, fontWeight: '700', color: '#92400e' },
 
   // How it works
-  howCard:          { backgroundColor: 'white', borderRadius: 14, padding: 16, marginHorizontal: 16, marginTop: 4, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', ...SHADOW },
-  howHead:          { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  howTitle:         { fontSize: 14, fontWeight: '800', color: '#111827' },
-  howRow:           { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  howIconWrap:      { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  howText:          { flex: 1, fontSize: 13, color: '#374151', lineHeight: 18 },
+  howCard:      { backgroundColor: 'white', borderRadius: 16, marginHorizontal: 16, marginBottom: 16, padding: 16, borderWidth: 1, borderColor: '#e2e8f0', gap: 0, ...SHADOW_SM },
+  howStep:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 8 },
+  howStepIcon:  { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  howStepTitle: { fontSize: 13, fontWeight: '700', color: '#1e293b', marginBottom: 2 },
+  howStepSub:   { fontSize: 12, color: '#94a3b8', lineHeight: 17 },
+  howConnector: { position: 'absolute', left: 19, top: 50, width: 1, height: 16, backgroundColor: '#e2e8f0' },
 
-  // List card (transactions / settlements)
-  listCard:         { backgroundColor: 'white', borderRadius: 14, padding: 16, marginHorizontal: 16, marginTop: 4, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', ...SHADOW },
-  listTitle:        { fontSize: 15, fontWeight: '800', color: '#111827', marginBottom: 14 },
+  // Filter chips
+  filterChip:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, backgroundColor: 'white', borderWidth: 1, borderColor: '#e2e8f0' },
+  filterChipActive:{ backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
+  filterChipText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  filterChipTextActive: { color: 'white' },
 
-  // Table
-  tHead:            { flexDirection: 'row', backgroundColor: '#f9fafb', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 8, marginBottom: 4 },
-  tHeadCell:        { fontSize: 11, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' },
-  tRow:             { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' },
-  tRowAlt:          { backgroundColor: '#fafafa' },
-  tCell:            { fontSize: 12, color: '#374151' },
+  // Card list
+  cardList:     { paddingHorizontal: 16, gap: 10, marginBottom: 8 },
 
-  // Pill (status badge)
-  pill:             { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  pillText:         { fontSize: 11, fontWeight: '700' },
+  // Transaction card
+  txCard:       { backgroundColor: 'white', borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#e2e8f0', ...SHADOW_SM },
+  txCardLeft:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  txOrderIcon:  { width: 38, height: 38, borderRadius: 10, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+  txOrderId:    { fontSize: 13, fontWeight: '700', color: '#1e293b', marginBottom: 2 },
+  txDate:       { fontSize: 11, color: '#94a3b8', fontWeight: '500' },
+  txAmount:     { fontSize: 15, fontWeight: '900', color: '#1e293b', marginBottom: 4 },
 
   // Payout card
-  payoutCard:       { backgroundColor: '#f9fafb', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#e5e7eb' },
-  payoutTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  payoutAmount:     { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 2 },
-  payoutDate:       { fontSize: 12, color: '#9ca3af' },
-  payoutDivider:    { height: 1, backgroundColor: '#e5e7eb', marginBottom: 10 },
+  payoutCard:   { backgroundColor: 'white', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#e2e8f0', ...SHADOW_SM },
+  payoutHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  payoutAmount: { fontSize: 22, fontWeight: '900', color: '#1e293b', marginBottom: 2 },
+  payoutDate:   { fontSize: 12, color: '#94a3b8' },
+  payoutDivider:{ height: 1, backgroundColor: '#f1f5f9', marginBottom: 12 },
+  payoutMeta:   { gap: 8 },
 });

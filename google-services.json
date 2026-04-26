@@ -14,6 +14,46 @@
       },
       "oauth_client": [
         {
+          "client_id": "658585155781-2qnjsedp3ibiq1voqjp7pelohfidm39v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.keralasellers.app",
+            "certificate_hash": "c9c266ad0be74a33da6e8a81c89eb8104e393b5b"
+          }
+        },
+        {
+          "client_id": "658585155781-5a65e8u2vjjalnpka5eab2m1jso1i9or.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.keralasellers.app",
+            "certificate_hash": "e7666a72b174014d901622df43ff1fbec3ace38c"
+          }
+        },
+        {
+          "client_id": "658585155781-drmtv44k44v2furls8375on07k5pdj29.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.keralasellers.app",
+            "certificate_hash": "f436f8fcf41926036902431c01726317b8b72c75"
+          }
+        },
+        {
+          "client_id": "658585155781-pdf1f8v4shbvd9uduh813o6en10d411v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.keralasellers.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "658585155781-sd66if698844fdojg0vr27b7e0om6m5o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.keralasellers.app",
+            "certificate_hash": "360ccf82b1f105999817c5b510c24abee2eade51"
+          }
+        },
+        {
           "client_id": "658585155781-mne8o4pi2pdqhk1laifev3164ljrr6qi.apps.googleusercontent.com",
           "client_type": 3
         }

@@ -671,64 +671,65 @@
 //     }
 //   }
 // }
-
-// export default new AuthService();
 // src/services/AuthService.ts
+import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CommonActions, NavigationContainerRef } from '@react-navigation/native';
 import apiClient from './ApiClient';
 
+const API_BASE_URL = 'https://api.keralasellers.in';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface SellerUser {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
+  id:        number;
+  name:      string;
+  email:     string;
+  phone:     string;
   shop_name: string;
-  logo_url: string | null;
+  logo_url:  string | null;
   user_type: string;
 }
 
 export interface LoginResult {
-  access_token: string;
+  access_token:  string;
   refresh_token: string;
-  api_token: string;
-  seller: SellerUser;
-  user_type: string;
-  success: true;
+  api_token:     string;
+  seller:        SellerUser;
+  user_type:     string;
+  success:       true;
 }
 
 export interface RegisterData {
-  name: string;
-  shop_name: string;
-  phone: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
-  otp?: string;
+  name:               string;
+  shop_name:          string;
+  phone:              string;
+  email:              string;
+  password:           string;
+  confirmPassword:    string;
+  otp?:               string;
   firebase_id_token?: string;
 }
 
 export interface OTPData {
-  phone: string;
-  name: string;
+  phone:     string;
+  name:      string;
   shop_name: string;
-  email: string;
+  email:     string;
 }
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 const KEYS = {
-  ACCESS:   'access_token',
-  REFRESH:  'refresh_token',
-  API:      'api_token',
-  USER:     'user_data',
+  ACCESS:  'access_token',
+  REFRESH: 'refresh_token',
+  API:     'api_token',
+  USER:    'user_data',
 } as const;
 
 const LOGOUT_KEYS = [
-  'accessToken',       // legacy
-  'buyerAccessToken',  // legacy
+  'accessToken',
+  'buyerAccessToken',
   KEYS.ACCESS,
   KEYS.REFRESH,
   KEYS.API,
@@ -737,7 +738,7 @@ const LOGOUT_KEYS = [
 
 // ── Auth cache ────────────────────────────────────────────────────────────────
 
-const AUTH_CACHE_TTL = 10_000; // 10s — avoids AsyncStorage read on every render
+const AUTH_CACHE_TTL = 10_000;
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
@@ -765,7 +766,7 @@ function httpError(status: number, data: any, fallback: string): string {
 }
 
 function wrapError(message: string, original: any): Error {
-  const err   = new Error(message) as any;
+  const err         = new Error(message) as any;
   err.response      = original?.response ?? null;
   err.originalError = original;
   return err;
@@ -792,6 +793,23 @@ function cleanPhone(raw: string): string {
   return digits;
 }
 
+// ── Token helpers ─────────────────────────────────────────────────────────────
+
+// ✅ FIX: handles both 'access_token' and 'access' field names from backend
+function extractAccessToken(d: any): string {
+  return d?.access_token || d?.access || '';
+}
+
+// ✅ FIX: handles both 'refresh_token' and 'refresh' field names from backend
+function extractRefreshToken(d: any): string {
+  return d?.refresh_token || d?.refresh || '';
+}
+
+// ✅ FIX: never save empty/whitespace-only string as a token
+function isValidToken(t: any): boolean {
+  return typeof t === 'string' && t.trim().length > 10;
+}
+
 // ── AuthService ───────────────────────────────────────────────────────────────
 
 class AuthService {
@@ -800,14 +818,19 @@ class AuthService {
 
   // ── Navigation ──────────────────────────────────────────────────────────
 
-  setNavigationRef(ref: NavigationContainerRef<any>) {
-    this._navRef = ref;
+  setNavigationRef(ref: NavigationContainerRef<any> | null) {
+    // ✅ FIX: accept both ref.current and ref itself
+    this._navRef = (ref as any)?.current ?? ref ?? null;
   }
 
   private _resetToLogin() {
-    this._navRef?.dispatch(
-      CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
-    );
+    try {
+      this._navRef?.dispatch(
+        CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+      );
+    } catch (e) {
+      if (__DEV__) console.warn('🧭 Navigation reset failed:', e);
+    }
   }
 
   // ── Cache control ────────────────────────────────────────────────────────
@@ -816,8 +839,7 @@ class AuthService {
     this._cache = null;
   }
 
-  // ── isAuthenticated ───────────────────────────────────────────────────────
-  // Cached for AUTH_CACHE_TTL to prevent AsyncStorage spam on every render
+  // ── isAuthenticated ──────────────────────────────────────────────────────
 
   async isAuthenticated(): Promise<boolean> {
     const now = Date.now();
@@ -829,11 +851,63 @@ class AuthService {
         AsyncStorage.getItem(KEYS.ACCESS),
         AsyncStorage.getItem(KEYS.USER),
       ]);
-      const value = !!(token && user && token !== 'fallback_token');
+      // ✅ FIX: also check token is not empty string
+      const value = !!(token && token.trim() && user && token !== 'fallback_token');
       this._cache = { value, ts: now };
       return value;
     } catch {
       return false;
+    }
+  }
+
+  // ── Token Refresh ────────────────────────────────────────────────────────
+
+  async refreshAccessToken(): Promise<string | null> {
+    try {
+      const refreshToken = await AsyncStorage.getItem(KEYS.REFRESH);
+
+      // ✅ FIX: treat empty string same as null — this was the main bug
+      if (!isValidToken(refreshToken)) {
+        if (__DEV__) console.warn('🔄 No valid refresh token in storage');
+        return null;
+      }
+
+      if (__DEV__) console.log('🔄 Attempting token refresh...');
+
+      // Use raw axios — NOT apiClient — to avoid interceptor loop
+      const { data } = await axios.post(
+        `${API_BASE_URL}/api/token/refresh/`,
+        { refresh: refreshToken },
+        { timeout: 10_000 }
+      );
+
+      // ✅ FIX: handle both field name conventions
+      const newAccess  = extractAccessToken(data);
+      const newRefresh = extractRefreshToken(data); // some backends rotate refresh too
+
+      if (!isValidToken(newAccess)) {
+        if (__DEV__) console.warn('🔄 Refresh response missing valid access token');
+        return null;
+      }
+
+      // Save new access token — only update refresh if backend returned a new one
+      const storageUpdates: [string, string][] = [
+        [KEYS.ACCESS,   newAccess],
+        ['accessToken', newAccess],  // legacy key
+      ];
+      if (isValidToken(newRefresh) && newRefresh !== refreshToken) {
+        storageUpdates.push([KEYS.REFRESH, newRefresh]);
+      }
+
+      await AsyncStorage.multiSet(storageUpdates);
+      this.invalidateCache();
+
+      if (__DEV__) console.log('✅ Token refreshed successfully');
+      return newAccess;
+
+    } catch (err: any) {
+      if (__DEV__) console.warn('🔄 Token refresh failed:', err.response?.data ?? err.message);
+      return null;
     }
   }
 
@@ -842,7 +916,6 @@ class AuthService {
   async login(phone: string, password: string): Promise<LoginResult> {
     if (!phone || !password) throw new Error('Phone and password are required');
 
-    // ✅ Trim both — strips trailing \n from password fields
     const cleanedPhone = cleanPhone(phone.trim());
     const cleanedPass  = password.trim().replace(/[\r\n]/g, '');
 
@@ -852,8 +925,25 @@ class AuthService {
         password: cleanedPass,
       });
 
-      if (!d?.seller)       throw new Error('Invalid login response — no seller data');
-      if (!d?.access_token) throw new Error('Login succeeded but no access token received');
+      // ✅ FIX: debug log to see exactly what backend returns
+      if (__DEV__) {
+        console.log('🔑 Login response fields:', Object.keys(d));
+        console.log('🔑 access_token:', d.access_token ? 'EXISTS' : 'MISSING');
+        console.log('🔑 access:',       d.access       ? 'EXISTS' : 'MISSING');
+        console.log('🔑 refresh_token:', d.refresh_token ? 'EXISTS' : 'MISSING');
+        console.log('🔑 refresh:',       d.refresh       ? 'EXISTS' : 'MISSING');
+      }
+
+      // ✅ FIX: handle both field name conventions
+      const accessToken  = extractAccessToken(d);
+      const refreshToken = extractRefreshToken(d);
+
+      if (!d?.seller)           throw new Error('Invalid login response — no seller data');
+      if (!isValidToken(accessToken)) throw new Error('Login succeeded but no access token received');
+
+      if (!isValidToken(refreshToken) && __DEV__) {
+        console.warn('⚠️ Backend did not return a refresh token — silent re-login will not work after token expiry');
+      }
 
       const user: SellerUser = {
         id:        d.seller.id,
@@ -865,27 +955,29 @@ class AuthService {
         user_type: d.user_type        ?? 'seller',
       };
 
-      // Batch write — single AsyncStorage round-trip
-      await AsyncStorage.multiSet([
-        [KEYS.ACCESS,   d.access_token],
-        [KEYS.REFRESH,  d.refresh_token ?? ''],
-        [KEYS.API,      d.api_token     ?? ''],
+      // ✅ FIX: only store refresh token if it's actually valid — never save empty string
+      const storageEntries: [string, string][] = [
+        [KEYS.ACCESS,   accessToken],
+        [KEYS.API,      d.api_token ?? ''],
         [KEYS.USER,     JSON.stringify(user)],
-        ['accessToken', d.access_token],     // legacy key — keep for compatibility
-      ]);
+        ['accessToken', accessToken],  // legacy key
+      ];
+      if (isValidToken(refreshToken)) {
+        storageEntries.push([KEYS.REFRESH, refreshToken]);
+      }
 
+      await AsyncStorage.multiSet(storageEntries);
       this.invalidateCache();
 
       return {
-        access_token:  d.access_token,
-        refresh_token: d.refresh_token,
-        api_token:     d.api_token,
+        access_token:  accessToken,
+        refresh_token: refreshToken,
+        api_token:     d.api_token ?? '',
         seller:        user,
         user_type:     d.user_type ?? 'seller',
         success:       true,
       };
     } catch (err: any) {
-      // Re-throw validation errors thrown above without wrapping
       if (!err.response && !err.code) throw err;
       throw apiError(err, 'Login failed. Please try again.');
     }
@@ -900,7 +992,7 @@ class AuthService {
       if (__DEV__) console.error('Logout storage error:', e);
     } finally {
       this.invalidateCache();
-      this._resetToLogin(); // always navigate — even if storage fails
+      this._resetToLogin();
     }
   }
 
@@ -917,7 +1009,9 @@ class AuthService {
 
   async getAccessToken(): Promise<string | null> {
     try {
-      return await AsyncStorage.getItem(KEYS.ACCESS);
+      const token = await AsyncStorage.getItem(KEYS.ACCESS);
+      // ✅ FIX: return null instead of empty string
+      return isValidToken(token) ? token : null;
     } catch {
       return null;
     }
@@ -942,8 +1036,8 @@ class AuthService {
         email:           data.email.trim(),
         password:        data.password,
         confirmPassword: data.confirmPassword,
-        ...(data.otp               ? { otp: data.otp.trim() }                          : {}),
-        ...(data.firebase_id_token ? { firebase_id_token: data.firebase_id_token }     : {}),
+        ...(data.otp               ? { otp: data.otp.trim() }                      : {}),
+        ...(data.firebase_id_token ? { firebase_id_token: data.firebase_id_token } : {}),
       });
       return res;
     } catch (err: any) {
@@ -952,13 +1046,17 @@ class AuthService {
     }
   }
 
+  async registerWithFirebase(data: RegisterData): Promise<any> {
+    return this.register(data);
+  }
+
   private _validateRegisterData(d: RegisterData) {
-    if (!d.name?.trim())          throw new Error('Name is required');
-    if (!d.shop_name?.trim())     throw new Error('Shop name is required');
-    if (!d.email?.trim())         throw new Error('Email is required');
-    if (!d.phone?.trim())         throw new Error('Phone number is required');
-    if (!d.password)              throw new Error('Password is required');
-    if (!d.confirmPassword)       throw new Error('Please confirm your password');
+    if (!d.name?.trim())      throw new Error('Name is required');
+    if (!d.shop_name?.trim()) throw new Error('Shop name is required');
+    if (!d.email?.trim())     throw new Error('Email is required');
+    if (!d.phone?.trim())     throw new Error('Phone number is required');
+    if (!d.password)          throw new Error('Password is required');
+    if (!d.confirmPassword)   throw new Error('Please confirm your password');
     if (d.password !== d.confirmPassword) throw new Error('Passwords do not match');
     if (d.otp && d.otp.trim().length !== 6)
       throw new Error('Please enter a valid 6-digit OTP');
@@ -989,7 +1087,7 @@ class AuthService {
     }
   }
 
-  resendOTP = this.sendOTP.bind(this); // alias — no duplication
+  resendOTP = this.sendOTP.bind(this);
 
   async sendOTPSimple(phone: string): Promise<any> {
     const clean = cleanPhone(phone.trim());

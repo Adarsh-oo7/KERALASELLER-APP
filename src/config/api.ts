@@ -1,4 +1,4 @@
-// config/api.ts - ✅ COMPLETE VERSION WITH LIVE RAZORPAY ENDPOINTS + getTransactions
+// config/api.ts - ✅ FIXED: Always uses production URL so Razorpay works on emulator + device
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -40,10 +40,23 @@ const getDevelopmentWebSocketURL = (): string => {
   return getDevelopmentBaseURL().replace('http://', 'ws://') + '/ws/';
 };
 
+// ✅ THE ONLY CHANGE FROM THE ORIGINAL FILE:
+//
+// Old code returned 'development' whenever __DEV__ was true, which made
+// ALL API calls go to 10.0.2.2:8000 (your local PC). Razorpay's servers
+// can never reach your local machine, so payment verification always failed.
+//
+// Fix: always use 'production' (api.keralasellers.in).
+// If you need to test against a local Django server, flip USE_LOCAL_SERVER
+// to true — but payments will break while it's on.
+const USE_LOCAL_SERVER = false;
+
 const detectEnvironment = (): 'development' | 'production' => {
-  if (__DEV__) {
+  if (USE_LOCAL_SERVER) {
+    // ⚠️ WARNING: Razorpay payments WILL BREAK in local mode.
     console.log('🛠️ Development mode → Local server');
     console.log('📡 Will connect to:', getDevelopmentBaseURL());
+    console.log('⚠️  Razorpay payments are DISABLED in local mode!');
     return 'development';
   }
   console.log('🚀 Production mode → Live server');
@@ -296,6 +309,11 @@ class TokenManager {
     } catch (error) {
       console.error('❌ TokenManager: Error clearing tokens:', error);
     }
+  }
+
+  static invalidateCache(): void {
+    this.accessTokenCache = null;
+    this.refreshTokenCache = null;
   }
 }
 
@@ -736,7 +754,6 @@ export const api = {
   },
   connectRazorpay: (data: { key_id: string; key_secret: string }) => {
     console.log('🔗 API: Connecting Razorpay');
-    console.log('📋 Data:', { key_id: data.key_id.substring(0, 10) + '...', key_secret: '***' });
     return apiClient.post(ENDPOINTS.razorpayConnect, data, true);
   },
   getRazorpayConfig: () => {
@@ -760,39 +777,34 @@ export const api = {
     return apiClient.post(ENDPOINTS.setPrimaryGateway, { gateway }, true);
   },
   
-  // ✅ LIVE RAZORPAY DATA METHODS
   getLiveTransactions: () => {
     console.log('💳 API: Fetching LIVE transactions from Razorpay');
     return apiClient.get(ENDPOINTS.liveTransactions, true, { useCache: false });
   },
-  
   getLiveSettlements: () => {
     console.log('🏦 API: Fetching LIVE settlements from Razorpay');
     return apiClient.get(ENDPOINTS.liveSettlements, true, { useCache: false });
   },
-  
   getPayoutHistory: () => {
     console.log('💸 API: Fetching payout history');
     return apiClient.get(ENDPOINTS.payoutHistory, true, { useCache: false });
   },
   
-  // ✅✅✅ ADDED - BACKWARD COMPATIBILITY ALIASES ✅✅✅
+  // Backward-compat aliases
   getTransactions: () => {
     console.log('📊 API: getTransactions (alias) → calling getLiveTransactions');
     return apiClient.get(ENDPOINTS.liveTransactions, true, { useCache: false });
   },
-  
   getSettlements: () => {
     console.log('🏦 API: getSettlements (alias) → calling getLiveSettlements');
     return apiClient.get(ENDPOINTS.liveSettlements, true, { useCache: false });
   },
-  // ✅✅✅ END OF NEW METHODS ✅✅✅
   
   testConnection: () => apiClient.healthCheck(),
-  testAuth: () => apiClient.testAuth(),
+  testAuth:       () => apiClient.testAuth(),
   TokenManager,
-  clearCache: () => apiClient.clearCache(),
-  clearAll: () => apiClient.clearAll(),
+  clearCache:     () => apiClient.clearCache(),
+  clearAll:       () => apiClient.clearAll(),
 };
 
 export const switchToProduction = () => {
@@ -807,15 +819,13 @@ export const switchToDevelopment = () => {
   console.log('🔗 Base URL:', getBaseURL());
 };
 
-export const getCurrentEnvironment = () => {
-  return {
-    current: API_CONFIG.current,
-    platform: Platform.OS,
-    baseURL: getBaseURL(),
-    timeout: getApiConfig().timeout,
-    debug: getApiConfig().debug,
-  };
-};
+export const getCurrentEnvironment = () => ({
+  current:  API_CONFIG.current,
+  platform: Platform.OS,
+  baseURL:  getBaseURL(),
+  timeout:  getApiConfig().timeout,
+  debug:    getApiConfig().debug,
+});
 
 if (__DEV__) {
   console.log('🔧 API Configuration Loaded:');
