@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = 'https://keralaseller-backend.onrender.com';
+const API_BASE_URL = 'https://api.keralasellers.in';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -19,7 +19,7 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log('🔄 API Request:', `${config.method?.toUpperCase()} ${config.url}`);
+    console.log('🔄', config.method?.toUpperCase(), config.baseURL + config.url);
     return config;
   },
   (error) => {
@@ -36,15 +36,14 @@ api.interceptors.response.use(
   },
   async (error) => {
     console.error('❌ API Error:', {
+      message: error.message,
       status: error.response?.status,
       url: error.config?.url,
-      message: error.message,
     });
 
     // Handle 401 errors (token expired)
     if (error.response?.status === 401) {
       await AsyncStorage.removeItem('accessToken');
-      // You can add navigation logic here if needed
     }
 
     return Promise.reject(error);
