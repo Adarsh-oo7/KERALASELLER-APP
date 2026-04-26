@@ -1,18 +1,24 @@
-import { Platform } from 'react-native';
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// KERALA SELLERS APP — API CONFIG
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// ─── EDIT ONLY THIS LINE when your WiFi IP changes ──────────────────────────
-// Run `ipconfig` on Windows → look for IPv4 Address under Wi-Fi
-const DEV_IP   = '192.168.1.5';   // ← your current IP
+// ── Step 1: Set environment ─────────────────────────────────────────────────
+// 'development' → connects to your local PC (needs same WiFi)
+// 'production'  → connects to live server api.keralasellers.in
+const ENV: 'development' | 'production' = 'production';
+
+// ── Step 2: Your local PC WiFi IP (only used when ENV = 'development') ──────
+// Run `ipconfig` on Windows → IPv4 Address under Wi-Fi
+const DEV_IP   = '192.168.1.5';
 const DEV_PORT = '8000';
 
-// ─── Environment switch ──────────────────────────────────────────────────────
-const ENV: 'development' | 'production' = 'development';
-// Change to 'production' when deploying to Play Store
-
-// ─── Production URL ──────────────────────────────────────────────────────────
+// ── Step 3: Live server URL ─────────────────────────────────────────────────
 const PROD_URL = 'https://api.keralasellers.in';
 
-// ─── Resolved base URL (imported everywhere in the app) ─────────────────────
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DO NOT EDIT BELOW THIS LINE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 export const API_BASE_URL =
   ENV === 'production'
     ? PROD_URL
@@ -20,33 +26,76 @@ export const API_BASE_URL =
 
 export const IS_PRODUCTION = ENV === 'production';
 
-// ─── Endpoints ───────────────────────────────────────────────────────────────
+// ── Endpoints (matched to your Django urls.py) ──────────────────────────────
 export const ENDPOINTS = {
-  login:      '/user/login/',
-  register:   '/user/register/',
-  sendOtp:    '/user/send-otp/',
-  refresh:    '/user/token/refresh/',
-  profile:    '/user/profile/',
-  dashboard:  '/seller/dashboard/',
-  stats:      '/seller/stats/',
-  products:   '/products/',
-  categories: '/categories/',
-  orders:     '/user/orders/',
+  // Auth
+  login:           '/user/login/',
+  register:        '/user/register/',
+  sendOtp:         '/user/send-otp/',
+  verifyOtp:       '/user/verify-otp/',
+  tokenRefresh:    '/user/token/refresh/',
+  logout:          '/user/logout/',
+
+  // User / Buyer
+  profile:         '/user/profile/',
+  updateProfile:   '/user/profile/update/',
+  changePassword:  '/user/change-password/',
+
+  // Seller
+  sellerProfile:   '/seller/profile/',
+  sellerDashboard: '/seller/dashboard/',
+  sellerStats:     '/seller/stats/',
+  sellerOrders:    '/seller/orders/',
+
+  // Products
+  products:        '/products/',
+  productDetail:   (id: number | string) => `/products/${id}/`,
+  categories:      '/categories/',
+
+  // Orders (buyer)
+  orders:          '/user/orders/',
+  orderDetail:     (id: number | string) => `/user/orders/${id}/`,
+  placeOrder:      '/user/orders/place/',
+
+  // Cart
+  cart:            '/user/cart/',
+  cartAdd:         '/user/cart/add/',
+  cartRemove:      (id: number | string) => `/user/cart/remove/${id}/`,
+
+  // Wishlist
+  wishlist:        '/wishlist/',
+  wishlistToggle:  '/wishlist/toggle/',
+
+  // Payments
+  createPayment:   '/payments/create/',
+  verifyPayment:   '/payments/verify/',
+
+  // Subscriptions
+  subscription:    '/subscriptions/my/',
+  subscriptionPlans: '/subscriptions/plans/',
+
+  // Notifications
+  notifications:   '/notifications/',
+  notifMarkRead:   '/notifications/mark-read/',
 };
 
-// ─── Auth headers helper ─────────────────────────────────────────────────────
-export const authHeaders = (token: string) => ({
-  'Content-Type': 'application/json',
-  Accept: 'application/json',
-  Authorization: `Bearer ${token}`,
-});
-
+// ── Request helpers ──────────────────────────────────────────────────────────
 export const publicHeaders = () => ({
   'Content-Type': 'application/json',
-  Accept: 'application/json',
+  'Accept': 'application/json',
 });
 
-// Legacy compat
+export const authHeaders = (token: string) => ({
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': `Bearer ${token}`,
+});
+
+// ── Full URL builder ─────────────────────────────────────────────────────────
+export const apiUrl = (endpoint: string) =>
+  `${API_BASE_URL}${endpoint}`;
+
+// ── Legacy compat (older screens that import API_CONFIG) ─────────────────────
 export const API_CONFIG = {
   development: { baseURL: `http://${DEV_IP}:${DEV_PORT}`, timeout: 15000 },
   production:  { baseURL: PROD_URL, timeout: 20000 },
