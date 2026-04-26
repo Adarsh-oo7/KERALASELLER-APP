@@ -1,45 +1,58 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL } from '../config/api';
 
+// Single axios client — uses BASE_URL which auto-switches dev/prod
 const apiClient = axios.create({
-  baseURL: 'http://192.168.1.4:8000', // Your Django server
-  timeout: 15000,
+  baseURL: BASE_URL,
+  timeout: 20000,
   headers: {
-    'Accept': 'application/json',
-    // ✅ REMOVED: Don't set global Content-Type - handle per request
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
   },
 });
 
+// Attach auth token to every request
 apiClient.interceptors.request.use(
   async (config) => {
     try {
-      // ✅ FIXED: Use correct token key
-      const token = await AsyncStorage.getItem('access_token'); // Changed from 'accessToken'
+      const token = await AsyncStorage.getItem('accessToken');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log('🔐 Added Bearer token');
       }
-      
-      // ✅ HANDLE: FormData vs JSON content types
-      if (config.data instanceof FormData) {
-        // ✅ CRITICAL: Don't set Content-Type for FormData - let Axios handle it
-        console.log('📤 FormData request - letting axios handle Content-Type');
-        console.log('📋 FormData keys:', Array.from(config.data.keys()));
-        
-        // ✅ Increase timeout for file uploads
-        config.timeout = 60000;
-      } else {
-        // ✅ Set JSON Content-Type for regular requests
-        config.headers['Content-Type'] = 'application/json';
-        console.log('📤 JSON request');
-      }
-      
     } catch (error) {
       console.warn('Failed to get auth token:', error);
+    }
+    if (__DEV__) {
+      console.log(`🔄 ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
     }
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+// Handle responses + 401 auto-logout
+apiClient.interceptors.response.use(
+  (response) => {
+    if (__DEV__) {
+      console.log(`✅ ${response.status} ${response.config.url}`);
+    }
+    return response;
+  },
+  async (error) => {
+    if (__DEV__) {
+      console.error('❌ API Error:', {
+        status: error.response?.status,
+        url: error.config?.url,
+        message: error.message,
+      });
+    }
+    if (error.response?.status === 401) {
+      await AsyncStorage.removeItem('accessToken');
+      await AsyncStorage.removeItem('refreshToken');
+    }
+    return Promise.reject(error);
+  }
 );
 
 export default apiClient;
