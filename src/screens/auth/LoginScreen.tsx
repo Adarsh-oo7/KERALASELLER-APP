@@ -9,6 +9,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../../App';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL, ENDPOINTS } from '../../config/api';
+import Images from '../../images';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -23,9 +24,9 @@ export default function LoginScreen({ navigation }: Props) {
   const [error, setError]       = useState('');
   const [focused, setFocused]   = useState<'phone' | 'pass' | null>(null);
 
-  const shakeAnim   = useRef(new Animated.Value(0)).current;
-  const fadeAnim    = useRef(new Animated.Value(0)).current;
-  const slideAnim   = useRef(new Animated.Value(30)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
 
   React.useEffect(() => {
     Animated.parallel([
@@ -70,9 +71,11 @@ export default function LoginScreen({ navigation }: Props) {
         setError(msg); shake();
       }
     } catch (e: any) {
-      setError(e.message?.includes('Network') || e.message?.includes('fetch')
-        ? 'Cannot connect to server. Check your internet.'
-        : e.message || 'Something went wrong');
+      setError(
+        e.message?.includes('Network') || e.message?.includes('fetch')
+          ? 'Cannot connect to server. Check your internet.'
+          : e.message || 'Something went wrong'
+      );
       shake();
     } finally { setLoading(false); }
   };
@@ -81,32 +84,31 @@ export default function LoginScreen({ navigation }: Props) {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView style={S.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-
-          {/* ─── Hero section ─── */}
+        <ScrollView
+          contentContainerStyle={S.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ─── Hero ─── */}
           <Animated.View style={[S.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-            <Image
-              source={require('../../../assets/icon.png')}
-              style={S.logo}
-              resizeMode="contain"
-            />
+            <Image source={Images.logo} style={S.logo} resizeMode="contain" />
             <Text style={S.appName}>Kerala Sellers</Text>
             <Text style={S.appTag}>Seller Portal</Text>
           </Animated.View>
 
-          {/* ─── Form ─── */}
+          {/* ─── Form card ─── */}
           <Animated.View style={[S.formWrap, { opacity: fadeAnim, transform: [{ translateX: shakeAnim }] }]}>
-
             <Text style={S.sectionTitle}>Sign in to your account</Text>
 
             {/* Phone */}
+            <Text style={S.fieldLabel}>Phone Number</Text>
             <View style={[S.fieldWrap, focused === 'phone' && S.fieldFocused]}>
               <Text style={S.fieldIcon}>📱</Text>
               <Text style={S.dialCode}>+91</Text>
               <View style={S.divider} />
               <TextInput
                 style={S.fieldInput}
-                placeholder="Phone number"
+                placeholder="10-digit number"
                 placeholderTextColor="#AEAEB2"
                 value={phone}
                 onChangeText={t => setPhone(t.replace(/\D/g, '').slice(0, 10))}
@@ -120,11 +122,12 @@ export default function LoginScreen({ navigation }: Props) {
             </View>
 
             {/* Password */}
+            <Text style={S.fieldLabel}>Password</Text>
             <View style={[S.fieldWrap, focused === 'pass' && S.fieldFocused]}>
               <Text style={S.fieldIcon}>🔒</Text>
               <TextInput
                 style={[S.fieldInput, { flex: 1 }]}
-                placeholder="Password"
+                placeholder="Your password"
                 placeholderTextColor="#AEAEB2"
                 value={password}
                 onChangeText={setPassword}
@@ -136,8 +139,12 @@ export default function LoginScreen({ navigation }: Props) {
                 onBlur={() => setFocused(null)}
                 editable={!loading}
               />
-              <TouchableOpacity onPress={() => setShowPass(!showPass)} style={S.eyeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={{ fontSize: 16, color: '#AEAEB2' }}>{showPass ? '👁' : '👁‍🗨'}</Text>
+              <TouchableOpacity
+                onPress={() => setShowPass(!showPass)}
+                style={S.eyeBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={{ fontSize: 18, color: '#AEAEB2' }}>{showPass ? '👁' : '🙈'}</Text>
               </TouchableOpacity>
             </View>
 
@@ -162,14 +169,14 @@ export default function LoginScreen({ navigation }: Props) {
               }
             </TouchableOpacity>
 
-            {/* Divider */}
+            {/* OR */}
             <View style={S.orRow}>
               <View style={S.orLine} />
               <Text style={S.orText}>or</Text>
               <View style={S.orLine} />
             </View>
 
-            {/* Register link */}
+            {/* Register */}
             <TouchableOpacity
               style={S.secondaryBtn}
               onPress={() => navigation.navigate('Register')}
@@ -178,7 +185,6 @@ export default function LoginScreen({ navigation }: Props) {
             >
               <Text style={S.secondaryText}>Create a new account</Text>
             </TouchableOpacity>
-
           </Animated.View>
 
           <Text style={S.footerDomain}>keralasellers.in</Text>
@@ -192,14 +198,12 @@ const S = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#FFFFFF' },
   scroll:        { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 48 },
 
-  // Hero
   hero:          { alignItems: 'center', paddingTop: 64, paddingBottom: 36 },
   logo:          { width: 88, height: 88, borderRadius: 20, marginBottom: 16 },
   appName:       { fontSize: 26, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.3 },
   appTag:        { fontSize: 14, color: '#8E8E93', marginTop: 4, fontWeight: '400' },
 
-  // Form
-  formWrap:      {
+  formWrap: {
     backgroundColor: '#F9F9F9',
     borderRadius: 20,
     padding: 24,
@@ -211,9 +215,9 @@ const S = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-  sectionTitle:  { fontSize: 18, fontWeight: '600', color: '#1C1C1E', marginBottom: 20, letterSpacing: -0.2 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#1C1C1E', marginBottom: 20, letterSpacing: -0.2 },
 
-  // Field
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#3C3C43', marginBottom: 6, marginLeft: 2 },
   fieldWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -222,7 +226,7 @@ const S = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E5E5EA',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 16,
     height: 54,
   },
   fieldFocused:  { borderColor: '#1C1C1E' },
@@ -233,7 +237,6 @@ const S = StyleSheet.create({
   checkMark:     { fontSize: 16, color: '#30D158', fontWeight: '700' },
   eyeBtn:        { paddingLeft: 6 },
 
-  // Error
   errorBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -243,10 +246,9 @@ const S = StyleSheet.create({
     marginBottom: 12,
     gap: 6,
   },
-  errorDot:      { fontSize: 16, color: '#FF3B30', lineHeight: 20 },
-  errorText:     { flex: 1, fontSize: 13, color: '#FF3B30', fontWeight: '500', lineHeight: 20 },
+  errorDot:  { fontSize: 16, color: '#FF3B30', lineHeight: 20 },
+  errorText: { flex: 1, fontSize: 13, color: '#FF3B30', fontWeight: '500', lineHeight: 20 },
 
-  // CTA
   cta: {
     backgroundColor: '#1C1C1E',
     borderRadius: 14,
@@ -260,15 +262,13 @@ const S = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
-  ctaDisabled:   { opacity: 0.55 },
-  ctaText:       { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: 0.2 },
+  ctaDisabled:  { opacity: 0.55 },
+  ctaText:      { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: 0.2 },
 
-  // OR divider
-  orRow:         { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
-  orLine:        { flex: 1, height: 1, backgroundColor: '#E5E5EA' },
-  orText:        { fontSize: 13, color: '#AEAEB2', marginHorizontal: 12, fontWeight: '500' },
+  orRow:  { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  orLine: { flex: 1, height: 1, backgroundColor: '#E5E5EA' },
+  orText: { fontSize: 13, color: '#AEAEB2', marginHorizontal: 12, fontWeight: '500' },
 
-  // Secondary
   secondaryBtn: {
     borderRadius: 14,
     height: 54,

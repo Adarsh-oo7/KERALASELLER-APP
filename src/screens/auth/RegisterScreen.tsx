@@ -9,6 +9,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../../App';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL, ENDPOINTS } from '../../config/api';
+import Images from '../../images';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
@@ -22,7 +23,7 @@ export default function RegisterScreen({ navigation }: Props) {
   const { signIn } = useAuth();
   const [step, setStep] = useState(0);
 
-  // Step 0
+  // Step 0 — Account
   const [name, setName]         = useState('');
   const [phone, setPhone]       = useState('');
   const [email, setEmail]       = useState('');
@@ -30,12 +31,12 @@ export default function RegisterScreen({ navigation }: Props) {
   const [confirm, setConfirm]   = useState('');
   const [showPass, setShowPass] = useState(false);
 
-  // Step 1
+  // Step 1 — Shop
   const [shopName, setShopName] = useState('');
   const [shopDesc, setShopDesc] = useState('');
   const [category, setCategory] = useState('');
 
-  // Step 2
+  // Step 2 — Location
   const [city, setCity]         = useState('');
   const [address, setAddress]   = useState('');
   const [pincode, setPincode]   = useState('');
@@ -47,12 +48,13 @@ export default function RegisterScreen({ navigation }: Props) {
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   React.useEffect(() => {
+    fadeAnim.setValue(0); slideAnim.setValue(20);
     Animated.parallel([
-      Animated.timing(fadeAnim,  { toValue: 1, duration: 500, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
     ]).start();
   }, [step]);
 
@@ -69,45 +71,45 @@ export default function RegisterScreen({ navigation }: Props) {
   const validateStep = (): boolean => {
     setError('');
     if (step === 0) {
-      if (!name.trim())                              return fail('Full name is required');
-      if (phone.replace(/\D/g,'').length !== 10)     return fail('Enter a valid 10-digit phone number');
-      if (email && !/\S+@\S+\.\S+/.test(email))      return fail('Enter a valid email address');
-      if (password.length < 6)                       return fail('Password must be at least 6 characters');
-      if (password !== confirm)                      return fail('Passwords do not match');
+      if (!name.trim())                           return fail('Full name is required');
+      if (phone.replace(/\D/g,'').length !== 10)  return fail('Enter a valid 10-digit phone number');
+      if (email && !/\S+@\S+\.\S+/.test(email))   return fail('Enter a valid email address');
+      if (password.length < 6)                    return fail('Password must be at least 6 characters');
+      if (password !== confirm)                   return fail('Passwords do not match');
     }
     if (step === 1) {
-      if (!shopName.trim())  return fail('Shop name is required');
-      if (!category.trim())  return fail('Category is required');
+      if (!shopName.trim()) return fail('Shop name is required');
+      if (!category.trim()) return fail('Category is required');
     }
     if (step === 2) {
-      if (!city.trim())                               return fail('City is required');
-      if (pincode && pincode.length !== 6)            return fail('Enter a valid 6-digit pincode');
-      const wp = whatsapp.replace(/\D/g,'');
-      if (whatsapp && wp.length !== 10)               return fail('Enter a valid WhatsApp number');
+      if (!city.trim())                                    return fail('City is required');
+      if (pincode && pincode.length !== 6)                 return fail('Enter a valid 6-digit pincode');
+      if (whatsapp && whatsapp.replace(/\D/g,'').length !== 10) return fail('Enter a valid WhatsApp number');
     }
     return true;
   };
 
-  const goNext = () => { if (validateStep()) { fadeAnim.setValue(0); slideAnim.setValue(20); setStep(s => s + 1); } };
-  const goBack = () => { setError(''); fadeAnim.setValue(0); slideAnim.setValue(20); setStep(s => s - 1); };
+  const goNext = () => { if (validateStep()) setStep(s => s + 1); };
+  const goBack = () => { setError(''); setStep(s => s - 1); };
 
   const handleSubmit = async () => {
     if (!validateStep()) return;
     setLoading(true);
     try {
-      const payload = {
+      const payload: any = {
         name: name.trim(),
         phone: phone.replace(/\D/g,''),
-        ...(email    ? { email: email.trim() }                          : {}),
         password,
         shop_name: shopName.trim(),
-        ...(shopDesc ? { shop_description: shopDesc.trim() }            : {}),
         category: category.trim(),
         city: city.trim(),
-        ...(address  ? { address: address.trim() }                      : {}),
-        ...(pincode  ? { pincode }                                       : {}),
-        ...(whatsapp ? { whatsapp_number: whatsapp.replace(/\D/g,'') }  : {}),
       };
+      if (email)    payload.email            = email.trim();
+      if (shopDesc) payload.shop_description = shopDesc.trim();
+      if (address)  payload.address          = address.trim();
+      if (pincode)  payload.pincode          = pincode;
+      if (whatsapp) payload.whatsapp_number  = whatsapp.replace(/\D/g,'');
+
       const res  = await fetch(`${API_BASE_URL}${ENDPOINTS.register}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -124,7 +126,7 @@ export default function RegisterScreen({ navigation }: Props) {
             refreshToken: data.refresh_token || data.refresh || '',
           });
         } else {
-          Alert.alert('Account Created! 🎉', `Welcome ${name}!\nPlease sign in.`, [
+          Alert.alert('Account Created! 🎉', `Welcome ${name}!\nPlease sign in to continue.`, [
             { text: 'Sign In', onPress: () => navigation.navigate('Login') },
           ]);
         }
@@ -134,20 +136,32 @@ export default function RegisterScreen({ navigation }: Props) {
         fail(msg || 'Registration failed. Please try again.');
       }
     } catch (e: any) {
-      fail(e.message?.includes('Network') || e.message?.includes('fetch')
-        ? 'Cannot connect to server. Check your internet.'
-        : e.message || 'Something went wrong');
+      fail(
+        e.message?.includes('Network') || e.message?.includes('fetch')
+          ? 'Cannot connect to server. Check your internet.'
+          : e.message || 'Something went wrong'
+      );
     } finally { setLoading(false); }
   };
 
-  // ── Field component ──────────────────────────────────────────────
-  const Field = ({ id, label, value, onChange, placeholder, keyboard = 'default', secure = false,
-                   multiline = false, suffix = null as React.ReactNode } : any) => (
+  // ── Reusable Field ──────────────────────────────────────────
+  const Field = ({
+    id, label, value, onChange, placeholder,
+    keyboard = 'default' as any,
+    secure = false, multiline = false, suffix = null as any,
+  }) => (
     <View style={S.fieldGroup}>
       <Text style={S.fieldLabel}>{label}</Text>
-      <View style={[S.fieldWrap, focused === id && S.fieldFocused, multiline && { height: 84, alignItems: 'flex-start' }]}>
+      <View style={[
+        S.fieldWrap,
+        focused === id && S.fieldFocused,
+        multiline && { height: 84, alignItems: 'flex-start' as any },
+      ]}>
         <TextInput
-          style={[S.fieldInput, multiline && { height: 72, textAlignVertical: 'top', paddingTop: 4 }]}
+          style={[
+            S.fieldInput,
+            multiline && { height: 72, textAlignVertical: 'top' as any, paddingTop: 4 },
+          ]}
           placeholder={placeholder}
           placeholderTextColor="#AEAEB2"
           value={value}
@@ -165,31 +179,33 @@ export default function RegisterScreen({ navigation }: Props) {
     </View>
   );
 
-  // ── Step content ───────────────────────────────────────────────
-  const steps = [
-    <>   {/* Step 0 */}
-      <Field id="name"    label="Full Name"         value={name}     onChange={setName}     placeholder="Your full name" />
-      <Field id="phone"   label="Phone Number"      value={phone}    onChange={(t:string) => setPhone(t.replace(/\D/g,'').slice(0,10))} placeholder="9876543210" keyboard="numeric" />
-      <Field id="email"   label="Email (optional)"  value={email}    onChange={setEmail}    placeholder="your@email.com" keyboard="email-address" />
-      <Field id="pass"    label="Password"           value={password} onChange={setPassword} placeholder="Min 6 characters" secure={!showPass}
+  const stepContent = [
+    // Step 0 — Account
+    <>
+      <Field id="name"  label="Full Name"        value={name}     onChange={setName}     placeholder="Your full name" />
+      <Field id="phone" label="Phone Number"     value={phone}    onChange={(t:string)=>setPhone(t.replace(/\D/g,'').slice(0,10))}  placeholder="9876543210" keyboard="numeric" />
+      <Field id="email" label="Email (optional)" value={email}    onChange={setEmail}    placeholder="your@email.com" keyboard="email-address" />
+      <Field id="pass"  label="Password"         value={password} onChange={setPassword} placeholder="Min 6 characters" secure={!showPass}
         suffix={
-          <TouchableOpacity onPress={() => setShowPass(!showPass)} style={{ paddingLeft: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 16, color: '#AEAEB2' }}>{showPass ? '👁' : '👁‍🗨'}</Text>
+          <TouchableOpacity onPress={()=>setShowPass(!showPass)} hitSlop={{top:10,bottom:10,left:10,right:10}}>
+            <Text style={{fontSize:18,color:'#AEAEB2'}}>{showPass?'👁':'🙈'}</Text>
           </TouchableOpacity>
         }
       />
-      <Field id="confirm" label="Confirm Password"  value={confirm}  onChange={setConfirm}  placeholder="Repeat password" secure />
+      <Field id="confirm" label="Confirm Password" value={confirm} onChange={setConfirm} placeholder="Repeat password" secure />
     </>,
-    <>   {/* Step 1 */}
-      <Field id="shop"    label="Shop Name"          value={shopName} onChange={setShopName} placeholder="e.g. Riya Textiles" />
-      <Field id="cat"     label="Category"           value={category} onChange={setCategory} placeholder="e.g. Clothing, Grocery" />
-      <Field id="desc"    label="Description"        value={shopDesc} onChange={setShopDesc} placeholder="Brief description (optional)" multiline />
+    // Step 1 — Shop
+    <>
+      <Field id="shop" label="Shop Name"    value={shopName} onChange={setShopName} placeholder="e.g. Riya Textiles" />
+      <Field id="cat"  label="Category"     value={category} onChange={setCategory} placeholder="e.g. Clothing, Grocery" />
+      <Field id="desc" label="Description (optional)" value={shopDesc} onChange={setShopDesc} placeholder="Brief shop description" multiline />
     </>,
-    <>   {/* Step 2 */}
-      <Field id="city"    label="City"               value={city}    onChange={setCity}    placeholder="e.g. Kochi" />
-      <Field id="addr"    label="Address"             value={address} onChange={setAddress} placeholder="Street / area (optional)" />
-      <Field id="pin"     label="Pincode"             value={pincode} onChange={(t:string) => setPincode(t.replace(/\D/g,'').slice(0,6))} placeholder="682001" keyboard="numeric" />
-      <Field id="wa"      label="WhatsApp"             value={whatsapp} onChange={(t:string) => setWhatsapp(t.replace(/\D/g,'').slice(0,10))} placeholder="10-digit number" keyboard="numeric" />
+    // Step 2 — Location
+    <>
+      <Field id="city" label="City"           value={city}    onChange={setCity}    placeholder="e.g. Kochi" />
+      <Field id="addr" label="Address (optional)" value={address} onChange={setAddress} placeholder="Street / area" />
+      <Field id="pin"  label="Pincode"         value={pincode} onChange={(t:string)=>setPincode(t.replace(/\D/g,'').slice(0,6))} placeholder="682001" keyboard="numeric" />
+      <Field id="wa"   label="WhatsApp (optional)" value={whatsapp} onChange={(t:string)=>setWhatsapp(t.replace(/\D/g,'').slice(0,10))} placeholder="10-digit number" keyboard="numeric" />
     </>,
   ];
 
@@ -197,11 +213,14 @@ export default function RegisterScreen({ navigation }: Props) {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView style={S.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-
+        <ScrollView
+          contentContainerStyle={S.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Header */}
           <View style={S.header}>
-            <Image source={require('../../../assets/icon.png')} style={S.logo} resizeMode="contain" />
+            <Image source={Images.logo} style={S.logo} resizeMode="contain" />
             <Text style={S.appName}>Kerala Sellers</Text>
             <Text style={S.appTag}>Create your seller account</Text>
           </View>
@@ -213,7 +232,7 @@ export default function RegisterScreen({ navigation }: Props) {
                 <View style={S.stepItem}>
                   <View style={[
                     S.stepCircle,
-                    i <  step && S.stepDone,
+                    i < step  && S.stepDone,
                     i === step && S.stepActive,
                   ]}>
                     <Text style={[S.stepNum, i <= step && S.stepNumActive]}>
@@ -230,9 +249,12 @@ export default function RegisterScreen({ navigation }: Props) {
           </View>
 
           {/* Form card */}
-          <Animated.View style={[S.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }, { translateX: shakeAnim }] }]}>
+          <Animated.View style={[S.card, {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }, { translateX: shakeAnim }],
+          }]}>
             <Text style={S.stepTitle}>{STEPS[step].label} Details</Text>
-            {steps[step]}
+            {stepContent[step]}
           </Animated.View>
 
           {/* Error */}
@@ -243,11 +265,11 @@ export default function RegisterScreen({ navigation }: Props) {
             </View>
           )}
 
-          {/* Buttons */}
+          {/* Nav buttons */}
           <View style={S.btnRow}>
             {step > 0 && (
               <TouchableOpacity style={S.backBtn} onPress={goBack} disabled={loading}>
-                <Text style={S.backBtnText}>←  Back</Text>
+                <Text style={S.backBtnText}>← Back</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -258,14 +280,16 @@ export default function RegisterScreen({ navigation }: Props) {
             >
               {loading
                 ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={S.nextBtnText}>{step === STEPS.length - 1 ? 'Create Account' : 'Continue  →'}</Text>
+                : <Text style={S.nextBtnText}>
+                    {step === STEPS.length - 1 ? 'Create Account' : 'Continue  →'}
+                  </Text>
               }
             </TouchableOpacity>
           </View>
 
-          {/* Login link */}
+          {/* Sign in link */}
           <View style={S.footer}>
-            <Text style={S.footerMuted}>Already have an account? </Text>
+            <Text style={S.footerMuted}>Already have an account?  </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={loading}>
               <Text style={S.footerLink}>Sign In</Text>
             </TouchableOpacity>
@@ -279,29 +303,26 @@ export default function RegisterScreen({ navigation }: Props) {
 }
 
 const S = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll:{ flexGrow: 1, paddingHorizontal: 24, paddingBottom: 48 },
+  root:   { flex: 1, backgroundColor: '#FFFFFF' },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 48 },
 
-  // Header
-  header:    { alignItems: 'center', paddingTop: 52, paddingBottom: 28 },
-  logo:      { width: 80, height: 80, borderRadius: 18, marginBottom: 14 },
-  appName:   { fontSize: 24, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.3 },
-  appTag:    { fontSize: 13, color: '#8E8E93', marginTop: 4, fontWeight: '400' },
+  header:  { alignItems: 'center', paddingTop: 52, paddingBottom: 24 },
+  logo:    { width: 80, height: 80, borderRadius: 18, marginBottom: 14 },
+  appName: { fontSize: 24, fontWeight: '700', color: '#1C1C1E', letterSpacing: -0.3 },
+  appTag:  { fontSize: 13, color: '#8E8E93', marginTop: 4 },
 
-  // Step indicator
-  stepRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 24, paddingHorizontal: 8 },
-  stepItem:     { alignItems: 'center', width: 72 },
-  stepCircle:   { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
-  stepActive:   { backgroundColor: '#1C1C1E' },
-  stepDone:     { backgroundColor: '#30D158' },
-  stepNum:      { fontSize: 18 },
-  stepNumActive:{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  stepLabel:    { fontSize: 11, color: '#AEAEB2', fontWeight: '500' },
+  stepRow:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 24, paddingHorizontal: 8 },
+  stepItem:        { alignItems: 'center', width: 72 },
+  stepCircle:      { width: 42, height: 42, borderRadius: 21, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  stepActive:      { backgroundColor: '#1C1C1E' },
+  stepDone:        { backgroundColor: '#30D158' },
+  stepNum:         { fontSize: 18 },
+  stepNumActive:   { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  stepLabel:       { fontSize: 11, color: '#AEAEB2', fontWeight: '500' },
   stepLabelActive: { color: '#1C1C1E', fontWeight: '600' },
-  stepLine:     { flex: 1, height: 2, backgroundColor: '#F2F2F7', marginBottom: 20, marginHorizontal: 2 },
-  stepLineDone: { backgroundColor: '#30D158' },
+  stepLine:        { flex: 1, height: 2, backgroundColor: '#F2F2F7', marginBottom: 20, marginHorizontal: 2 },
+  stepLineDone:    { backgroundColor: '#30D158' },
 
-  // Card
   card: {
     backgroundColor: '#F9F9F9', borderRadius: 20, padding: 20,
     borderWidth: 1, borderColor: '#F0F0F0',
@@ -310,9 +331,8 @@ const S = StyleSheet.create({
   },
   stepTitle: { fontSize: 17, fontWeight: '600', color: '#1C1C1E', marginBottom: 18, letterSpacing: -0.1 },
 
-  // Field
-  fieldGroup:  { marginBottom: 14 },
-  fieldLabel:  { fontSize: 13, fontWeight: '600', color: '#3C3C43', marginBottom: 6, marginLeft: 2 },
+  fieldGroup: { marginBottom: 14 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#3C3C43', marginBottom: 6, marginLeft: 2 },
   fieldWrap: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#FFFFFF', borderRadius: 12,
@@ -322,33 +342,21 @@ const S = StyleSheet.create({
   fieldFocused: { borderColor: '#1C1C1E' },
   fieldInput:   { flex: 1, fontSize: 16, color: '#1C1C1E', paddingVertical: 0 },
 
-  // Error
   errorBox: {
     flexDirection: 'row', alignItems: 'flex-start',
     backgroundColor: '#FFF2F2', borderRadius: 10,
     padding: 12, marginBottom: 8, gap: 6,
   },
-  errorDot: { fontSize: 16, color: '#FF3B30', lineHeight: 20 },
+  errorDot:  { fontSize: 16, color: '#FF3B30', lineHeight: 20 },
   errorText: { flex: 1, fontSize: 13, color: '#FF3B30', fontWeight: '500', lineHeight: 20 },
 
-  // Buttons
-  btnRow:    { flexDirection: 'row', marginTop: 4 },
-  backBtn:   {
-    height: 54, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#E5E5EA', paddingHorizontal: 20,
-    backgroundColor: '#FFFFFF',
-  },
-  backBtnText: { fontSize: 16, color: '#1C1C1E', fontWeight: '500' },
-  nextBtn: {
-    flex: 1, height: 54, borderRadius: 14, backgroundColor: '#1C1C1E',
-    justifyContent: 'center', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18, shadowRadius: 10, elevation: 4,
-  },
+  btnRow:          { flexDirection: 'row', marginTop: 4 },
+  backBtn:         { height: 54, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#E5E5EA', paddingHorizontal: 22, backgroundColor: '#FFFFFF' },
+  backBtnText:     { fontSize: 16, color: '#1C1C1E', fontWeight: '500' },
+  nextBtn:         { flex: 1, height: 54, borderRadius: 14, backgroundColor: '#1C1C1E', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 4 },
   nextBtnDisabled: { opacity: 0.55 },
-  nextBtnText:  { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: 0.1 },
+  nextBtnText:     { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: 0.1 },
 
-  // Footer
   footer:      { flexDirection: 'row', justifyContent: 'center', marginTop: 20 },
   footerMuted: { fontSize: 15, color: '#8E8E93' },
   footerLink:  { fontSize: 15, color: '#007AFF', fontWeight: '500' },
