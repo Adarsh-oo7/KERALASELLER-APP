@@ -1,186 +1,104 @@
-
-
-// import 'react-native-gesture-handler'; // ⚠️ MUST be at the very top
-// import React, { useRef, useEffect } from 'react';
-// import { NavigationContainer } from '@react-navigation/native';
-// import { StatusBar } from 'expo-status-bar';
-// import * as SplashScreen from 'expo-splash-screen';
-// import { View, AppState } from 'react-native';
-// import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// import { AuthProvider } from './src/context/AuthContext';
-// import { ThemeProvider } from './src/context/ThemeContext';
-// import { PaymentProvider } from './src/context/PaymentContext'; // ✅ ADD THIS
-
-// import AppNavigator from './src/navigation/AppNavigator';
-// import AuthService from './src/services/AuthService';
-// import ErrorBoundary from './src/components/common/ErrorBoundary';
-
-// SplashScreen.preventAutoHideAsync();
-
-// export default function App() {
-//   const navigationRef = useRef<any>();
-
-//   useEffect(() => {
-//     const handleAppStateChange = (nextAppState: string) => {
-//       if (nextAppState === 'active') {
-//         checkAuthStatus();
-//       } else if (nextAppState === 'background') {
-//         savePendingData();
-//       }
-//     };
-//     const subscription = AppState.addEventListener('change', handleAppStateChange);
-//     return () => subscription?.remove();
-//   }, []);
-
-//   useEffect(() => {
-//     if (navigationRef.current) {
-//       try {
-//         AuthService.setNavigationRef(navigationRef);
-//         console.log('🧭 Navigation reference set in App.tsx');
-//       } catch (error) {
-//         console.error('❌ Error setting navigation reference:', error);
-//       }
-//     }
-//   }, []);
-
-//   const checkAuthStatus = async () => {
-//     try {
-//       const token = await AsyncStorage.getItem('accessToken');
-//       if (token) {
-//         console.log('🔒 Checking token validity...');
-//       }
-//     } catch (error) {
-//       console.error('❌ Error checking auth status:', error);
-//     }
-//   };
-
-//   const savePendingData = async () => {
-//     try {
-//       console.log('💾 Saving pending data...');
-//     } catch (error) {
-//       console.error('❌ Error saving pending data:', error);
-//     }
-//   };
-
-//   const handleNavigationReady = () => {
-//     try {
-//       AuthService.setNavigationRef(navigationRef);
-//       console.log('🧭 NavigationContainer ready in App.tsx');
-//       SplashScreen.hideAsync();
-//     } catch (error) {
-//       console.error('❌ Error in navigation ready handler:', error);
-//       SplashScreen.hideAsync();
-//     }
-//   };
-
-//   return (
-//     <ErrorBoundary>
-//       <ThemeProvider>
-//         <AuthProvider>
-//           <PaymentProvider>  {/* ✅ WRAP HERE — inside AuthProvider so it can use auth token */}
-//             <View style={{ flex: 1 }}>
-//               <StatusBar style="auto" />
-//               <NavigationContainer
-//                 ref={navigationRef}
-//                 onReady={handleNavigationReady}
-//                 onStateChange={(state) => {
-//                   if (__DEV__) console.log('🧭 Navigation state changed');
-//                 }}
-//                 fallback={<View style={{ flex: 1, backgroundColor: '#fff' }} />}
-//                 onUnhandledAction={(action) => {
-//                   console.warn('🧭 Unhandled navigation action:', action);
-//                 }}
-//               >
-//                 <AppNavigator />
-//               </NavigationContainer>
-//             </View>
-//           </PaymentProvider>  {/* ✅ CLOSE HERE */}
-//         </AuthProvider>
-//       </ThemeProvider>
-//     </ErrorBoundary>
-//   );
-// }
-
-import 'react-native-gesture-handler'; // ⚠️ MUST be at the very top
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { StatusBar } from 'expo-status-bar';
-import * as SplashScreen from 'expo-splash-screen';
-import { View, AppState, AppStateStatus } from 'react-native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { AuthProvider } from './src/context/AuthContext';
-import { ThemeProvider } from './src/context/ThemeContext';
-import { PaymentProvider } from './src/context/PaymentContext';
+import LoginScreen from './src/screens/auth/LoginScreen';
+import RegisterScreen from './src/screens/auth/RegisterScreen';
+import MainTabNavigator from './src/navigation/MainTabNavigator';
 
-import AppNavigator from './src/navigation/AppNavigator';
-import AuthService from './src/services/AuthService';
-import ErrorBoundary from './src/components/common/ErrorBoundary';
+const COLORS = { primary: '#2B4B39', background: '#F8F9FA' };
 
-SplashScreen.preventAutoHideAsync();
+// Auth context — shared across the whole app
+export type AuthContextType = {
+  isAuthenticated: boolean;
+  userType: string | null;
+  login: (token: string, type: string, data?: any) => Promise<void>;
+  logout: () => Promise<void>;
+};
 
-export default function App() {
-  const navigationRef = useRef<any>(null);
+export const AuthContext = createContext<AuthContextType>({
+  isAuthenticated: false,
+  userType: null,
+  login: async () => {},
+  logout: async () => {},
+});
 
-  // ── AppState listener ────────────────────────────────────────────────────
-  useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
-        checkAuthStatus();
-      }
-    };
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription.remove();
-  }, []);
+export const useAuth = () => useContext(AuthContext);
 
-  // ── Set nav ref once on mount ─────────────────────────────────────────────
-  // ✅ FIX: removed the second useEffect that also called setNavigationRef
-  // with the wrong timing — onReady handler below is the correct place
+export type AuthStackParamList = {
+  Login: undefined;
+  Register: undefined;
+};
 
-  const checkAuthStatus = async () => {
-    try {
-      const isAuth = await AuthService.isAuthenticated();
-      if (__DEV__) console.log('🔒 Auth check on resume:', isAuth ? 'authenticated' : 'not authenticated');
-    } catch (error) {
-      console.error('❌ Error checking auth status:', error);
-    }
-  };
+const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 
-  const handleNavigationReady = () => {
-    try {
-      // ✅ FIX: pass .current directly — the actual NavigationContainerRef value
-      AuthService.setNavigationRef(navigationRef.current);
-      if (__DEV__) console.log('🧭 NavigationContainer ready — nav ref set');
-    } catch (error) {
-      console.error('❌ Error in navigation ready handler:', error);
-    } finally {
-      // ✅ Always hide splash screen even if something errors
-      SplashScreen.hideAsync();
-    }
-  };
-
+function AuthStackScreen() {
   return (
-    <ErrorBoundary>
-      <ThemeProvider>
-        <AuthProvider>
-          <PaymentProvider>
-            <View style={{ flex: 1 }}>
-              <StatusBar style="auto" />
-              <NavigationContainer
-                ref={navigationRef}
-                onReady={handleNavigationReady}
-                onStateChange={() => {
-                  if (__DEV__) console.log('🧭 Navigation state changed');
-                }}
-                fallback={<View style={{ flex: 1, backgroundColor: '#fff' }} />}
-              >
-                <AppNavigator />
-              </NavigationContainer>
-            </View>
-          </PaymentProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
+    <AuthStack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+    </AuthStack.Navigator>
   );
 }
 
+function LoadingScreen() {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+      <ActivityIndicator size="large" color={COLORS.primary} />
+    </View>
+  );
+}
+
+export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userType, setUserType] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => { checkAuthStatus(); }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const accessToken = await AsyncStorage.getItem('accessToken');
+      const storedUserType = await AsyncStorage.getItem('userType');
+      if (accessToken && storedUserType) {
+        setIsAuthenticated(true);
+        setUserType(storedUserType);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const login = async (token: string, type: string, data?: any) => {
+    await AsyncStorage.setItem('accessToken', token);
+    await AsyncStorage.setItem('userType', type);
+    if (data) await AsyncStorage.setItem('sellerData', JSON.stringify(data));
+    setUserType(type);
+    setIsAuthenticated(true);
+  };
+
+  const logout = async () => {
+    await AsyncStorage.multiRemove([
+      'accessToken', 'refreshToken', 'apiToken',
+      'userPhone', 'userType', 'sellerId', 'sellerData',
+    ]);
+    setUserType(null);
+    setIsAuthenticated(false);
+  };
+
+  if (isLoading) return <LoadingScreen />;
+
+  return (
+    <AuthContext.Provider value={{ isAuthenticated, userType, login, logout }}>
+      <NavigationContainer>
+        {isAuthenticated ? <MainTabNavigator /> : <AuthStackScreen />}
+      </NavigationContainer>
+    </AuthContext.Provider>
+  );
+}
