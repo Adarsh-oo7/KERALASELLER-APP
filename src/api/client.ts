@@ -1,6 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '../config/api';
+import { API_BASE_URL as BASE_URL } from '../config/api';
 
 // Single axios client — uses BASE_URL which auto-switches dev/prod
 const apiClient = axios.create({
