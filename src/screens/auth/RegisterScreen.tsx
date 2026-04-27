@@ -22,22 +22,23 @@ export default function RegisterScreen({ navigation }: Props) {
   const { signIn } = useAuth();
   const [step, setStep] = useState(0);
 
-  const [name, setName]         = useState('');
-  const [phone, setPhone]       = useState('');
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [shopName, setShopName] = useState('');
-  const [shopDesc, setShopDesc] = useState('');
-  const [category, setCategory] = useState('');
-  const [city, setCity]         = useState('');
-  const [address, setAddress]   = useState('');
-  const [pincode, setPincode]   = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
-  const [focused, setFocused]   = useState<string | null>(null);
+  const [name, setName]           = useState('');
+  const [company, setCompany]     = useState('');  // ← NEW: company name
+  const [phone, setPhone]         = useState('');
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [confirm, setConfirm]     = useState('');
+  const [showPass, setShowPass]   = useState(false);
+  const [shopName, setShopName]   = useState('');
+  const [shopDesc, setShopDesc]   = useState('');
+  const [category, setCategory]   = useState('');
+  const [city, setCity]           = useState('');
+  const [address, setAddress]     = useState('');
+  const [pincode, setPincode]     = useState('');
+  const [whatsapp, setWhatsapp]   = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
+  const [focused, setFocused]     = useState<string | null>(null);
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim  = useRef(new Animated.Value(1)).current;
@@ -95,6 +96,7 @@ export default function RegisterScreen({ navigation }: Props) {
         category: category.trim(), city: city.trim(),
       };
       if (email)    payload.email            = email.trim();
+      if (company)  payload.company_name     = company.trim();  // ← NEW: send company_name to API
       if (shopDesc) payload.shop_description = shopDesc.trim();
       if (address)  payload.address          = address.trim();
       if (pincode)  payload.pincode          = pincode;
@@ -149,8 +151,11 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 
   const steps = [
+    // ─── Step 0 : Account ─────────────────────────────────────────────────────
     <React.Fragment key="0">
       <Field id="name"    label="Full Name"           value={name}     onChange={setName}     placeholder="Your full name" />
+      {/* ── NEW: Company Name field ── */}
+      <Field id="company" label="Company Name (optional)" value={company} onChange={setCompany} placeholder="e.g. Riya Enterprises Pvt. Ltd." />
       <Field id="phone"   label="Phone Number"        value={phone}    onChange={(t:string)=>setPhone(t.replace(/\D/g,'').slice(0,10))} placeholder="9876543210" keyboard="numeric" />
       <Field id="email"   label="Email (optional)"    value={email}    onChange={setEmail}    placeholder="your@email.com" keyboard="email-address" />
       <Field id="pass"    label="Password"            value={password} onChange={setPassword} placeholder="Min 6 characters" secure={!showPass}
@@ -158,11 +163,15 @@ export default function RegisterScreen({ navigation }: Props) {
       />
       <Field id="cnf"     label="Confirm Password"   value={confirm}  onChange={setConfirm}  placeholder="Repeat password" secure />
     </React.Fragment>,
+
+    // ─── Step 1 : Shop ────────────────────────────────────────────────────────
     <React.Fragment key="1">
       <Field id="shop"    label="Shop Name"              value={shopName} onChange={setShopName} placeholder="e.g. Riya Textiles" />
       <Field id="cat"     label="Category"               value={category} onChange={setCategory} placeholder="e.g. Clothing, Grocery" />
       <Field id="desc"    label="Description (optional)" value={shopDesc} onChange={setShopDesc} placeholder="Brief shop description" multiline />
     </React.Fragment>,
+
+    // ─── Step 2 : Location ────────────────────────────────────────────────────
     <React.Fragment key="2">
       <Field id="city"    label="City"                   value={city}     onChange={setCity}     placeholder="e.g. Kochi" />
       <Field id="addr"    label="Address (optional)"     value={address}  onChange={setAddress}  placeholder="Street / area" />
