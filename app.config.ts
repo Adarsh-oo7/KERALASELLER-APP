@@ -12,8 +12,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   scheme: 'keralasellers',
 
   // ── Versioning ─────────────────────────────────────────────────────────────
-  // version = user-visible (Play Store "1.0.0")
-  // runtimeVersion = OTA update channel
   version: '1.0.0',
   runtimeVersion: {
     policy: 'appVersion',
@@ -42,10 +40,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
   },
 
-  // ── Android (Play Store) ───────────────────────────────────────────────────
+  // ── Android ────────────────────────────────────────────────────────────────
   android: {
-    // google-services.json must be provided as an EAS Secret (GOOGLE_SERVICES_JSON)
-    // or placed in the project root locally (do NOT commit it to git)
     googleServicesFile:
       process.env.GOOGLE_SERVICES_JSON ?? './google-services.json',
 
@@ -54,11 +50,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: '#0F172A',
     },
 
-    // Play Store package name — must match what you register in Play Console
     package: 'com.keralasellers.app',
-
-    // versionCode is auto-incremented by EAS (autoIncrement: true in eas.json)
-    // Do not set it manually here.
 
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
@@ -80,13 +72,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   // ── Plugins ───────────────────────────────────────────────────────────────
+  // NOTE: Only packages with an actual config plugin (app.plugin.js) go here.
+  // expo-image, expo-font, expo-sharing, expo-secure-store do NOT have config
+  // plugins — they are used via import only, not listed here.
   plugins: [
-    'expo-image',
-    'expo-font',
-    'expo-sharing',
     '@react-native-firebase/app',
     '@react-native-firebase/auth',
-    'expo-secure-store',
     [
       'expo-image-picker',
       {
