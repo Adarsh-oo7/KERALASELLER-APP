@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -52,16 +52,16 @@ export default function RegisterScreen({ navigation }: Props) {
     otp: '',
   });
 
-  const updateField = (field: keyof typeof formData, value: string) => {
+  const updateField = useCallback((field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const formatPhoneNumber = (text: string) => {
+  const formatPhoneNumber = useCallback((text: string) => {
     const cleaned = text.replace(/\D/g, '');
     if (cleaned.length <= 10) {
-      updateField('phone', cleaned);
+      setFormData(prev => ({ ...prev, phone: cleaned }));
     }
-  };
+  }, []);
 
   const validateForm = (): string | null => {
     const { phone, name, shopName, email, password, confirmPassword } = formData;
@@ -70,19 +70,16 @@ export default function RegisterScreen({ navigation }: Props) {
       return 'Please fill in all required fields';
     }
 
-    // Phone validation
     const phoneClean = phone.replace(/\D/g, '');
     if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
       return 'Please enter a valid 10-digit phone number starting with 6-9';
     }
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return 'Please enter a valid email address';
     }
 
-    // Password validation
     if (password.length < 8) {
       return 'Password must be at least 8 characters long';
     }
@@ -107,7 +104,7 @@ export default function RegisterScreen({ navigation }: Props) {
     try {
       console.log('📱 Sending OTP to:', phoneClean);
       
-      const response = await fetch(`${API_BASE_URL}/user/send-otp/`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/send-otp/`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -144,20 +141,17 @@ export default function RegisterScreen({ navigation }: Props) {
   };
 
   const handleRegister = async () => {
-    // Validate form first
     const validationError = validateForm();
     if (validationError) {
       Alert.alert('Validation Error', validationError);
       return;
     }
 
-    // Send OTP first if not sent
     if (!otpSent) {
       await sendOTP();
       return;
     }
 
-    // If OTP sent, validate OTP
     if (!formData.otp.trim()) {
       Alert.alert('OTP Required', 'Please enter the 6-digit OTP');
       return;
@@ -175,20 +169,19 @@ export default function RegisterScreen({ navigation }: Props) {
       
       console.log('🔄 Registering seller...');
       
-      // Fixed request body to match Django backend expectations
       const requestBody = {
         phone: phoneClean,
         name: formData.name.trim(),
         shop_name: formData.shopName.trim(),
         email: formData.email.toLowerCase().trim(),
         password: formData.password.trim(),
-        confirmPassword: formData.confirmPassword.trim(), // Django expects this field
+        confirmPassword: formData.confirmPassword.trim(),
         otp: formData.otp.trim(),
       };
       
       console.log('📦 Registration request:', requestBody);
       
-      const response = await fetch(`${API_BASE_URL}/user/register/`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/register/`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -233,30 +226,15 @@ export default function RegisterScreen({ navigation }: Props) {
           navigation.navigate('Login');
         }
       } else {
-        // Handle specific Django validation errors
         let errorMessages = [];
         
-        if (data.phone) {
-          errorMessages.push(`Phone: ${Array.isArray(data.phone) ? data.phone.join(', ') : data.phone}`);
-        }
-        if (data.email) {
-          errorMessages.push(`Email: ${Array.isArray(data.email) ? data.email.join(', ') : data.email}`);
-        }
-        if (data.password) {
-          errorMessages.push(`Password: ${Array.isArray(data.password) ? data.password.join(', ') : data.password}`);
-        }
-        if (data.confirmPassword) {
-          errorMessages.push(`Password Confirmation: ${Array.isArray(data.confirmPassword) ? data.confirmPassword.join(', ') : data.confirmPassword}`);
-        }
-        if (data.otp) {
-          errorMessages.push(`OTP: ${Array.isArray(data.otp) ? data.otp.join(', ') : data.otp}`);
-        }
-        if (data.name) {
-          errorMessages.push(`Name: ${Array.isArray(data.name) ? data.name.join(', ') : data.name}`);
-        }
-        if (data.shop_name) {
-          errorMessages.push(`Shop Name: ${Array.isArray(data.shop_name) ? data.shop_name.join(', ') : data.shop_name}`);
-        }
+        if (data.phone) errorMessages.push(`Phone: ${Array.isArray(data.phone) ? data.phone.join(', ') : data.phone}`);
+        if (data.email) errorMessages.push(`Email: ${Array.isArray(data.email) ? data.email.join(', ') : data.email}`);
+        if (data.password) errorMessages.push(`Password: ${Array.isArray(data.password) ? data.password.join(', ') : data.password}`);
+        if (data.confirmPassword) errorMessages.push(`Password Confirmation: ${Array.isArray(data.confirmPassword) ? data.confirmPassword.join(', ') : data.confirmPassword}`);
+        if (data.otp) errorMessages.push(`OTP: ${Array.isArray(data.otp) ? data.otp.join(', ') : data.otp}`);
+        if (data.name) errorMessages.push(`Name: ${Array.isArray(data.name) ? data.name.join(', ') : data.name}`);
+        if (data.shop_name) errorMessages.push(`Shop Name: ${Array.isArray(data.shop_name) ? data.shop_name.join(', ') : data.shop_name}`);
         
         let errorMessage = errorMessages.length > 0 
           ? errorMessages.join('\n') 
@@ -269,7 +247,6 @@ export default function RegisterScreen({ navigation }: Props) {
       
       let errorMessage = error.message || 'Registration failed. Please try again.';
       
-      // Provide helpful error messages
       if (errorMessage.includes('phone')) {
         errorMessage = 'Phone number issue: May already be registered or OTP is invalid/expired';
       } else if (errorMessage.includes('email')) {
@@ -298,14 +275,14 @@ export default function RegisterScreen({ navigation }: Props) {
       email: "testseller@example.com",
       password: "testpass123",
       confirmPassword: "testpass123",
-      otp: "728466" // Use the latest OTP from Django console
+      otp: "728466"
     };
     
     console.log('🧪 Testing registration with:', testData);
     Alert.alert('Test Mode', 'Testing registration... Check console for results.');
     
     try {
-      const response = await fetch(`${API_BASE_URL}/user/register/`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/register/`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -323,8 +300,8 @@ export default function RegisterScreen({ navigation }: Props) {
     }
   };
 
-  const renderFormStep = () => (
-    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+  const renderFormStep = useCallback(() => (
+    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoContainer}>
@@ -487,9 +464,9 @@ export default function RegisterScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
     </ScrollView>
-  );
+  ), [formData, loading, navigation, handleRegister, testRegistration, formatPhoneNumber, updateField]);
 
-  const renderOTPStep = () => (
+  const renderOTPStep = useCallback(() => (
     <View style={styles.otpContainer}>
       {/* Header */}
       <View style={styles.otpHeader}>
@@ -515,6 +492,7 @@ export default function RegisterScreen({ navigation }: Props) {
             keyboardType="numeric"
             maxLength={6}
             editable={!loading}
+            autoFocus
           />
         </View>
         <Text style={styles.inputHelper}>Check Django console for OTP (development)</Text>
@@ -562,9 +540,9 @@ export default function RegisterScreen({ navigation }: Props) {
         <Text style={styles.backButtonText}>← Back to Form</Text>
       </TouchableOpacity>
     </View>
-  );
+  ), [formData.phone, formData.otp, loading, handleRegister, resendOTP, updateField]);
 
-  const renderSuccessStep = () => (
+  const renderSuccessStep = useCallback(() => (
     <View style={styles.successContainer}>
       <View style={styles.successIcon}>
         <Text style={styles.successIconText}>🎉</Text>
@@ -587,7 +565,7 @@ export default function RegisterScreen({ navigation }: Props) {
         </LinearGradient>
       </TouchableOpacity>
     </View>
-  );
+  ), [navigation]);
 
   return (
     <>
@@ -595,6 +573,7 @@ export default function RegisterScreen({ navigation }: Props) {
       <KeyboardAvoidingView 
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <LinearGradient
           colors={[COLORS.background, COLORS.surface]}
