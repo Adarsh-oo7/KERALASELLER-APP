@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { clearSellerSession, onAuthExpired } from '../lib/session';
+
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (token: string) => Promise<void>;
   logout: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,10 +27,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const checkAuthStatus = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      setIsAuthenticated(!!token);
-    } catch (error) {
-      console.error('Error checking auth status:', error);
+      const [[, token], [, refresh], [, userType]] = await AsyncStorage.multiGet([
+        'accessToken',
+        'refreshToken',
+        'userType',
+      ]);
+      setIsAuthenticated(userType === 'seller' && Boolean(token || refresh));
+    } catch {
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -35,30 +41,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const login = async (token: string) => {
-    try {
-      await AsyncStorage.setItem('accessToken', token);
-      setIsAuthenticated(true);
-    } catch (error) {
-      console.error('Error storing auth token:', error);
-    }
+    await AsyncStorage.multiSet([
+      ['accessToken', token],
+      ['userType', 'seller'],
+    ]);
+    setIsAuthenticated(true);
   };
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('accessToken');
-      await AsyncStorage.removeItem('userEmail');
+      await clearSellerSession();
+    } finally {
       setIsAuthenticated(false);
-    } catch (error) {
-      console.error('Error during logout:', error);
     }
   };
 
   useEffect(() => {
     checkAuthStatus();
+    return onAuthExpired(() => setIsAuthenticated(false));
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout, refresh: checkAuthStatus }}>
       {children}
     </AuthContext.Provider>
   );

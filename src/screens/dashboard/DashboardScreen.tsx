@@ -1,348 +1,289 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-const COLORS = {
-  primary: '#2B4B39',
-  primaryLight: '#3A5D47',
-  background: '#F8F9FA',
-  surface: '#FFFFFF',
-  textPrimary: '#1D1D1F',
-  textSecondary: '#86868B',
-  success: '#4A6B52',
-  shadow: 'rgba(0, 0, 0, 0.1)',
+import { useAuth } from '../../context/AuthContext';
+import { Avatar, Badge, Card, Header, LoadingState, OnboardingChecklist, Screen } from '../../components';
+import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, RADIUS, SPACING, TYPOGRAPHY } from '../../theme';
+import { fetchDashboard, fetchSellingStatus, type DashboardPayload, type OnboardingStatus } from '../../api/seller';
+import { formatInr } from '../../lib/format';
+import { consumeOpenSetupAfterRegister } from '../../lib/setupFlow';
+import { useOnlineGuard } from '../../hooks/useOnlineGuard';
+import type { MainTabScreenProps } from '../../navigation/types';
+
+type Shortcut = {
+  label: string;
+  hint: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
 };
 
-const API_BASE_URL = 'http://192.168.1.7:8000';
-
-interface SellerData {
-  id: number;
-  name: string;
-  phone: string;
-  shop_name: string;
-  email: string;
-}
-
-export default function DashboardScreen() {
-  const [seller, setSeller] = useState<SellerData | null>(null);
+export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home'>) {
+  const { logout } = useAuth();
+  const { requireOnline } = useOnlineGuard();
+  const [payload, setPayload] = useState<DashboardPayload | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
+  const [sellerName, setSellerName] = useState('Seller');
+  const [shopName, setShopName] = useState('Shop');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadSellerData();
-  }, []);
-
-  const loadSellerData = async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     try {
-      // Get stored seller data
-      const sellerData = await AsyncStorage.getItem('sellerData');
-      const accessToken = await AsyncStorage.getItem('accessToken');
-      
-      if (sellerData) {
-        setSeller(JSON.parse(sellerData));
+      const stored = await AsyncStorage.getItem('sellerData');
+      if (stored) {
+        const seller = JSON.parse(stored) as { name?: string; shop_name?: string };
+        if (seller.name) setSellerName(seller.name);
+        if (seller.shop_name) setShopName(seller.shop_name);
       }
-      
-      console.log('📊 Dashboard loaded for seller:', sellerData);
-      console.log('🔑 Access token available:', !!accessToken);
+      const [data, merged] = await Promise.all([
+        fetchDashboard(),
+        fetchSellingStatus().catch(() => null),
+      ]);
+      setPayload(data);
+      if (data.seller?.name) setSellerName(data.seller.name);
+      if (data.seller?.shop_name) setShopName(data.seller.shop_name);
+      setOnboarding(merged);
+      if (!opts?.silent) {
+        const openSetup = await consumeOpenSetupAfterRegister();
+        if (openSetup && !merged?.is_ready_to_sell && !merged?.requirements?.is_live) {
+          navigation.navigate('Settings', { setup: true });
+        }
+      }
     } catch (error) {
-      console.error('Failed to load seller data:', error);
+      const statusCode = (error as { response?: { status?: number } }).response?.status;
+      if (statusCode !== 401) {
+        console.warn('Dashboard load failed', error);
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load({ silent: true });
+  }, [load]);
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Clear all stored data
-              await AsyncStorage.multiRemove([
-                'accessToken',
-                'refreshToken',
-                'apiToken',
-                'userPhone',
-                'userType',
-                'sellerId',
-                'sellerData'
-              ]);
-              
-              console.log('🚪 User logged out');
-              // You'll need to navigate back to login here
-              // For now, we'll just show an alert
-              Alert.alert('Logged Out', 'You have been logged out successfully.');
-            } catch (error) {
-              console.error('Logout error:', error);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const testProtectedAPI = async () => {
-    try {
-      const accessToken = await AsyncStorage.getItem('accessToken');
-      
-      if (!accessToken) {
-        Alert.alert('Error', 'No access token found');
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/user/test-auth-protected/`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      });
-
-      const data = await response.json();
-      console.log('🔒 Protected API test:', data);
-      
-      Alert.alert('API Test Result', `Status: ${response.status}\nUser: ${data.user}\nAuthenticated: ${data.is_authenticated}`);
-    } catch (error: any) {
-      console.error('API test error:', error);
-      Alert.alert('API Test Error', error.message);
-    }
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: () => logout() },
+    ]);
   };
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Dashboard...</Text>
-      </View>
-    );
+    return <LoadingState message="Loading Dashboard…" />;
   }
 
+  const analytics = payload?.analytics;
+  const ready = Boolean(onboarding?.is_ready_to_sell || onboarding?.requirements?.is_live);
+  const blockedMessage = 'Finish store profile, Razorpay, and subscription before adding products.';
+  const shortcuts: Shortcut[] = [
+  { label: 'New bill', hint: 'Walk-in · 3-day offline', icon: 'cash-outline', onPress: () => navigation.navigate('Billing') },
+    {
+      label: 'Add product',
+      hint: ready ? 'Catalogue' : 'Complete setup first',
+      icon: 'add-circle-outline',
+      onPress: () => {
+        if (!requireOnline('Adding a product')) return;
+        if (!ready) {
+          Alert.alert('Shop not live yet', blockedMessage);
+          return;
+        }
+        navigation.navigate('ProductForm', {});
+      },
+    },
+    { label: 'Payments', hint: 'Razorpay & payouts', icon: 'card-outline', onPress: () => navigation.navigate('Payments') },
+    { label: 'Store settings', hint: 'Basic, advanced, delivery', icon: 'settings-outline', onPress: () => navigation.navigate('Settings') },
+    { label: 'Alerts', hint: 'Buyer messages', icon: 'notifications-outline', onPress: () => navigation.navigate('Notifications') },
+    { label: 'Analytics', hint: 'Sales snapshot', icon: 'stats-chart-outline', onPress: () => navigation.navigate('Analytics') },
+  ];
+
   return (
-    <ScrollView style={styles.container}>
-      <LinearGradient
-        colors={[COLORS.primary, COLORS.primaryLight]}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <View style={styles.welcomeSection}>
-            <Text style={styles.welcomeText}>Welcome back!</Text>
-            <Text style={styles.sellerName}>{seller?.name || 'Seller'}</Text>
-            <Text style={styles.shopName}>{seller?.shop_name || 'Shop'}</Text>
-          </View>
-          
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Ionicons name="log-out-outline" size={24} color={COLORS.surface} />
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
+    <Screen
+      scroll
+      edges={['bottom']}
+      gradient={false}
+      statusBarStyle="light-content"
+      contentContainerStyle={{ flexGrow: 1 }}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
+      <Header
+        tone="brand"
+        eyebrow="Welcome back"
+        title={sellerName}
+        subtitle={shopName}
+        action={{
+          icon: 'log-out-outline',
+          onPress: handleLogout,
+          accessibilityLabel: 'Log out',
+        }}
+      />
 
       <View style={styles.content}>
-        {/* Seller Info Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Seller Information</Text>
-          
-          <View style={styles.infoRow}>
-            <Ionicons name="person-outline" size={20} color={COLORS.primary} />
-            <Text style={styles.infoText}>{seller?.name}</Text>
-          </View>
-          
-          <View style={styles.infoRow}>
-            <Ionicons name="storefront-outline" size={20} color={COLORS.primary} />
-            <Text style={styles.infoText}>{seller?.shop_name}</Text>
-          </View>
-          
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={20} color={COLORS.primary} />
-            <Text style={styles.infoText}>+91{seller?.phone}</Text>
-          </View>
-          
-          <View style={styles.infoRow}>
-            <Ionicons name="mail-outline" size={20} color={COLORS.primary} />
-            <Text style={styles.infoText}>{seller?.email}</Text>
-          </View>
+        <View style={styles.stats}>
+          <Stat label="Revenue" value={formatInr(analytics?.total_revenue)} />
+          <Stat label="Orders" value={String(analytics?.total_orders ?? 0)} />
+          <Stat label="Products" value={String(analytics?.total_products ?? 0)} />
+          <Stat label="New" value={String(analytics?.new_orders_count ?? 0)} />
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Quick Actions</Text>
-          
-          <TouchableOpacity style={styles.actionButton} onPress={testProtectedAPI}>
-            <LinearGradient
-              colors={[COLORS.success, '#5A8B63']}
-              style={styles.actionButtonGradient}
-            >
-              <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.surface} />
-              <Text style={styles.actionButtonText}>Test Protected API</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton} disabled>
-            <LinearGradient
-              colors={[COLORS.textSecondary, COLORS.textSecondary]}
-              style={styles.actionButtonGradient}
-            >
-              <Ionicons name="cube-outline" size={20} color={COLORS.surface} />
-              <Text style={styles.actionButtonText}>Manage Products (Coming Soon)</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton} disabled>
-            <LinearGradient
-              colors={[COLORS.textSecondary, COLORS.textSecondary]}
-              style={styles.actionButtonGradient}
-            >
-              <Ionicons name="receipt-outline" size={20} color={COLORS.surface} />
-              <Text style={styles.actionButtonText}>View Orders (Coming Soon)</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+        <OnboardingChecklist
+          status={onboarding}
+          onOpenProfile={() => navigation.navigate('Settings', { setup: true })}
+          onOpenPayments={() => navigation.navigate('Payments', { setup: true })}
+          onOpenSubscription={() => navigation.navigate('Subscription', { setup: true })}
+        />
 
-        {/* Status Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Status</Text>
-          <View style={styles.statusContainer}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>✅ Successfully authenticated</Text>
+        <Card>
+          <Text style={styles.cardTitle} maxFontSizeMultiplier={FONT_SCALE.heading}>
+            Daily tools
+          </Text>
+          <View style={styles.grid}>
+            {shortcuts.map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                onPress={item.onPress}
+                style={styles.tile}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+                accessibilityHint={item.hint}
+              >
+                <View style={styles.tileIcon}>
+                  <Ionicons name={item.icon} size={22} color={COLORS.primary} />
+                </View>
+                <Text style={styles.tileLabel} maxFontSizeMultiplier={FONT_SCALE.body}>
+                  {item.label}
+                </Text>
+                <Text style={styles.tileHint} maxFontSizeMultiplier={FONT_SCALE.caption}>
+                  {item.hint}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-          <View style={styles.statusContainer}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>🏪 Shop profile active</Text>
+        </Card>
+
+        <Card glass>
+          <View style={styles.identity}>
+            <Avatar name={sellerName} size="md" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.identityName} maxFontSizeMultiplier={FONT_SCALE.body}>
+                {sellerName}
+              </Text>
+              <Text style={styles.identityShop} maxFontSizeMultiplier={FONT_SCALE.caption}>
+                {shopName}
+              </Text>
+            </View>
+            <Badge label="Seller" tone="success" />
           </View>
-          <View style={styles.statusContainer}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>📱 Mobile app connected</Text>
-          </View>
-        </View>
+        </Card>
       </View>
-    </ScrollView>
+    </Screen>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.stat} accessible accessibilityLabel={`${label}: ${value}`}>
+      <Text style={styles.statValue} maxFontSizeMultiplier={FONT_SCALE.heading} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.statLabel} maxFontSizeMultiplier={FONT_SCALE.caption}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: COLORS.textSecondary,
-  },
-  header: {
-    paddingTop: 50,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  welcomeSection: {
-    flex: 1,
-  },
-  welcomeText: {
-    fontSize: 16,
-    color: COLORS.surface,
-    opacity: 0.9,
-    marginBottom: 4,
-  },
-  sellerName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.surface,
-    marginBottom: 4,
-  },
-  shopName: {
-    fontSize: 18,
-    color: COLORS.surface,
-    opacity: 0.8,
-  },
-  logoutButton: {
-    padding: 8,
-  },
   content: {
-    padding: 20,
+    padding: SPACING.lg,
+    gap: SPACING.lg,
   },
-  card: {
+  stats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  stat: {
+    flexGrow: 1,
+    minWidth: '45%',
     backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    minHeight: MIN_TOUCH_TARGET + 16,
+  },
+  statValue: {
+    ...TYPOGRAPHY.heading,
+    color: COLORS.primary,
+  },
+  statLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    ...TYPOGRAPHY.heading,
     color: COLORS.textPrimary,
-    marginBottom: 16,
+    marginBottom: SPACING.md,
   },
-  infoRow: {
+  grid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
   },
-  infoText: {
-    fontSize: 16,
-    color: COLORS.textPrimary,
-    marginLeft: 12,
+  tile: {
+    width: '48%',
+    flexGrow: 1,
+    minHeight: 96,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    padding: SPACING.md,
   },
-  actionButton: {
-    marginBottom: 12,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
+  tileIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.glassOverlay,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    gap: 8,
+    marginBottom: SPACING.sm,
   },
-  actionButtonText: {
-    color: COLORS.surface,
-    fontSize: 14,
-    fontWeight: '600',
+  tileLabel: {
+    ...TYPOGRAPHY.bodyStrong,
+    color: COLORS.textPrimary,
   },
-  statusContainer: {
+  tileHint: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  identity: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: SPACING.md,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.success,
-    marginRight: 12,
-  },
-  statusText: {
-    fontSize: 14,
+  identityName: {
+    ...TYPOGRAPHY.bodyStrong,
     color: COLORS.textPrimary,
+  },
+  identityShop: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
 });

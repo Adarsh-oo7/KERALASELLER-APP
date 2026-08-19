@@ -1,9 +1,11 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { API_BASE_URL, API_TIMEOUT } from '../config/api';
+
 const apiClient = axios.create({
-  baseURL: 'http://192.168.1.7:8000', // Your Django server
-  timeout: 15000,
+  baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT,
   headers: {
     'Accept': 'application/json',
     'Content-Type': 'application/json',

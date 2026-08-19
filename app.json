@@ -1,30 +1,92 @@
 {
   "expo": {
-    "name": "KeralaSellerApp",
-    "slug": "KeralaSellerApp",
+    "name": "Kerala Sellers",
+    "slug": "kerala-sellers",
+    "scheme": "keralasellers",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "primaryColor": "#1A4845",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "in.keralasellers.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Kerala Sellers uses your photos for shop logos and product images.",
+        "NSPhotoLibraryAddUsageDescription": "Kerala Sellers saves shop photos you choose."
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          }
+        ]
+      }
     },
     "android": {
+      "package": "in.keralasellers.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Kerala Sellers uses your photos for shop logos and product images."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": false,
+            "minSdkVersion": 24,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0",
+            "enableProguardInReleaseBuilds": false,
+            "enableMinifyInReleaseBuilds": false
+          }
+        }
+      ],
+      "./plugins/withAndroidPaymentQueries.js"
+    ],
+    "extra": {
+      "privacyPolicyUrl": "https://www.keralasellers.in/privacy-policy",
+      "termsUrl": "https://www.keralasellers.in/terms-and-conditions",
+      "supportEmail": "keralasellers.in@gmail.com",
+      "eas": {
+        "projectId": "84247003-600a-4198-b6a6-36598c2bfdc9"
+      }
+    },
+    "owner": "adarsh-090"
   }
 }

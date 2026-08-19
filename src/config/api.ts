@@ -1,24 +1,32 @@
-export const API_CONFIG = {
-    // Development (your local Django server)
-    development: {
-      baseURL: 'http://192.168.1.7:8000', // Your local IP
-      timeout: 15000,
-    },
-    
-    // Production (your deployed backend)
-    production: {
-      baseURL: 'https://keralaseller-backend.onrender.com', // Your Render URL
-      timeout: 20000,
-    },
-    
-    // Switch this when going live
-    current: 'development' as 'development' | 'production',
-  };
-  
-  export const getApiConfig = () => {
-    return API_CONFIG[API_CONFIG.current];
-  };
-  
+/**
+ * Single source of truth for the mobile app's backend base URL.
+ *
+ * Set EXPO_PUBLIC_API_BASE_URL (for example to http://<your-LAN-IP>:8000) when
+ * running against a local Django server. Release builds fall back to the
+ * production API, so no developer machine address can ship to users.
+ */
+
+import { PRODUCTION_API_BASE_URL } from './public';
+
+const PRODUCTION_BASE_URL = PRODUCTION_API_BASE_URL;
+
+const envBaseURL = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+
+/**
+ * Release / Play builds always hit the live API. A LAN address in `.env`
+ * must never ship inside the AAB.
+ */
+export const API_BASE_URL = (
+  !__DEV__ ? PRODUCTION_BASE_URL : envBaseURL || PRODUCTION_BASE_URL
+).replace(/\/+$/, '');
+
+export const API_TIMEOUT = 20000;
+
+export const getApiConfig = () => ({
+  baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT,
+});
+
   // Your actual backend endpoints
   export const ENDPOINTS = {
     // Auth endpoints

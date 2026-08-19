@@ -1,42 +1,22 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  StatusBar,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { AuthStackParamList } from '../../../App';
-import api from '../../api/api';
 
-const COLORS = {
-  primary: '#2B4B39',
-  primaryLight: '#3A5D47',
-  background: '#F8F9FA',
-  surface: '#FFFFFF',
-  textPrimary: '#1D1D1F',
-  textSecondary: '#86868B',
-  inputBorder: '#E5E5E7',
-  shadow: 'rgba(0, 0, 0, 0.1)',
-  error: '#FF3B30',
-  success: '#4A6B52',
-};
+import { AuthStackParamList } from '../../navigation/types';
+import { BrandMark, Button, Card, Input, Screen } from '../../components';
+import { APP_DISPLAY_NAME, PRIVACY_POLICY_URL, TERMS_URL } from '../../config/legal';
+import { useAuth } from '../../context/AuthContext';
+import { persistSellerSession, type SellerAuthResponse } from '../../lib/session';
+import { postUser } from '../../lib/userApi';
+import { COLORS, FONT_SCALE, SPACING, TYPOGRAPHY } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
+  const { login } = useAuth();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
     if (!phone.trim() || !password.trim()) {
@@ -53,7 +33,7 @@ export default function LoginScreen({ navigation }: Props) {
     setLoading(true);
 
     try {
-      const response = await api.post('/api/user/login/', {
+      const response = await postUser<SellerAuthResponse>('login/', {
         phone: phoneClean,
         password: password.trim(),
       });
@@ -61,36 +41,20 @@ export default function LoginScreen({ navigation }: Props) {
       const data = response.data;
 
       if (data.access_token) {
-        await AsyncStorage.setItem('accessToken', data.access_token);
-        await AsyncStorage.setItem('refreshToken', data.refresh_token || '');
-        await AsyncStorage.setItem('apiToken', data.api_token || '');
-        await AsyncStorage.setItem('userPhone', phoneClean);
-        await AsyncStorage.setItem('userType', 'seller');
-        await AsyncStorage.setItem('sellerId', data.seller.id.toString());
-
-        console.log('\u2705 Seller login successful:', data.seller);
-
-        // Navigate to Dashboard
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Dashboard' as any }],
-        });
+        await persistSellerSession(data, phoneClean);
+        await login(data.access_token);
       } else {
-        throw new Error(data.error || data.detail || data.message || 'Login failed');
+        throw new Error('Login failed');
       }
-    } catch (error: any) {
-      console.error('\u274c Login error:', error);
-
-      let errorMessage = 'Login failed. Please try again.';
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.message?.includes('Network')) {
-        errorMessage = 'Network error. Check your connection.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
+    } catch (error: unknown) {
+      const response = (error as { response?: { data?: { error?: string; detail?: string } }; message?: string })
+        ?.response?.data;
+      const errorMessage =
+        response?.error ||
+        response?.detail ||
+        ((error as { message?: string })?.message?.includes('Network')
+          ? 'Sign in needs the internet. After login, walk-in billing still works offline for 3 days.'
+          : 'Login failed. Please try again.');
 
       Alert.alert('Login Error', errorMessage);
     } finally {
@@ -104,170 +68,140 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <LinearGradient
-          colors={[COLORS.background, COLORS.surface]}
-          style={styles.backgroundGradient}
-        />
+    <Screen scroll keyboardAvoiding>
+      <BrandMark tagline={`${APP_DISPLAY_NAME} seller dashboard`} />
 
-        {/* Logo Section */}
-        <View style={styles.logoSection}>
-          <View style={styles.logoContainer}>
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.primaryLight]}
-              style={styles.logoCircle}
-            >
-              <Text style={styles.logoText}>K</Text>
-            </LinearGradient>
-          </View>
-          <Text style={styles.brandTitle}>KERALA</Text>
-          <Text style={styles.brandSubtitle}>Sellers</Text>
-          <Text style={styles.brandTagline}>Seller Dashboard</Text>
+      <View style={styles.body}>
+        <Card>
+          <Text style={styles.formTitle} maxFontSizeMultiplier={FONT_SCALE.heading}>
+            Sign in
+          </Text>
+          <Text style={styles.formSubtitle} maxFontSizeMultiplier={FONT_SCALE.body}>
+            Use your seller phone and password
+          </Text>
+
+          <Input
+            label="Phone Number"
+            helper="10-digit mobile number starting with 6–9"
+            prefix="+91"
+            placeholder="9876543210"
+            value={phone}
+            onChangeText={formatPhoneNumber}
+            keyboardType="phone-pad"
+            maxLength={10}
+            editable={!loading}
+            autoComplete="tel"
+          />
+
+          <Input
+            label="Password"
+            placeholder="Enter your password"
+            value={password}
+            onChangeText={setPassword}
+            secure
+            autoCapitalize="none"
+            editable={!loading}
+            autoComplete="password"
+          />
+
+          <Button
+            label="Sign in"
+            onPress={handleLogin}
+            loading={loading}
+            disabled={loading}
+          />
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Register')}
+            disabled={loading}
+            style={styles.linkWrap}
+            accessibilityRole="link"
+            accessibilityLabel="Register your shop"
+            accessibilityHint="Opens the seller registration screen"
+          >
+            <Text style={styles.signUpText} maxFontSizeMultiplier={FONT_SCALE.body}>
+              New seller? <Text style={styles.signUpLink}>Register your shop</Text>
+            </Text>
+          </TouchableOpacity>
+        </Card>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerWebsite} maxFontSizeMultiplier={FONT_SCALE.caption}>
+            keralasellers.in
+          </Text>
+          <Text
+            style={styles.footerLink}
+            onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+            accessibilityRole="link"
+            maxFontSizeMultiplier={FONT_SCALE.caption}
+          >
+            Privacy policy
+          </Text>
+          <Text
+            style={styles.footerLink}
+            onPress={() => Linking.openURL(TERMS_URL)}
+            accessibilityRole="link"
+            maxFontSizeMultiplier={FONT_SCALE.caption}
+          >
+            Terms and conditions
+          </Text>
+          <Text style={styles.footerTagline} maxFontSizeMultiplier={FONT_SCALE.caption}>
+            After login, local billing works offline for 3 days
+          </Text>
         </View>
-
-        {/* Form Section */}
-        <View style={styles.formSection}>
-          <View style={styles.formContainer}>
-            <Text style={styles.formTitle}>Seller Sign In</Text>
-            <Text style={styles.formSubtitle}>Access your seller dashboard</Text>
-
-            {/* Phone Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <View style={styles.inputContainer}>
-                <Text style={styles.countryCode}>+91</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="9876543210"
-                  placeholderTextColor={COLORS.textSecondary}
-                  value={phone}
-                  onChangeText={formatPhoneNumber}
-                  keyboardType="numeric"
-                  maxLength={10}
-                  editable={!loading}
-                />
-              </View>
-              <Text style={styles.inputHelper}>Enter 10-digit mobile number (6-9 start)</Text>
-            </View>
-
-            {/* Password Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.textInputPassword}
-                  placeholder="Enter your password"
-                  placeholderTextColor={COLORS.textSecondary}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  editable={!loading}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  style={styles.passwordToggle}
-                >
-                  <Text style={styles.passwordToggleText}>
-                    {showPassword ? '\uD83D\uDC41\uFE0F' : '\uD83D\uDC41\uFE0F\u200D\uD83D\uDDE8\uFE0F'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Sign In Button */}
-            <TouchableOpacity
-              style={[styles.signInButton, loading && styles.buttonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={loading ? [COLORS.textSecondary, COLORS.textSecondary] : [COLORS.primary, COLORS.primaryLight]}
-                style={styles.buttonGradient}
-              >
-                {loading ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator color={COLORS.surface} size="small" />
-                    <Text style={styles.buttonText}>Signing In...</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.buttonText}>Sign In as Seller</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* Register Link */}
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Register')}
-              disabled={loading}
-            >
-              <Text style={styles.signUpText}>
-                New seller? <Text style={styles.signUpLink}>Register your shop</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerWebsite}>keralasellers.in</Text>
-            <Text style={styles.footerTagline}>Trusted platform for Kerala sellers</Text>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  backgroundGradient: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  logoSection: { alignItems: 'center', paddingTop: 50, paddingBottom: 25 },
-  logoContainer: { marginBottom: 16 },
-  logoCircle: {
-    width: 60, height: 60, borderRadius: 30,
-    justifyContent: 'center', alignItems: 'center',
-    elevation: 8,
+  body: {
+    paddingHorizontal: SPACING.lg,
+    flex: 1,
   },
-  logoText: { fontSize: 28, fontWeight: 'bold', color: COLORS.surface },
-  brandTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary, letterSpacing: 2, marginBottom: -2 },
-  brandSubtitle: { fontSize: 12, fontWeight: '300', color: COLORS.primary, letterSpacing: 1, marginBottom: 4 },
-  brandTagline: { fontSize: 10, color: COLORS.textSecondary, fontWeight: '500' },
-  formSection: { flex: 1, paddingHorizontal: 18 },
-  formContainer: {
-    backgroundColor: COLORS.surface, borderRadius: 14, padding: 20,
-    elevation: 5,
+  formTitle: {
+    ...TYPOGRAPHY.heading,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.xs,
   },
-  formTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, textAlign: 'center', marginBottom: 4 },
-  formSubtitle: { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 16 },
-  inputGroup: { marginBottom: 14 },
-  inputLabel: { fontSize: 10, fontWeight: '600', color: COLORS.primary, marginBottom: 5, marginLeft: 3 },
-  inputContainer: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
-    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 1,
-    borderWidth: 1, borderColor: COLORS.inputBorder, elevation: 1,
+  formSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
   },
-  countryCode: { fontSize: 14, color: COLORS.textPrimary, fontWeight: '600', marginRight: 6 },
-  textInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary, paddingVertical: 10 },
-  textInputPassword: { flex: 1, fontSize: 14, color: COLORS.textPrimary, paddingVertical: 10 },
-  inputHelper: { fontSize: 9, color: COLORS.textSecondary, marginTop: 3, marginLeft: 3 },
-  passwordToggle: { padding: 4 },
-  passwordToggleText: { fontSize: 14 },
-  signInButton: {
-    marginTop: 8, marginBottom: 16, borderRadius: 8, overflow: 'hidden', elevation: 3,
+  linkWrap: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: SPACING.md,
   },
-  buttonGradient: { paddingVertical: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  buttonText: { color: COLORS.surface, fontSize: 14, fontWeight: '600' },
-  loadingContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  buttonDisabled: { opacity: 0.7 },
-  signUpText: { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center' },
-  signUpLink: { color: COLORS.primary, fontWeight: '600' },
-  footer: { alignItems: 'center', paddingVertical: 12 },
-  footerWebsite: { fontSize: 10, color: COLORS.primary, fontWeight: '600', marginBottom: 2 },
-  footerTagline: { fontSize: 8, color: COLORS.textSecondary },
+  signUpText: {
+    ...TYPOGRAPHY.callout,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  signUpLink: {
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  footer: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    gap: SPACING.xs,
+  },
+  footerWebsite: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.primary,
+  },
+  footerLink: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
+  },
+  footerTagline: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+  },
 });

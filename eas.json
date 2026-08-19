@@ -1,0 +1,45 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.keralasellers.in",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dnmbfeckd",
+        "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "kerala_sellers_preset",
+        "EXPO_PUBLIC_RAZORPAY_KEY_ID": "rzp_live_RtVCg2H8HiEBeg",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyACMVvqqeaUPEp6KoGina_NBoyVWYgoNcg",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "keralasellers.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "keralasellers",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "keralasellers.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "658585155781",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:658585155781:web:33559cbbf780e89e0b18ac"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal"
+      }
+    }
+  }
+}

@@ -1,60 +1,62 @@
+/**
+ * Kerala Sellers brand tokens — aligned with keralasellers.in
+ * (ivory canvas #FDFFF0, deep teal-green #1A4845, Onam gold accent).
+ */
 export const COLORS = {
-    // Military Green Primary Palette
-    primary: '#2B4B39',        // Deep Military Green
-    primaryLight: '#3A5D47',   // Lighter Military Green
-    primaryDark: '#1C3228',    // Darker Military Green
-    
-    // Complementary Greens
-    secondary: '#4A6B52',      // Sage Military Green
-    accent: '#6B8E73',         // Light Military Green
-    accentLight: '#8FA896',    // Very Light Military Green
-    
-    // Apple Liquid Glass Neutrals
-    background: '#F8F9FA',     // Apple Light Background
-    surface: '#FFFFFF',        // Pure White Surface
-    surfaceSecondary: '#F1F3F4', // Secondary Surface
-    
-    // Glass Effect Colors
-    glassLight: 'rgba(255, 255, 255, 0.9)',
-    glassMedium: 'rgba(255, 255, 255, 0.7)',
-    glassDark: 'rgba(255, 255, 255, 0.5)',
-    glassOverlay: 'rgba(43, 75, 57, 0.1)', // Military green tint
-    
-    // Text Colors (Apple Style)
-    textPrimary: '#1D1D1F',   // Apple Dark Text
-    textSecondary: '#86868B', // Apple Gray Text
-    textTertiary: '#C7C7CC',  // Apple Light Gray
-    
-    // Status Colors with Military Theme
-    success: '#4A6B52',       // Military Success Green
-    warning: '#D4A574',       // Muted Military Orange
-    error: '#B85450',         // Muted Military Red
-    info: '#5B7A87',          // Military Blue-Gray
-    
-    // Input & Interactive
-    inputBackground: 'rgba(255, 255, 255, 0.8)',
-    inputBackgroundFocused: 'rgba(255, 255, 255, 0.95)',
-    inputBorder: 'rgba(43, 75, 57, 0.1)',
-    inputBorderFocused: 'rgba(43, 75, 57, 0.3)',
-    
-    // Shadows & Effects
-    shadowLight: 'rgba(0, 0, 0, 0.05)',
-    shadowMedium: 'rgba(0, 0, 0, 0.1)',
-    shadowHeavy: 'rgba(0, 0, 0, 0.15)',
-    shadowColored: 'rgba(43, 75, 57, 0.2)',
-    
-    // Button States
-    buttonDisabled: '#C7C7CC',
-    buttonPressed: '#1C3228',
-    
-    // Gradients
-    gradientPrimary: ['#2B4B39', '#3A5D47'],
-    gradientSecondary: ['#4A6B52', '#6B8E73'],
-    gradientBackground: ['#F8F9FA', '#FFFFFF'],
-    gradientGlass: [
-      'rgba(255, 255, 255, 0.9)',
-      'rgba(255, 255, 255, 0.6)',
-      'rgba(255, 255, 255, 0.3)'
-    ],
-  } as const;
-  
+  primary: '#1A4845',
+  primaryLight: '#2A6B5E',
+  primaryDark: '#0F2F2D',
+
+  secondary: '#3D6B5E',
+  accent: '#C6A35A',
+  accentLight: '#E2C98A',
+
+  background: '#FDFFF0',
+  surface: '#FFFFFF',
+  surfaceSecondary: '#F4F1E4',
+
+  glassLight: 'rgba(253, 255, 240, 0.92)',
+  glassMedium: 'rgba(255, 255, 255, 0.82)',
+  glassDark: 'rgba(255, 255, 255, 0.58)',
+  glassOverlay: '#E7F1EA',
+  primaryMuted: '#E7F1EA',
+  accentMuted: '#F6EED8',
+
+  textPrimary: '#14241F',
+  textSecondary: '#5C6B66',
+  textTertiary: '#9AA39E',
+  onPrimary: '#FFFFFF',
+
+  success: '#0F7A5A',
+  warning: '#C4842A',
+  error: '#C2473D',
+  info: '#2F6F7A',
+
+  successMuted: '#E3F4EC',
+  warningMuted: '#F8EBD4',
+  errorMuted: '#F8E4E1',
+  infoMuted: '#E2F0F3',
+
+  border: 'rgba(26, 72, 69, 0.12)',
+  inputBackground: '#FFFFFF',
+  inputBackgroundFocused: '#FFFEF8',
+  inputBorder: 'rgba(26, 72, 69, 0.16)',
+  inputBorderFocused: '#1A4845',
+
+  shadowLight: 'rgba(15, 47, 45, 0.06)',
+  shadowMedium: 'rgba(15, 47, 45, 0.12)',
+  shadowHeavy: 'rgba(15, 47, 45, 0.18)',
+  shadowColored: 'rgba(26, 72, 69, 0.22)',
+
+  buttonDisabled: '#C9D2CC',
+  buttonPressed: '#0F2F2D',
+
+  gradientPrimary: ['#1A4845', '#0F7A5A'] as const,
+  gradientSecondary: ['#C6A35A', '#E2C98A'] as const,
+  gradientBackground: ['#FDFFF0', '#F3F6E4'] as const,
+  gradientGlass: [
+    'rgba(255, 255, 255, 0.94)',
+    'rgba(253, 255, 240, 0.72)',
+    'rgba(231, 241, 234, 0.4)',
+  ] as const,
+} as const;
