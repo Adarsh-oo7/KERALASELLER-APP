@@ -17,9 +17,9 @@ export type MainTabParamList = {
 
 export type MainStackParamList = {
   Tabs: NavigatorScreenParams<MainTabParamList>;
-  ProductForm: { productId?: number };
+  ProductForm: { productId?: number; barcode?: string };
   OrderDetail: { orderId: number };
-  Billing: undefined;
+  Billing: { billId?: number; openScanner?: boolean } | undefined;
   Settings: { setup?: boolean } | undefined;
   BasicSettings: { setup?: boolean } | undefined;
   Payments: { setup?: boolean } | undefined;

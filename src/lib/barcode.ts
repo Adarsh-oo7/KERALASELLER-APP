@@ -73,6 +73,10 @@ export function encodeCode39(value: string): BarModule[] {
   return modules;
 }
 
+export function storedBarcode(value: string): string {
+  return value.trim();
+}
+
 export function generateShopBarcode(taken: Iterable<string> = []): string {
   const used = new Set(Array.from(taken, (item) => sanitizeBarcode(item)));
   for (let attempt = 0; attempt < 12; attempt += 1) {

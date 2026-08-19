@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,13 +7,23 @@ import { Badge, Button, Card, Header, LoadingState, Notice, Screen } from '../..
 import { COLORS, SPACING, TYPOGRAPHY } from '../../theme';
 import {
   createAddonOrder,
+  fetchAddons,
   fetchEntitlements,
+  fetchSubscription,
   verifyAddonPayment,
   type CatalogAddon,
   type EntitlementsPayload,
 } from '../../api/seller';
-import { apiError, formatInr } from '../../lib/format';
-import { humanizeFeatureCode } from '../../lib/planDetails';
+import {
+  addonBuyLabel,
+  addonCapacityLines,
+  addonCatalogIsEmpty,
+  addonNeedHint,
+  addonPurchaseCounts,
+  collectAddonCatalog,
+  partitionAddons,
+} from '../../lib/addonAccess';
+import { apiError, formatInr, httpStatus } from '../../lib/format';
 import RazorpayCheckoutModal, { type RazorpayCheckoutOptions } from '../../lib/razorpayCheckout';
 import { PRODUCTION_RAZORPAY_KEY_ID } from '../../config/public';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
@@ -21,13 +31,83 @@ import type { MainStackScreenProps } from '../../navigation/types';
 
 const RAZORPAY_KEY_ID = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || PRODUCTION_RAZORPAY_KEY_ID;
 
-function addonCapacity(addon: CatalogAddon): string[] {
-  const lines: string[] = [];
-  if (addon.extra_product_limit) lines.push(`+${addon.extra_product_limit} products`);
-  if (addon.extra_staff_limit) lines.push(`+${addon.extra_staff_limit} staff`);
-  if (addon.extra_branch_limit) lines.push(`+${addon.extra_branch_limit} location${addon.extra_branch_limit === 1 ? '' : 's'}`);
-  (addon.feature_codes || []).forEach((code) => lines.push(humanizeFeatureCode(code)));
-  return lines;
+function isMissingCatalog(err: unknown): boolean {
+  return httpStatus(err) === 404;
+}
+
+async function loadCatalog(): Promise<EntitlementsPayload> {
+  const [entitlementsResult, addonsResult, subscriptionResult] = await Promise.allSettled([
+    fetchEntitlements(),
+    fetchAddons(),
+    fetchSubscription(),
+  ]);
+
+  if (entitlementsResult.status === 'rejected' && !isMissingCatalog(entitlementsResult.reason)) {
+    throw entitlementsResult.reason;
+  }
+
+  const entitlements = entitlementsResult.status === 'fulfilled' ? entitlementsResult.value : null;
+  const publicAddons = addonsResult.status === 'fulfilled' ? addonsResult.value : [];
+  const subscription = subscriptionResult.status === 'fulfilled' ? subscriptionResult.value : null;
+  const billing = entitlements?.billing ?? subscription?.entitlements?.billing;
+
+  return {
+    commercially_active: entitlements?.commercially_active ?? Boolean(subscription?.is_active),
+    plan_id: entitlements?.plan_id ?? subscription?.plan?.id ?? subscription?.entitlements?.plan_id ?? null,
+    plan_name: entitlements?.plan_name || subscription?.plan_name || subscription?.plan?.name || subscription?.entitlements?.plan_name,
+    features: entitlements?.features ?? subscription?.entitlements?.features ?? [],
+    addons: collectAddonCatalog({
+      entitlementsAddons: entitlements?.addons,
+      publicAddons,
+      activeAddons: billing?.active_addons,
+    }) as CatalogAddon[],
+    billing,
+  };
+}
+
+function AddonCard({
+  addon,
+  badge,
+  hint,
+  actionLabel,
+  disabled,
+  loading,
+  onPress,
+}: {
+  addon: CatalogAddon;
+  badge?: string;
+  hint?: string | null;
+  actionLabel?: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onPress?: () => void;
+}) {
+  const extras = addonCapacityLines(addon);
+  return (
+    <Card>
+      <View style={styles.head}>
+        <Text style={styles.name}>{addon.name}</Text>
+        {badge ? (
+          <Badge
+            label={badge}
+            tone={badge === 'Active' || badge === 'Included' || badge.startsWith('On this shop') ? 'success' : badge === 'Not on this plan' ? 'warning' : 'neutral'}
+          />
+        ) : null}
+      </View>
+      {addon.description ? <Text style={styles.meta}>{addon.description}</Text> : null}
+      <Text style={styles.price}>
+        {formatInr(Number(addon.price))}
+        <Text style={styles.meta}> / {addon.billing_period === 'one_time' ? 'one time' : addon.billing_period || 'month'}</Text>
+      </Text>
+      {extras.map((line) => (
+        <Text key={line} style={styles.meta}>• {line}</Text>
+      ))}
+      {hint ? <Text style={styles.meta}>{hint}</Text> : null}
+      {actionLabel && onPress ? (
+        <Button label={actionLabel} onPress={onPress} loading={loading} disabled={disabled} />
+      ) : null}
+    </Card>
+  );
 }
 
 export default function AddonsScreen({ navigation }: MainStackScreenProps<'Addons'>) {
@@ -41,7 +121,7 @@ export default function AddonsScreen({ navigation }: MainStackScreenProps<'Addon
   const load = useCallback(async () => {
     setError('');
     try {
-      setData(await fetchEntitlements());
+      setData(await loadCatalog());
     } catch (err) {
       setError(apiError(err, 'Could not load add-ons.'));
     } finally {
@@ -110,15 +190,27 @@ export default function AddonsScreen({ navigation }: MainStackScreenProps<'Addon
   };
 
   const billing = data?.billing;
-  const activeIds = new Set((billing?.active_addons || []).map((item) => item.id));
-  const addons = data?.addons || [];
+  const purchaseCounts = useMemo(
+    () => addonPurchaseCounts(billing?.active_addons),
+    [billing],
+  );
+  const groups = useMemo(
+    () => partitionAddons(data?.addons || [], {
+      planId: data?.plan_id,
+      activeIds: purchaseCounts.keys(),
+      featureCodes: data?.features,
+    }),
+    [data, purchaseCounts],
+  );
+  const emptyCatalog = addonCatalogIsEmpty(groups);
+  const canPurchase = Boolean(data?.commercially_active);
 
   return (
     <Screen scroll edges={['bottom']} gradient={false} statusBarStyle="light-content">
       <Header
         tone="brand"
         title="Add-ons"
-        subtitle="Extra capacity on top of your plan"
+        subtitle={data?.plan_name ? `Add extras ${data.plan_name} does not already cover` : 'Buy only the extras this shop needs'}
         onBack={() => navigation.goBack()}
       />
       <View style={styles.content}>
@@ -126,59 +218,95 @@ export default function AddonsScreen({ navigation }: MainStackScreenProps<'Addon
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Notice
           tone="info"
-          title="Same extras as the web dashboard"
-          message="Prices and unlocks come from your shop entitlements. Staff, locations, GST, and similar extras appear here when they are in the catalog."
+          title="Buy only what this shop needs"
+          message="Your plan stays the same. Add a feature or extra product, staff, or location capacity only if this shop needs it. Capacity extras can be added more than once."
         />
+        {!canPurchase && !loading ? (
+          <Notice
+            tone="warning"
+            title="Take a plan first"
+            message="Add-ons sit on top of an active plan. Choose a plan, then come back and buy only the extras this shop needs."
+          />
+        ) : null}
         <Card>
-          <Text style={styles.kicker}>This month</Text>
-          <Text style={styles.total}>
-            {formatInr(Number(billing?.monthly_total || 0))}
-          </Text>
+          <Text style={styles.kicker}>{data?.plan_name || 'Current plan'}</Text>
+          <Text style={styles.total}>{formatInr(Number(billing?.monthly_total || 0))}</Text>
           <Text style={styles.meta}>
-            Plan {formatInr(Number(billing?.base_plan_price || 0))} + add-ons {formatInr(Number(billing?.addons_price || 0))}
+            Plan {formatInr(Number(billing?.base_plan_price || 0))} + add-ons {formatInr(Number(billing?.addons_price || 0))} this month
           </Text>
+          {!canPurchase && !loading ? (
+            <Button label="View plans" onPress={() => navigation.navigate('Subscription')} />
+          ) : null}
         </Card>
 
-        <Text style={styles.section}>Active</Text>
-        {(billing?.active_addons || []).length === 0 ? (
-          <Text style={styles.meta}>No add-ons yet.</Text>
-        ) : (billing?.active_addons || []).map((item) => (
-          <Card key={String(item.purchase_id || item.id)}>
-            <Text style={styles.name}>{item.name}</Text>
+        {emptyCatalog ? (
+          <Card>
+            <Text style={styles.name}>No extras in the catalog yet</Text>
             <Text style={styles.meta}>
-              {formatInr(Number(item.price))} / {item.billing_period || 'month'}
-              {item.end_date ? ` · until ${item.end_date.slice(0, 10)}` : ''}
+              When extra products, staff logins, GST, or locations are listed for this shop, they appear here so you can buy only what you need.
             </Text>
           </Card>
-        ))}
+        ) : (
+          <>
+            <Text style={styles.section}>Add if this shop needs it</Text>
+            {groups.compatible.length === 0 ? (
+              <Text style={styles.meta}>Nothing extra to buy on this plan right now. Other extras are listed below.</Text>
+            ) : null}
+            {groups.compatible.map((addon) => {
+              const count = purchaseCounts.get(addon.id) || 0;
+              return (
+                <AddonCard
+                  key={addon.id}
+                  addon={addon}
+                  badge={count > 0 ? `On this shop ×${count}` : undefined}
+                  hint={addonNeedHint(addon, count)}
+                  actionLabel={canPurchase ? addonBuyLabel(addon, count) : undefined}
+                  loading={buyingId === addon.id}
+                  disabled={buyingId != null}
+                  onPress={canPurchase ? () => pay(addon) : undefined}
+                />
+              );
+            })}
 
-        <Text style={styles.section}>Available</Text>
-        {addons.map((addon) => {
-          const owned = activeIds.has(addon.id);
-          const extras = addonCapacity(addon);
-          return (
-            <Card key={addon.id}>
-              <View style={styles.head}>
-                <Text style={styles.name}>{addon.name}</Text>
-                {owned ? <Badge label="Active" tone="success" /> : null}
-              </View>
-              {addon.description ? <Text style={styles.meta}>{addon.description}</Text> : null}
-              <Text style={styles.price}>
-                {formatInr(Number(addon.price))}
-                <Text style={styles.meta}> / {addon.billing_period === 'one_time' ? 'one time' : addon.billing_period || 'month'}</Text>
-              </Text>
-              {extras.map((line) => (
-                <Text key={line} style={styles.meta}>• {line}</Text>
-              ))}
-              <Button
-                label={owned ? 'Buy again' : `Add ${addon.name}`}
-                onPress={() => pay(addon)}
-                loading={buyingId === addon.id}
-                disabled={buyingId != null}
-              />
-            </Card>
-          );
-        })}
+            {groups.onPlan.length > 0 ? (
+              <>
+                <Text style={styles.section}>Already in this plan</Text>
+                {groups.onPlan.map((addon) => (
+                  <AddonCard
+                    key={addon.id}
+                    addon={addon}
+                    badge="Included"
+                    hint="This shop already has this on the current plan, so there is nothing extra to buy."
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {groups.included.length > 0 ? (
+              <>
+                <Text style={styles.section}>Already bought</Text>
+                {groups.included.map((addon) => (
+                  <AddonCard
+                    key={addon.id}
+                    addon={addon}
+                    badge="Active"
+                    hint="This extra is already on this shop. One purchase is enough."
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {groups.otherPlans.length > 0 ? (
+              <>
+                <Text style={styles.section}>Not on this plan</Text>
+                <Text style={styles.meta}>These extras stay visible, but they cannot be added on the plan this shop is on.</Text>
+                {groups.otherPlans.map((addon) => (
+                  <AddonCard key={addon.id} addon={addon} badge="Not on this plan" />
+                ))}
+              </>
+            ) : null}
+          </>
+        )}
       </View>
       <RazorpayCheckoutModal
         visible={Boolean(checkout)}

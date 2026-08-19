@@ -89,7 +89,8 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
   const ready = Boolean(onboarding?.is_ready_to_sell || onboarding?.requirements?.is_live);
   const blockedMessage = 'Finish store profile, Razorpay, and subscription before adding products.';
   const shortcuts: Shortcut[] = [
-  { label: 'New bill', hint: 'Walk-in · 3-day offline', icon: 'cash-outline', onPress: () => navigation.navigate('Billing') },
+    { label: 'New bill', hint: 'Walk-in · 3-day offline', icon: 'cash-outline', onPress: () => navigation.navigate('Billing', {}) },
+    { label: 'Scan bill', hint: 'Camera till', icon: 'scan-outline', onPress: () => navigation.navigate('Billing', { openScanner: true }) },
     {
       label: 'Add product',
       hint: ready ? 'Catalogue' : 'Complete setup first',

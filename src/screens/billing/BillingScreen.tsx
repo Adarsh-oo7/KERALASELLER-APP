@@ -1,21 +1,47 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
-import { Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Screen, BarcodeScannerModal } from '../../components';
+import { Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Notice, Screen, BarcodeScannerModal } from '../../components';
 import { APP_DISPLAY_NAME } from '../../config/legal';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, RADIUS, SPACING, TYPOGRAPHY } from '../../theme';
-import { createLocalBill, fetchProducts, lookupLoyalty, type Product } from '../../api/seller';
-import { apiError, formatInr } from '../../lib/format';
+import {
+  createLocalBill,
+  fetchLocalBill,
+  fetchLocalBills,
+  fetchProducts,
+  lookupLoyalty,
+  updateLocalBill,
+  type LocalBill,
+  type Product,
+} from '../../api/seller';
+import { apiError, formatDate, formatInr, httpStatus } from '../../lib/format';
 import { findProductByCode } from '../../lib/barcode';
 import type { MainStackScreenProps } from '../../navigation/types';
 
-type Line = { product: Product; quantity: number; variantId?: number };
+type Line = { product: Product; quantity: number; variantId?: number; unitPrice: number };
 
-export default function BillingScreen({ navigation }: MainStackScreenProps<'Billing'>) {
-  const { requireLocalBilling, mode } = useOnlineGuard();
+function unitPriceOf(product: Product, variantId?: number): number {
+  const variant = (product.variants || []).find((item) => item.id === variantId);
+  return Number(variant?.selling_price ?? variant?.price ?? product.price);
+}
+
+function stubProduct(item: { product_id?: number; name?: string; price?: number | string; variant_id?: number | null }): Product {
+  return {
+    id: item.product_id || 0,
+    name: item.name || 'Item',
+    price: Number(item.price || 0),
+    total_stock: 9999,
+    online_stock: 0,
+    sale_type: 'OFFLINE',
+  };
+}
+
+export default function BillingScreen({ navigation, route }: MainStackScreenProps<'Billing'>) {
+  const { requireLocalBilling, requireOnline, mode } = useOnlineGuard();
   const [products, setProducts] = useState<Product[]>([]);
+  const [recent, setRecent] = useState<LocalBill[]>([]);
   const [query, setQuery] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -28,14 +54,24 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
   const [splitUpi, setSplitUpi] = useState('');
   const [loyaltyBalance, setLoyaltyBalance] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
-  const [scanner, setScanner] = useState(false);
+  const [scanner, setScanner] = useState(Boolean(route.params?.openScanner));
+  const [editingBillId, setEditingBillId] = useState<number | null>(route.params?.billId ?? null);
+  const [editingBillLabel, setEditingBillLabel] = useState('');
+  const loadedBill = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     setError('');
     try {
-      setProducts(await fetchProducts({ page_size: 200 }));
+      const list = await fetchProducts({ page_size: 200 });
+      setProducts(list);
     } catch (err) {
       setError(apiError(err, 'Could not load products.'));
+    }
+    try {
+      const bills = await fetchLocalBills();
+      setRecent(bills.filter((bill) => bill.status !== 'CANCELLED' && bill.payment_status !== 'CANCELLED'));
+    } catch {
+      setRecent([]);
     } finally {
       setLoading(false);
     }
@@ -46,6 +82,10 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
       load();
     }, [load]),
   );
+
+  useEffect(() => {
+    if (route.params?.openScanner) setScanner(true);
+  }, [route.params?.openScanner]);
 
   useEffect(() => {
     const digits = customerPhone.replace(/\D/g, '').slice(-10);
@@ -67,6 +107,35 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
     };
   }, [customerPhone]);
 
+  const applyBill = useCallback((bill: LocalBill, catalog: Product[]) => {
+    if (!bill.id) return;
+    setEditingBillId(bill.id);
+    setEditingBillLabel(bill.bill_id || bill.bill_number || `Bill ${bill.id}`);
+    setCustomerName(bill.customer_name || '');
+    setCustomerPhone(bill.customer_phone || '');
+    const method = (bill.payment_method || 'CASH').toUpperCase();
+    setPaymentMethod(method === 'UPI' || method === 'SPLIT' ? method : 'CASH');
+    setLines((bill.items || []).map((item) => {
+      const found = catalog.find((product) => product.id === item.product_id);
+      const product = found || stubProduct(item);
+      return {
+        product,
+        quantity: item.quantity,
+        variantId: item.variant_id || undefined,
+        unitPrice: Number(item.price),
+      };
+    }));
+  }, []);
+
+  useEffect(() => {
+    const billId = route.params?.billId;
+    if (!billId || products.length === 0 || loadedBill.current === billId) return;
+    loadedBill.current = billId;
+    fetchLocalBill(billId)
+      .then((bill) => applyBill(bill, products))
+      .catch((err) => Alert.alert('Could not open bill', apiError(err, 'Try from recent bills.')));
+  }, [route.params?.billId, products, applyBill]);
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     const available = products.filter((p) => p.total_stock > 0 && p.sale_type !== 'ONLINE');
@@ -79,7 +148,8 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
     ).slice(0, 8);
   }, [products, query]);
 
-  const add = (product: Product, variantId?: number) => {
+  const add = (product: Product, variantId?: number, unitPrice?: number) => {
+    const price = unitPrice ?? unitPriceOf(product, variantId);
     setLines((prev) => {
       const existing = prev.find((line) => line.product.id === product.id && line.variantId === variantId);
       if (existing) {
@@ -87,16 +157,15 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
           line.product.id === product.id && line.variantId === variantId ? { ...line, quantity: line.quantity + 1 } : line,
         );
       }
-      return [...prev, { product, quantity: 1, variantId }];
+      return [...prev, { product, quantity: 1, variantId, unitPrice: price }];
     });
     setQuery('');
   };
 
   const addScanned = (code: string) => {
-    setScanner(false);
     const match = findProductByCode(products, code);
     if (!match) {
-      Alert.alert('Not in this shop', `${code} is not on a product. Create or scan a barcode from More → Barcodes.`);
+      Alert.alert('Not in this shop', `${code} is not on a product. Create or attach a barcode from More → Barcodes.`);
       setQuery(code);
       return;
     }
@@ -111,49 +180,89 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
     );
   };
 
-  const total = lines.reduce((sum, line) => sum + Number(line.product.price) * line.quantity, 0);
+  const changePrice = (id: number, variantId: number | undefined, raw: string) => {
+    const next = Number(raw);
+    setLines((prev) => prev.map((line) => (
+      line.product.id === id && line.variantId === variantId
+        ? { ...line, unitPrice: Number.isFinite(next) && next >= 0 ? next : line.unitPrice }
+        : line
+    )));
+  };
+
+  const removeLine = (id: number, variantId?: number) => {
+    setLines((prev) => prev.filter((line) => !(line.product.id === id && line.variantId === variantId)));
+  };
+
+  const resetBill = () => {
+    setLines([]);
+    setCustomerName('');
+    setCustomerPhone('');
+    setUsePoints(false);
+    setLoyaltyBalance(0);
+    setEditingBillId(null);
+    setEditingBillLabel('');
+    setSplitCash('');
+    setSplitUpi('');
+    loadedBill.current = null;
+  };
+
+  const total = lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+
+  const payload = () => ({
+    customer_name: customerName.trim() || 'Walk-in Customer',
+    customer_phone: customerPhone.trim(),
+    items: lines.map((line) => ({
+      id: line.product.id,
+      variant_id: line.variantId,
+      quantity: line.quantity,
+      price: line.unitPrice,
+    })),
+    payment_method: paymentMethod,
+    payments: paymentMethod === 'SPLIT' ? [
+      Number(splitCash) > 0 ? { method: 'CASH', amount: Number(splitCash) } : null,
+      Number(splitUpi) > 0 ? { method: 'UPI', amount: Number(splitUpi) } : null,
+    ].filter((row): row is { method: string; amount: number } => Boolean(row)) : undefined,
+    loyalty_points: usePoints ? Math.min(loyaltyBalance, Math.floor(total)) : undefined,
+  });
 
   const checkout = async () => {
     if (lines.length === 0) {
       Alert.alert('Empty bill', 'Add at least one product.');
       return;
     }
+    if (lines.some((line) => !line.product.id)) {
+      Alert.alert('Missing product', 'One line is no longer in this shop. Remove it and add the product again.');
+      return;
+    }
     if (!requireLocalBilling()) return;
+    if (editingBillId && !requireOnline('Editing a saved bill')) return;
     setSaving(true);
     try {
-      const result = await createLocalBill(
-        {
-          customer_name: customerName.trim() || 'Walk-in Customer',
-          customer_phone: customerPhone.trim(),
-          items: lines.map((line) => ({
-            id: line.product.id,
-            variant_id: line.variantId,
-            quantity: line.quantity,
-            price: Number(line.product.price),
-          })),
-          payment_method: paymentMethod,
-          payments: paymentMethod === 'SPLIT' ? [
-            Number(splitCash) > 0 ? { method: 'CASH', amount: Number(splitCash) } : null,
-            Number(splitUpi) > 0 ? { method: 'UPI', amount: Number(splitUpi) } : null,
-          ].filter((row): row is { method: string; amount: number } => Boolean(row)) : undefined,
-          loyalty_points: usePoints ? Math.min(loyaltyBalance, Math.floor(total)) : undefined,
-        },
-        {
+      let result: LocalBill;
+      if (editingBillId) {
+        try {
+          result = await updateLocalBill(editingBillId, payload());
+        } catch (err) {
+          if (httpStatus(err) === 404) {
+            result = await createLocalBill(payload(), { queueIfOffline: true, forceQueue: mode === 'offline_grace' });
+            Alert.alert('Saved as a new bill', 'This shop API cannot edit an old bill yet, so a new bill was created instead.');
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        result = await createLocalBill(payload(), {
           forceQueue: mode === 'offline_grace',
           queueIfOffline: true,
-        },
-      );
+        });
+      }
       const receipt = [
         `${APP_DISPLAY_NAME} bill ${result.bill_id}${result.queued ? ' (saved on this phone)' : ''}`,
         customerName ? `Customer: ${customerName}` : 'Walk-in customer',
-        ...lines.map((line) => `${line.product.name} x${line.quantity} = ${formatInr(Number(line.product.price) * line.quantity)}`),
+        ...lines.map((line) => `${line.product.name} x${line.quantity} = ${formatInr(line.unitPrice * line.quantity)}`),
         `Total: ${formatInr(result.total_amount ?? total)}`,
       ].join('\n');
-      setLines([]);
-      setCustomerName('');
-      setCustomerPhone('');
-      setUsePoints(false);
-      setLoyaltyBalance(0);
+      resetBill();
       await load();
       await Share.share({ message: receipt });
     } catch (err) {
@@ -167,8 +276,12 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
     <Screen scroll keyboardAvoiding edges={['bottom']} gradient={false} statusBarStyle="light-content">
       <Header
         tone="brand"
-        title="Local bill"
-        subtitle={mode === 'offline_grace' ? 'Saved on this phone, syncs in 3 days' : 'Walk-in cash bill'}
+        title={editingBillId ? 'Edit bill' : 'Local bill'}
+        subtitle={
+          editingBillLabel
+            ? `Editing ${editingBillLabel}`
+            : mode === 'offline_grace' ? 'Saved on this phone, syncs in 3 days' : 'Scan, then edit qty or price'
+        }
         onBack={() => navigation.goBack()}
         action={{
           icon: 'scan-outline',
@@ -179,6 +292,13 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
       <View style={styles.content}>
         {loading ? <LoadingState message="Loading products…" /> : null}
         {error ? <ErrorState message={error} onRetry={load} /> : null}
+        {editingBillId ? (
+          <Notice
+            tone="info"
+            title="This bill is editable"
+            message="Change quantity or price, scan more items, then save. Stock is corrected on the same bill number."
+          />
+        ) : null}
         <Input label="Customer name" value={customerName} onChangeText={setCustomerName} placeholder="Optional" />
         <Input label="Customer phone" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" placeholder="Optional" />
         {loyaltyBalance > 0 ? (
@@ -207,7 +327,7 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
           </>
         ) : null}
         <Input label="Add product" value={query} onChangeText={setQuery} placeholder="Name, SKU, or barcode" />
-        <Button label="Scan barcode" variant="secondary" icon="scan-outline" onPress={() => setScanner(true)} />
+        <Button label="Scan with camera" variant="secondary" icon="scan-outline" onPress={() => setScanner(true)} />
         {matches.flatMap((product) => {
           const variants = product.variants || [];
           if (variants.length === 0) {
@@ -219,7 +339,11 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
             ];
           }
           return variants.map((variant) => (
-            <TouchableOpacity key={`${product.id}-${variant.id}`} onPress={() => add(product, variant.id)} style={styles.suggest}>
+            <TouchableOpacity
+              key={`${product.id}-${variant.id}`}
+              onPress={() => add(product, variant.id, Number(variant.selling_price ?? variant.price ?? product.price))}
+              style={styles.suggest}
+            >
               <Text style={styles.suggestName}>{product.name} ({variant.name})</Text>
               <Text style={styles.suggestMeta}>{formatInr(variant.selling_price ?? variant.price ?? product.price)} · stock {variant.total_stock}</Text>
             </TouchableOpacity>
@@ -227,22 +351,37 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
         })}
 
         {lines.length === 0 ? (
-          <EmptyState icon="cart-outline" title="Bill is empty" message="Search and tap a product to add it." />
+          <EmptyState icon="cart-outline" title="Bill is empty" message="Scan a packet or search and tap a product." />
         ) : (
           <Card>
             {lines.map((line) => (
-              <View key={`${line.product.id}-${line.variantId || 0}`} style={styles.line}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.suggestName}>{line.product.name}</Text>
-                  <Text style={styles.suggestMeta}>{formatInr(Number(line.product.price) * line.quantity)}</Text>
+              <View key={`${line.product.id}-${line.variantId || 0}`} style={styles.lineBlock}>
+                <View style={styles.line}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.suggestName}>{line.product.name}</Text>
+                    <Text style={styles.suggestMeta}>{formatInr(line.unitPrice * line.quantity)}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => changeQty(line.product.id, -1, line.variantId)} style={styles.step}>
+                    <Text style={styles.stepText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.qty}>{line.quantity}</Text>
+                  <TouchableOpacity onPress={() => changeQty(line.product.id, 1, line.variantId)} style={styles.step}>
+                    <Text style={styles.stepText}>+</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity onPress={() => changeQty(line.product.id, -1, line.variantId)} style={styles.step}>
-                  <Text style={styles.stepText}>−</Text>
-                </TouchableOpacity>
-                <Text style={styles.qty}>{line.quantity}</Text>
-                <TouchableOpacity onPress={() => changeQty(line.product.id, 1, line.variantId)} style={styles.step}>
-                  <Text style={styles.stepText}>+</Text>
-                </TouchableOpacity>
+                <View style={styles.editRow}>
+                  <Text style={styles.priceLabel}>Unit ₹</Text>
+                  <TextInput
+                    value={String(line.unitPrice)}
+                    onChangeText={(text) => changePrice(line.product.id, line.variantId, text)}
+                    keyboardType="decimal-pad"
+                    style={styles.priceInput}
+                    accessibilityLabel={`Unit price for ${line.product.name}`}
+                  />
+                  <TouchableOpacity onPress={() => removeLine(line.product.id, line.variantId)} style={styles.remove}>
+                    <Text style={styles.removeText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
             <Text style={styles.total}>Total {formatInr(total)}</Text>
@@ -250,15 +389,49 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
         )}
 
         <Button
-          label={mode === 'offline_grace' ? 'Save bill on this phone' : 'Create bill & share'}
+          label={
+            editingBillId
+              ? 'Save bill changes'
+              : mode === 'offline_grace' ? 'Save bill on this phone' : 'Create bill & share'
+          }
           onPress={checkout}
           loading={saving}
           disabled={saving || lines.length === 0}
         />
+        {editingBillId ? (
+          <Button label="Start a new bill" variant="ghost" onPress={resetBill} disabled={saving} />
+        ) : null}
+
+        {recent.length > 0 ? (
+          <>
+            <Text style={styles.section}>Recent bills</Text>
+            <Text style={styles.meta}>Tap a bill to edit quantity, price, or items.</Text>
+            {recent.slice(0, 8).map((bill) => (
+              <TouchableOpacity
+                key={String(bill.id || bill.bill_id)}
+                onPress={() => {
+                  if (!bill.id) {
+                    Alert.alert('Not on the server yet', 'This bill is still only on this phone.');
+                    return;
+                  }
+                  loadedBill.current = bill.id;
+                  applyBill(bill, products);
+                }}
+                style={styles.recent}
+              >
+                <Text style={styles.suggestName}>{bill.bill_id || bill.bill_number}</Text>
+                <Text style={styles.suggestMeta}>
+                  {formatInr(bill.total_amount)} · {bill.customer_name || 'Walk-in'} · {formatDate(bill.created_at)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
+        ) : null}
       </View>
       <BarcodeScannerModal
         visible={scanner}
         title="Scan to add to bill"
+        continuous
         onClose={() => setScanner(false)}
         onScan={addScanned}
       />
@@ -276,7 +449,8 @@ const styles = StyleSheet.create({
   },
   suggestName: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary },
   suggestMeta: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
-  line: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
+  lineBlock: { marginBottom: SPACING.md },
+  line: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   step: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
@@ -287,6 +461,20 @@ const styles = StyleSheet.create({
   },
   stepText: { ...TYPOGRAPHY.title, color: COLORS.primary },
   qty: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary, minWidth: 24, textAlign: 'center' },
+  editRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.xs },
+  priceLabel: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
+  priceInput: {
+    ...TYPOGRAPHY.bodyStrong,
+    color: COLORS.textPrimary,
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: 88,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+  },
+  remove: { minHeight: MIN_TOUCH_TARGET, justifyContent: 'center' },
+  removeText: { ...TYPOGRAPHY.bodyStrong, color: COLORS.error },
   total: { ...TYPOGRAPHY.heading, color: COLORS.primary, marginTop: SPACING.sm },
   payRow: { flexDirection: 'row', gap: SPACING.sm, marginVertical: SPACING.sm },
   payChip: {
@@ -299,4 +487,12 @@ const styles = StyleSheet.create({
   },
   payChipOn: { backgroundColor: COLORS.primary },
   payChipText: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary },
+  section: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary, marginTop: SPACING.md },
+  meta: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
+  recent: {
+    minHeight: MIN_TOUCH_TARGET,
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.inputBorder,
+  },
 });

@@ -13,11 +13,34 @@ export function asList<T>(data: unknown): T[] {
     if (Array.isArray(record.products)) return record.products as T[];
     if (Array.isArray(record.notifications)) return record.notifications as T[];
     if (Array.isArray(record.items)) return record.items as T[];
+    if (Array.isArray(record.bills)) return record.bills as T[];
+    if (Array.isArray(record.addons)) return record.addons as T[];
+    if (Array.isArray(record.expenses)) return record.expenses as T[];
   }
   return [];
 }
 
+export function httpStatus(error: unknown): number | undefined {
+  if (typeof error === 'object' && error && 'response' in error) {
+    return (error as { response?: { status?: number } }).response?.status;
+  }
+  return undefined;
+}
+
+function looksLikeNetworkError(error: unknown): boolean {
+  const err = error as { message?: string; code?: string; response?: unknown };
+  if (err?.response) return false;
+  const message = String(err?.message || err?.code || '').toLowerCase();
+  return (
+    message.includes('network')
+    || message.includes('timeout')
+    || err?.code === 'ECONNABORTED'
+    || err?.code === 'ERR_NETWORK'
+  );
+}
+
 export function apiError(error: unknown, fallback: string): string {
+  if (looksLikeNetworkError(error)) return fallback;
   if (typeof error === 'object' && error && 'response' in error) {
     const data = (error as { response?: { data?: Record<string, unknown> } }).response?.data;
     if (!data) return fallback;

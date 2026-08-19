@@ -6,6 +6,7 @@ import {
   findProductByCode,
   generateShopBarcode,
   sanitizeBarcode,
+  storedBarcode,
 } from './barcode.ts';
 
 describe('barcode', () => {
@@ -36,5 +37,10 @@ describe('barcode', () => {
     assert.equal(findProductByCode(products, '111')?.product.id, 1);
     assert.equal(findProductByCode(products, '222')?.variantId, 9);
     assert.equal(findProductByCode(products, 'missing'), null);
+  });
+
+  it('keeps a scanned packet barcode as typed, including EAN digits', () => {
+    assert.equal(storedBarcode(' 8901030865365 '), '8901030865365');
+    assert.equal(sanitizeBarcode('8901030865365'), '8901030865365');
   });
 });

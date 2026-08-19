@@ -6,6 +6,7 @@ import { Card, Header, Screen } from '../../components';
 import { PRIVACY_POLICY_URL, TERMS_URL } from '../../config/legal';
 import { useAuth } from '../../context/AuthContext';
 import { useStoreAccess } from '../../hooks/useStoreAccess';
+import { canUseTool } from '../../lib/storeAccess';
 import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, SPACING, TYPOGRAPHY } from '../../theme';
 import type { MainStackParamList, MainTabScreenProps } from '../../navigation/types';
 
@@ -23,8 +24,8 @@ const GROUPS: Group[] = [
   {
     title: 'Billing counter',
     items: [
-      { label: 'Local billing', hint: 'Walk-in cash, UPI, or split', icon: 'cash-outline', route: 'Billing', permission: 'billing.access_pos' },
-      { label: 'Barcodes', hint: 'Create stickers and scan products', icon: 'barcode-outline', route: 'Barcodes', permission: ['products.view', 'billing.access_pos'] },
+      { label: 'Local billing', hint: 'Scan, edit qty, cash or UPI', icon: 'cash-outline', route: 'Billing', permission: 'billing.access_pos' },
+      { label: 'Barcodes', hint: 'Create or attach a packet barcode', icon: 'barcode-outline', route: 'Barcodes', permission: ['products.view', 'billing.access_pos'] },
       { label: 'Customers', hint: 'From bills and orders', icon: 'people-outline', route: 'Customers', permission: 'customers.view' },
       { label: 'Reports', hint: 'Today, best sellers, profit', icon: 'stats-chart-outline', route: 'Analytics', permission: 'reports.view_basic' },
       { label: 'Expenses', hint: 'Rent, petrol, other costs', icon: 'wallet-outline', route: 'Expenses', permission: 'expenses.view' },
@@ -51,26 +52,24 @@ const GROUPS: Group[] = [
     title: 'Account',
     items: [
       { label: 'Subscription', hint: 'Starter, Growth, or Pro', icon: 'sparkles-outline', route: 'Subscription' },
-      { label: 'Add-ons', hint: 'Extra products, staff, GST, locations', icon: 'extension-puzzle-outline', route: 'Addons', permission: 'account.manage_subscription' },
+      { label: 'Add-ons', hint: 'Buy extras only if this shop needs them', icon: 'extension-puzzle-outline', route: 'Addons', permission: 'account.manage_subscription' },
       { label: 'Payments', hint: 'Razorpay keys and payouts', icon: 'card-outline', route: 'Payments' },
     ],
   },
 ];
 
-function allowedFor(item: Item, allowed: string[]) {
-  if (!item.permission) return true;
-  const needed = Array.isArray(item.permission) ? item.permission : [item.permission];
-  return needed.some((code) => allowed.includes(code));
+function allowedFor(item: Item, allowed: string[] | null, isOwner: boolean) {
+  return canUseTool(allowed, item.permission, isOwner);
 }
 
 export default function MoreScreen({ navigation }: MainTabScreenProps<'More'>) {
   const { logout } = useAuth();
-  const { allowed } = useStoreAccess();
+  const { allowed, isOwner } = useStoreAccess();
   const groups = useMemo(
     () => GROUPS
-      .map((group) => ({ ...group, items: group.items.filter((item) => allowedFor(item, allowed)) }))
+      .map((group) => ({ ...group, items: group.items.filter((item) => allowedFor(item, allowed, isOwner)) }))
       .filter((group) => group.items.length > 0),
-    [allowed],
+    [allowed, isOwner],
   );
 
   return (

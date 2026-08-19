@@ -6,7 +6,7 @@ import { BarcodeMark, BarcodeScannerModal, Button, Card, EmptyState, Header, Inp
 import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, SPACING, TYPOGRAPHY } from '../../theme';
 import { fetchProducts, saveProduct, type Product } from '../../api/seller';
 import { apiError } from '../../lib/format';
-import { codesFromProduct, findProductByCode, generateShopBarcode, sanitizeBarcode } from '../../lib/barcode';
+import { codesFromProduct, findProductByCode, generateShopBarcode, sanitizeBarcode, storedBarcode } from '../../lib/barcode';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import type { MainStackScreenProps } from '../../navigation/types';
 
@@ -55,12 +55,27 @@ export default function BarcodeScreen({ navigation }: MainStackScreenProps<'Barc
       setQuery(code);
       return;
     }
+    const attach = async (product: Product) => {
+      if (!requireOnline('Saving a barcode')) return;
+      setSavingId(product.id);
+      try {
+        const saved = await saveProduct({ barcode: storedBarcode(code) }, product.id);
+        const next = { ...product, ...saved, barcode: storedBarcode(code) };
+        setProducts((prev) => prev.map((item) => (item.id === product.id ? next : item)));
+        setSelected(next);
+      } catch (err) {
+        Alert.alert('Could not save barcode', apiError(err, 'Try again.'));
+      } finally {
+        setSavingId(null);
+      }
+    };
     Alert.alert(
       'No product for this code',
-      `${code} is not on a shop product yet. Open a product and save this barcode there.`,
+      `${code} is not on a shop product yet. Create a product with this packet barcode, or attach it to one you already have.`,
       [
-        { text: 'OK' },
-        { text: 'Add product', onPress: () => navigation.navigate('ProductForm', {}) },
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Add product', onPress: () => navigation.navigate('ProductForm', { barcode: storedBarcode(code) }) },
+        ...(selected ? [{ text: `Attach to ${selected.name}`, onPress: () => { void attach(selected); } }] : []),
       ],
     );
   };
@@ -93,7 +108,7 @@ export default function BarcodeScreen({ navigation }: MainStackScreenProps<'Barc
       <Header
         tone="brand"
         title="Barcodes"
-        subtitle="Create stickers and scan at the till"
+        subtitle="Create a shop code or attach the packet barcode"
         onBack={() => navigation.goBack()}
         action={{
           icon: 'scan-outline',
@@ -139,13 +154,27 @@ export default function BarcodeScreen({ navigation }: MainStackScreenProps<'Barc
             {product.barcode ? (
               <Button label="Show" size="sm" variant="ghost" onPress={() => setSelected(product)} />
             ) : (
-              <Button
-                label="Create"
-                size="sm"
-                onPress={() => createFor(product)}
-                loading={savingId === product.id}
-                disabled={savingId != null}
-              />
+              <View style={styles.actions}>
+                <Button
+                  label="Create"
+                  size="sm"
+                  fullWidth={false}
+                  onPress={() => createFor(product)}
+                  loading={savingId === product.id}
+                  disabled={savingId != null}
+                />
+                <Button
+                  label="Scan"
+                  size="sm"
+                  variant="secondary"
+                  fullWidth={false}
+                  onPress={() => {
+                    setSelected(product);
+                    setScanner(true);
+                  }}
+                  disabled={savingId != null}
+                />
+              </View>
             )}
           </TouchableOpacity>
         ))}
@@ -173,4 +202,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.inputBorder,
   },
+  actions: { flexDirection: 'row', gap: SPACING.xs, alignItems: 'center' },
 });

@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { Button, Chip, Header, Input, LoadingState, Screen, BarcodeMark, BarcodeScannerModal } from '../../components';
 import { COLORS, FONT_SCALE, SPACING, TYPOGRAPHY } from '../../theme';
-import { fetchCategories, fetchProduct, fetchSellingStatus, saveProduct, type Category } from '../../api/seller';
+import { fetchCategories, fetchProduct, fetchProducts, fetchSellingStatus, saveProduct, type Category, type Product } from '../../api/seller';
 import { apiError } from '../../lib/format';
-import { generateShopBarcode, sanitizeBarcode } from '../../lib/barcode';
+import { codesFromProduct, findProductByCode, generateShopBarcode, storedBarcode } from '../../lib/barcode';
 import { uploadImage } from '../../lib/cloudinary';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import type { MainStackScreenProps } from '../../navigation/types';
@@ -23,6 +23,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
   const [loading, setLoading] = useState(Boolean(productId));
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [catalog, setCatalog] = useState<Product[]>([]);
   const [name, setName] = useState('');
   const [modelName, setModelName] = useState('');
   const [description, setDescription] = useState('');
@@ -35,7 +36,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
   const [imageUrl, setImageUrl] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [sku, setSku] = useState('');
-  const [barcode, setBarcode] = useState('');
+  const [barcode, setBarcode] = useState(route.params?.barcode || '');
   const [costPrice, setCostPrice] = useState('');
   const [hsnCode, setHsnCode] = useState('');
   const [gstRate, setGstRate] = useState('');
@@ -46,10 +47,16 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
     let cancelled = false;
     (async () => {
       try {
-        const cats = await fetchCategories();
-        if (!cancelled) setCategories(cats);
+        const [cats, products] = await Promise.all([
+          fetchCategories().catch(() => [] as Category[]),
+          fetchProducts({ page_size: 200 }).catch(() => [] as Product[]),
+        ]);
+        if (!cancelled) {
+          setCategories(cats);
+          setCatalog(products);
+        }
       } catch {
-        // Categories are helpful, not required to save a basic product.
+        // Categories and existing codes are helpful, not required to save.
       }
       if (!productId) {
         try {
@@ -82,7 +89,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
         setImageUrl(product.main_image_url || product.thumbnail_url || '');
         setWeightKg(product.weight_kg != null && product.weight_kg !== '' ? String(product.weight_kg) : '');
         setSku(product.sku || '');
-        setBarcode(product.barcode || '');
+        setBarcode(product.barcode || route.params?.barcode || '');
         setCostPrice(product.cost_price != null && product.cost_price !== '' ? String(product.cost_price) : '');
         setHsnCode(product.hsn_code || '');
         setGstRate(product.gst_rate != null && Number(product.gst_rate) !== 0 ? String(product.gst_rate) : '');
@@ -96,7 +103,21 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
     return () => {
       cancelled = true;
     };
-  }, [productId, navigation]);
+  }, [productId, navigation, route.params?.barcode]);
+
+  const takenCodes = useMemo(
+    () => catalog.flatMap((product) => codesFromProduct(product)),
+    [catalog],
+  );
+
+  const duplicate = useMemo(() => {
+    const code = storedBarcode(barcode);
+    if (!code) return null;
+    const match = findProductByCode(catalog, code);
+    if (!match) return null;
+    if (productId && match.product.id === productId) return null;
+    return match.product;
+  }, [barcode, catalog, productId]);
 
   const pickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -146,6 +167,10 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
       Alert.alert('Weight', 'Enter packed weight in kg, for example 0.25 or 1.5.');
       return;
     }
+    if (duplicate) {
+      Alert.alert('Barcode already used', `${storedBarcode(barcode)} is already on ${duplicate.name}. Use a different code.`);
+      return;
+    }
     setSaving(true);
     try {
       if (!productId) {
@@ -173,7 +198,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
           main_image_url: imageUrl || undefined,
           weight_kg: weightNum,
           sku: sku.trim(),
-          barcode: sanitizeBarcode(barcode),
+          barcode: storedBarcode(barcode),
           cost_price: costPrice.trim() === '' ? null : Number(costPrice),
           hsn_code: hsnCode.trim(),
           gst_rate: gstRate.trim() === '' ? null : Number(gstRate),
@@ -218,6 +243,32 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
         />
         <Input label="Selling price" value={price} onChangeText={setPrice} keyboardType="decimal-pad" prefix="₹" />
         <Input label="MRP (optional)" value={mrp} onChangeText={setMrp} keyboardType="decimal-pad" prefix="₹" />
+
+        <Text style={styles.label} maxFontSizeMultiplier={FONT_SCALE.body}>Barcode</Text>
+        <Text style={styles.helper}>
+          Create a shop sticker, or attach the barcode already printed on the packet.
+        </Text>
+        <Input
+          label="Packet or shop code"
+          value={barcode}
+          onChangeText={setBarcode}
+          placeholder="Scan or type the existing barcode"
+          autoCapitalize="characters"
+        />
+        <View style={styles.row}>
+          <Chip label="Scan existing" selected={false} onPress={() => setScanner(true)} />
+          <Chip
+            label="Create shop code"
+            selected={false}
+            onPress={() => setBarcode(generateShopBarcode([...takenCodes, barcode, sku]))}
+          />
+          {barcode ? <Chip label="Clear" selected={false} onPress={() => setBarcode('')} /> : null}
+        </View>
+        {duplicate ? (
+          <Text style={styles.warn}>Already on {duplicate.name}. Pick another code before saving.</Text>
+        ) : null}
+        {storedBarcode(barcode) ? <BarcodeMark value={storedBarcode(barcode)} /> : null}
+
         <Input
           label="Packed weight (kg)"
           helper="Used for extra delivery charge. Checkout adds weight × quantity, then picks your delivery slab."
@@ -227,16 +278,6 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
           placeholder="0.25"
         />
         <Input label="SKU" value={sku} onChangeText={setSku} placeholder="Optional" />
-        <Input label="Barcode" value={barcode} onChangeText={setBarcode} placeholder="Scan, type, or create" />
-        <View style={styles.row}>
-          <Chip label="Scan" selected={false} onPress={() => setScanner(true)} />
-          <Chip
-            label="Create"
-            selected={false}
-            onPress={() => setBarcode(generateShopBarcode([barcode, sku]))}
-          />
-        </View>
-        {sanitizeBarcode(barcode) ? <BarcodeMark value={barcode} /> : null}
         <Input label="Cost price (private)" value={costPrice} onChangeText={setCostPrice} keyboardType="decimal-pad" prefix="₹" placeholder="Optional" />
         <Input label="HSN (optional)" value={hsnCode} onChangeText={setHsnCode} placeholder="For GST invoice" />
         <Input label="GST % (optional)" value={gstRate} onChangeText={setGstRate} keyboardType="decimal-pad" placeholder="18" />
@@ -287,11 +328,11 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
       </View>
       <BarcodeScannerModal
         visible={scanner}
-        title="Scan product barcode"
+        title="Scan packet barcode"
         onClose={() => setScanner(false)}
         onScan={(code) => {
           setScanner(false);
-          setBarcode(sanitizeBarcode(code) || code);
+          setBarcode(storedBarcode(code));
         }}
       />
     </Screen>
@@ -303,6 +344,16 @@ const styles = StyleSheet.create({
   label: {
     ...TYPOGRAPHY.label,
     color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
+  },
+  helper: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
+  },
+  warn: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.error,
     marginBottom: SPACING.sm,
   },
   row: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: SPACING.lg },

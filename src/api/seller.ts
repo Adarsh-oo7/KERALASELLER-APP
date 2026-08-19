@@ -5,6 +5,7 @@ import { asList } from '../lib/format';
 import { cacheProducts, enqueueLocalBill, getCachedProducts } from '../lib/offlineStore';
 import { isNetworkError } from '../lib/offlineWindow';
 import { mergeSellingStatus } from '../lib/sellingStatus';
+import { isMissingRoute } from '../lib/userApiUtils';
 
 export {
   canonicalShopPath,
@@ -442,27 +443,79 @@ export async function postLocalBillToApi(payload: {
   payments?: { method: string; amount: number }[];
   coupon_code?: string;
   loyalty_points?: number;
-}): Promise<{ bill_id: string; total_amount: number; queued?: boolean }> {
+}): Promise<LocalBill> {
   const sellerPhone = payload.seller_phone || (await AsyncStorage.getItem('userPhone')) || '';
-  const response = await api.post('/user/orders/create-local-bill/', {
+  const response = await api.post<LocalBill>('/user/orders/create-local-bill/', {
     ...payload,
     seller_phone: sellerPhone,
   });
   return response.data;
 }
 
+export type LocalBillItem = {
+  id?: number;
+  product_id?: number;
+  variant_id?: number | null;
+  name?: string;
+  variant_name?: string;
+  quantity: number;
+  sku?: string;
+  price: number | string;
+};
+
+export type LocalBill = {
+  id?: number;
+  bill_id: string;
+  bill_number?: string;
+  status?: string;
+  payment_status?: string;
+  payment_method?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  total_amount: number | string;
+  created_at?: string | null;
+  queued?: boolean;
+  items?: LocalBillItem[];
+};
+
+type LocalBillPayload = {
+  customer_name: string;
+  customer_phone: string;
+  items: { id: number; quantity: number; price: number; variant_id?: number }[];
+  payment_method?: string;
+  payments?: { method: string; amount: number }[];
+  coupon_code?: string;
+  loyalty_points?: number;
+};
+
+export async function fetchLocalBills(): Promise<LocalBill[]> {
+  const response = await api.get('/user/orders/local-bills/');
+  return asList<LocalBill>(response.data);
+}
+
+export async function fetchLocalBill(id: number): Promise<LocalBill> {
+  const response = await api.get<LocalBill>(`/user/orders/local-bills/${id}/`);
+  return response.data;
+}
+
+export async function updateLocalBill(id: number, payload: LocalBillPayload): Promise<LocalBill> {
+  const sellerPhone = (await AsyncStorage.getItem('userPhone')) || '';
+  const response = await api.post<LocalBill>(`/user/orders/local-bills/${id}/update/`, {
+    ...payload,
+    seller_phone: sellerPhone,
+  });
+  return response.data;
+}
+
+export async function cancelLocalBill(id: number): Promise<LocalBill> {
+  const response = await api.post<LocalBill>(`/user/orders/local-bills/${id}/cancel/`, {});
+  return response.data;
+}
+
 export async function createLocalBill(
-  payload: {
-    customer_name: string;
-    customer_phone: string;
-    items: { id: number; quantity: number; price: number; variant_id?: number }[];
-    payment_method?: string;
-    payments?: { method: string; amount: number }[];
-    coupon_code?: string;
-    loyalty_points?: number;
-  },
+  payload: LocalBillPayload,
   opts?: { queueIfOffline?: boolean; forceQueue?: boolean },
-): Promise<{ bill_id: string; total_amount: number; queued?: boolean }> {
+): Promise<LocalBill> {
   const sellerPhone = (await AsyncStorage.getItem('userPhone')) || '';
   const body = { ...payload, seller_phone: sellerPhone };
 
@@ -526,6 +579,16 @@ export type SubscriptionPlan = {
   feature_codes?: string[];
 };
 
+export type ActiveAddon = {
+  id?: number;
+  purchase_id?: number;
+  name: string;
+  slug?: string;
+  price: number | string;
+  billing_period?: string;
+  end_date?: string | null;
+};
+
 export type CurrentSubscription = {
   id?: number;
   plan_name?: string;
@@ -535,6 +598,7 @@ export type CurrentSubscription = {
   plan?: SubscriptionPlan | null;
   seller?: { name?: string; email?: string };
   entitlements?: {
+    plan_id?: number | null;
     plan_name?: string;
     features?: string[];
     limits?: {
@@ -545,6 +609,12 @@ export type CurrentSubscription = {
     official_url?: string | null;
     path_url?: string | null;
     can_use_custom_subdomain?: boolean;
+    billing?: {
+      base_plan_price?: string;
+      addons_price?: string;
+      monthly_total?: string;
+      active_addons?: ActiveAddon[];
+    };
   };
 };
 
@@ -598,23 +668,16 @@ export type CatalogAddon = {
   extra_product_limit?: number | null;
   extra_staff_limit?: number | null;
   extra_branch_limit?: number | null;
+  extra_category_limit?: number | null;
   feature_codes?: string[];
   compatible_plan_ids?: number[];
-};
-
-export type ActiveAddon = {
-  id?: number;
-  purchase_id?: number;
-  name: string;
-  slug?: string;
-  price: number | string;
-  billing_period?: string;
-  end_date?: string | null;
 };
 
 export type EntitlementsPayload = {
   commercially_active?: boolean;
   features?: string[];
+  plan_id?: number | null;
+  plan_name?: string | null;
   addons?: CatalogAddon[];
   billing?: {
     base_plan_price?: string;
@@ -627,6 +690,11 @@ export type EntitlementsPayload = {
 export async function fetchEntitlements(): Promise<EntitlementsPayload> {
   const response = await api.get<EntitlementsPayload>('/api/subscriptions/entitlements/');
   return response.data;
+}
+
+export async function fetchAddons(): Promise<CatalogAddon[]> {
+  const response = await api.get('/api/subscriptions/addons/');
+  return asList<CatalogAddon>(response.data);
 }
 
 export async function createAddonOrder(addonId: number): Promise<SubscriptionOrder & { key_id?: string; addon_name?: string }> {
@@ -745,8 +813,14 @@ export async function updateStaff(id: number, payload: { is_active?: boolean; ro
   return response.data;
 }
 
-export async function fetchStaffMe(): Promise<{ allowed_permissions?: string[] }> {
-  const response = await api.get('/user/staff/me/');
+export type StaffMe = {
+  is_owner?: boolean;
+  allowed_permissions?: string[];
+  entitlements?: EntitlementsPayload;
+};
+
+export async function fetchStaffMe(): Promise<StaffMe> {
+  const response = await api.get<StaffMe>('/user/staff/me/');
   return response.data;
 }
 
@@ -775,13 +849,41 @@ export async function fetchCustomerHistory(phone: string): Promise<{ orders: { i
   return response.data;
 }
 
-export async function fetchExpenses(): Promise<{ id: number; title: string; amount: number; category: string; spent_on?: string }[]> {
-  const response = await api.get('/user/store/expenses/');
-  return response.data.expenses || [];
+async function storeGet<T>(path: string) {
+  const normalised = path.replace(/^\/+/, '');
+  try {
+    return await api.get<T>(`/user/store/${normalised}`);
+  } catch (error) {
+    if (!isMissingRoute(error)) throw error;
+    return api.get<T>(`/api/store/${normalised}`);
+  }
+}
+
+async function storePost<T>(path: string, body: unknown) {
+  const normalised = path.replace(/^\/+/, '');
+  try {
+    return await api.post<T>(`/user/store/${normalised}`, body);
+  } catch (error) {
+    if (!isMissingRoute(error)) throw error;
+    return api.post<T>(`/api/store/${normalised}`, body);
+  }
+}
+
+export type StoreExpense = {
+  id: number;
+  title: string;
+  amount: number;
+  category: string;
+  spent_on?: string;
+};
+
+export async function fetchExpenses(): Promise<StoreExpense[]> {
+  const response = await storeGet<{ expenses?: StoreExpense[] } | StoreExpense[]>('expenses/');
+  return asList<StoreExpense>(response.data);
 }
 
 export async function createExpense(payload: { title: string; amount: number; category?: string }): Promise<void> {
-  await api.post('/user/store/expenses/', payload);
+  await storePost('expenses/', payload);
 }
 
 export async function fetchSuppliers(): Promise<{ id: number; name: string; phone?: string }[]> {
