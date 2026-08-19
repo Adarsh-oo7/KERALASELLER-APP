@@ -1,6 +1,8 @@
 export { default as Logo } from './Logo';
 export { default as Avatar } from './Avatar';
 export { default as Badge } from './Badge';
+export { default as BarcodeMark } from './BarcodeMark';
+export { default as BarcodeScannerModal } from './BarcodeScannerModal';
 export { default as BrandMark } from './BrandMark';
 export { default as Button } from './Button';
 export { default as Card } from './Card';

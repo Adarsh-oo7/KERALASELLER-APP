@@ -21,6 +21,8 @@ import NotificationsScreen from './src/screens/notifications/NotificationsScreen
 import HistoryScreen from './src/screens/history/HistoryScreen';
 import AnalyticsScreen from './src/screens/analytics/AnalyticsScreen';
 import SubscriptionScreen from './src/screens/subscription/SubscriptionScreen';
+import AddonsScreen from './src/screens/more/AddonsScreen';
+import BarcodeScreen from './src/screens/more/BarcodeScreen';
 import HomepageListingScreen from './src/screens/more/HomepageListingScreen';
 import DeliveryChargesScreen from './src/screens/more/DeliveryChargesScreen';
 import DeleteAccountScreen from './src/screens/more/DeleteAccountScreen';
@@ -78,6 +80,8 @@ function MainStackScreen() {
       <MainStack.Screen name="History" component={HistoryScreen} />
       <MainStack.Screen name="Analytics" component={AnalyticsScreen} />
       <MainStack.Screen name="Subscription" component={SubscriptionScreen} />
+      <MainStack.Screen name="Addons" component={AddonsScreen} />
+      <MainStack.Screen name="Barcodes" component={BarcodeScreen} />
       <MainStack.Screen name="HomepageListing" component={HomepageListingScreen} />
       <MainStack.Screen name="DeliveryCharges" component={DeliveryChargesScreen} />
       <MainStack.Screen name="DeleteAccount" component={DeleteAccountScreen} />

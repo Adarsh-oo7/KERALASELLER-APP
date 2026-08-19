@@ -27,6 +27,8 @@ export type MainStackParamList = {
   History: undefined;
   Analytics: undefined;
   Subscription: { setup?: boolean } | undefined;
+  Addons: undefined;
+  Barcodes: undefined;
   HomepageListing: undefined;
   DeliveryCharges: undefined;
   DeleteAccount: undefined;

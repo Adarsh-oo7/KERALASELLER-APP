@@ -14,58 +14,95 @@ type Item = {
   hint: string;
   icon: keyof typeof Ionicons.glyphMap;
   route: keyof MainStackParamList;
-  permission?: string;
+  permission?: string | string[];
 };
 
-const ITEMS: Item[] = [
-  { label: 'Store settings', hint: 'Basic, advanced, and delivery', icon: 'storefront-outline', route: 'Settings' },
-  { label: 'Local billing', hint: 'Walk-in bill', icon: 'cash-outline', route: 'Billing', permission: 'billing.access_pos' },
-  { label: 'Reports', hint: 'Today, best sellers, profit', icon: 'stats-chart-outline', route: 'Analytics', permission: 'reports.view_basic' },
-  { label: 'Customers', hint: 'From bills and orders', icon: 'people-outline', route: 'Customers', permission: 'customers.view' },
-  { label: 'Receive stock', hint: 'Purchase in — same inventory', icon: 'download-outline', route: 'Purchases', permission: 'inventory.manage_purchases' },
-  { label: 'Expenses', hint: 'Rent, petrol, other costs', icon: 'wallet-outline', route: 'Expenses', permission: 'expenses.view' },
-  { label: 'Locations', hint: 'Extra counters', icon: 'business-outline', route: 'Locations', permission: 'branches.view' },
-  { label: 'Loyalty', hint: 'Points on customer phone', icon: 'star-outline', route: 'Loyalty', permission: 'loyalty.view' },
-  { label: 'Payments', hint: 'Razorpay keys and payouts', icon: 'card-outline', route: 'Payments' },
-  { label: 'Notifications', hint: 'New orders and alerts', icon: 'notifications-outline', route: 'Notifications' },
-  { label: 'Stock history', hint: 'What changed, when', icon: 'time-outline', route: 'History' },
-  { label: 'Staff', hint: 'Cashier and inventory logins', icon: 'people-circle-outline', route: 'Staff', permission: 'staff.view' },
-  { label: 'Subscription', hint: 'Plan details and payment', icon: 'sparkles-outline', route: 'Subscription' },
+type Group = { title: string; items: Item[] };
+
+const GROUPS: Group[] = [
+  {
+    title: 'Billing counter',
+    items: [
+      { label: 'Local billing', hint: 'Walk-in cash, UPI, or split', icon: 'cash-outline', route: 'Billing', permission: 'billing.access_pos' },
+      { label: 'Barcodes', hint: 'Create stickers and scan products', icon: 'barcode-outline', route: 'Barcodes', permission: ['products.view', 'billing.access_pos'] },
+      { label: 'Customers', hint: 'From bills and orders', icon: 'people-outline', route: 'Customers', permission: 'customers.view' },
+      { label: 'Reports', hint: 'Today, best sellers, profit', icon: 'stats-chart-outline', route: 'Analytics', permission: 'reports.view_basic' },
+      { label: 'Expenses', hint: 'Rent, petrol, other costs', icon: 'wallet-outline', route: 'Expenses', permission: 'expenses.view' },
+    ],
+  },
+  {
+    title: 'Stock',
+    items: [
+      { label: 'Receive stock', hint: 'Purchase in — same inventory', icon: 'download-outline', route: 'Purchases', permission: 'inventory.manage_purchases' },
+      { label: 'Stock history', hint: 'What changed, when', icon: 'time-outline', route: 'History' },
+    ],
+  },
+  {
+    title: 'Shop',
+    items: [
+      { label: 'Store settings', hint: 'Basic, advanced, and delivery', icon: 'storefront-outline', route: 'Settings' },
+      { label: 'Locations', hint: 'Extra counters', icon: 'business-outline', route: 'Locations', permission: 'branches.view' },
+      { label: 'Staff', hint: 'Cashier and inventory logins', icon: 'people-circle-outline', route: 'Staff', permission: 'staff.view' },
+      { label: 'Loyalty', hint: 'Points on customer phone', icon: 'star-outline', route: 'Loyalty', permission: 'loyalty.view' },
+      { label: 'Notifications', hint: 'New orders and alerts', icon: 'notifications-outline', route: 'Notifications' },
+    ],
+  },
+  {
+    title: 'Account',
+    items: [
+      { label: 'Subscription', hint: 'Starter, Growth, or Pro', icon: 'sparkles-outline', route: 'Subscription' },
+      { label: 'Add-ons', hint: 'Extra products, staff, GST, locations', icon: 'extension-puzzle-outline', route: 'Addons', permission: 'account.manage_subscription' },
+      { label: 'Payments', hint: 'Razorpay keys and payouts', icon: 'card-outline', route: 'Payments' },
+    ],
+  },
 ];
+
+function allowedFor(item: Item, allowed: string[]) {
+  if (!item.permission) return true;
+  const needed = Array.isArray(item.permission) ? item.permission : [item.permission];
+  return needed.some((code) => allowed.includes(code));
+}
 
 export default function MoreScreen({ navigation }: MainTabScreenProps<'More'>) {
   const { logout } = useAuth();
   const { allowed } = useStoreAccess();
-  const visible = useMemo(
-    () => ITEMS.filter((item) => !item.permission || allowed.includes(item.permission)),
+  const groups = useMemo(
+    () => GROUPS
+      .map((group) => ({ ...group, items: group.items.filter((item) => allowedFor(item, allowed)) }))
+      .filter((group) => group.items.length > 0),
     [allowed],
   );
 
   return (
     <Screen scroll edges={['bottom']} gradient={false} statusBarStyle="light-content">
-      <Header tone="brand" title="More" subtitle="Only the tools on your plan" />
+      <Header tone="brand" title="More" subtitle="Till, stock, and extras on your plan" />
       <View style={styles.content}>
-        <Card>
-          {visible.map((item, index) => (
-            <TouchableOpacity
-              key={item.route}
-              onPress={() => navigation.navigate(item.route as never)}
-              style={[styles.row, index < visible.length - 1 && styles.divider]}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              accessibilityHint={item.hint}
-            >
-              <View style={styles.icon}>
-                <Ionicons name={item.icon} size={20} color={COLORS.primary} />
-              </View>
-              <View style={styles.copy}>
-                <Text style={styles.label} maxFontSizeMultiplier={FONT_SCALE.body}>{item.label}</Text>
-                <Text style={styles.hint} maxFontSizeMultiplier={FONT_SCALE.caption}>{item.hint}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
-            </TouchableOpacity>
-          ))}
-        </Card>
+        {groups.map((group) => (
+          <View key={group.title} style={styles.group}>
+            <Text style={styles.groupTitle}>{group.title}</Text>
+            <Card>
+              {group.items.map((item, index) => (
+                <TouchableOpacity
+                  key={item.route}
+                  onPress={() => navigation.navigate(item.route as never)}
+                  style={[styles.row, index < group.items.length - 1 && styles.divider]}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                  accessibilityHint={item.hint}
+                >
+                  <View style={styles.icon}>
+                    <Ionicons name={item.icon} size={20} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.copy}>
+                    <Text style={styles.label} maxFontSizeMultiplier={FONT_SCALE.body}>{item.label}</Text>
+                    <Text style={styles.hint} maxFontSizeMultiplier={FONT_SCALE.caption}>{item.hint}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </Card>
+          </View>
+        ))}
 
         <Card>
           <TouchableOpacity
@@ -140,6 +177,8 @@ export default function MoreScreen({ navigation }: MainTabScreenProps<'More'>) {
 
 const styles = StyleSheet.create({
   content: { padding: SPACING.lg, gap: SPACING.lg },
+  group: { gap: SPACING.sm },
+  groupTitle: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, marginLeft: 4 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

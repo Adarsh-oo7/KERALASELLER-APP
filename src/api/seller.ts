@@ -367,9 +367,9 @@ export async function deleteDeliverySlab(id: number): Promise<void> {
   await api.delete(`/user/store/delivery-slabs/${id}/delete_slab/`);
 }
 
-export async function fetchProducts(): Promise<Product[]> {
+export async function fetchProducts(params?: { page_size?: number }): Promise<Product[]> {
   try {
-    const response = await api.get('/user/store/products/', { params: { page_size: 50 } });
+    const response = await api.get('/user/store/products/', { params: { page_size: params?.page_size ?? 50 } });
     const list = asList<Product>(response.data);
     await cacheProducts(list);
     return list;
@@ -586,6 +586,64 @@ export async function verifySubscriptionPayment(payload: {
   billing_cycle: 'monthly' | 'yearly';
 }): Promise<void> {
   await api.post('/api/subscriptions/verify-payment/', payload);
+}
+
+export type CatalogAddon = {
+  id: number;
+  name: string;
+  slug?: string;
+  price: number | string;
+  description?: string;
+  billing_period?: string;
+  extra_product_limit?: number | null;
+  extra_staff_limit?: number | null;
+  extra_branch_limit?: number | null;
+  feature_codes?: string[];
+  compatible_plan_ids?: number[];
+};
+
+export type ActiveAddon = {
+  id?: number;
+  purchase_id?: number;
+  name: string;
+  slug?: string;
+  price: number | string;
+  billing_period?: string;
+  end_date?: string | null;
+};
+
+export type EntitlementsPayload = {
+  commercially_active?: boolean;
+  features?: string[];
+  addons?: CatalogAddon[];
+  billing?: {
+    base_plan_price?: string;
+    addons_price?: string;
+    monthly_total?: string;
+    active_addons?: ActiveAddon[];
+  };
+};
+
+export async function fetchEntitlements(): Promise<EntitlementsPayload> {
+  const response = await api.get<EntitlementsPayload>('/api/subscriptions/entitlements/');
+  return response.data;
+}
+
+export async function createAddonOrder(addonId: number): Promise<SubscriptionOrder & { key_id?: string; addon_name?: string }> {
+  const response = await api.post<SubscriptionOrder & { key_id?: string; addon_name?: string }>(
+    '/api/subscriptions/addons/create-order/',
+    { addon_id: addonId },
+  );
+  return response.data;
+}
+
+export async function verifyAddonPayment(payload: {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+  addon_id: number;
+}): Promise<void> {
+  await api.post('/api/subscriptions/addons/verify-payment/', payload);
 }
 
 export async function fetchGatewayStatus(): Promise<Record<string, unknown>> {

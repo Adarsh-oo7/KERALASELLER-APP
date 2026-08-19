@@ -8,7 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-strip-types --test src/lib/phoneAuth.test.ts src/lib/userApi.test.ts src/lib/sellingStatus.test.ts src/lib/offlineWindow.test.ts src/lib/planDetails.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/phoneAuth.test.ts src/lib/userApi.test.ts src/lib/sellingStatus.test.ts src/lib/offlineWindow.test.ts src/lib/planDetails.test.ts src/lib/barcode.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -21,6 +21,7 @@
     "expo": "^55",
     "expo-blur": "~55.0.16",
     "expo-build-properties": "~55.0.17",
+    "expo-camera": "~55.0.22",
     "expo-font": "~55.0.8",
     "expo-image-picker": "~55.0.22",
     "expo-linear-gradient": "~55.0.16",

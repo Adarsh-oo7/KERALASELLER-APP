@@ -261,7 +261,13 @@ export default function SubscriptionScreen({ navigation, route }: MainStackScree
           </>
         ) : setup ? (
           <Button label="Back to dashboard" variant="secondary" onPress={() => skipSetupToDashboard(navigation)} />
-        ) : null}
+        ) : (
+          <Button
+            label="Extra add-ons"
+            variant="secondary"
+            onPress={() => navigation.navigate('Addons')}
+          />
+        )}
       </View>
       <RazorpayCheckoutModal
         visible={Boolean(checkout)}

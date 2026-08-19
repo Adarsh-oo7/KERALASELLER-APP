@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
-import { Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Screen } from '../../components';
+import { Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Screen, BarcodeScannerModal } from '../../components';
 import { APP_DISPLAY_NAME } from '../../config/legal';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, RADIUS, SPACING, TYPOGRAPHY } from '../../theme';
 import { createLocalBill, fetchProducts, lookupLoyalty, type Product } from '../../api/seller';
 import { apiError, formatInr } from '../../lib/format';
+import { findProductByCode } from '../../lib/barcode';
 import type { MainStackScreenProps } from '../../navigation/types';
 
 type Line = { product: Product; quantity: number; variantId?: number };
@@ -27,11 +28,12 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
   const [splitUpi, setSplitUpi] = useState('');
   const [loyaltyBalance, setLoyaltyBalance] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
+  const [scanner, setScanner] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
     try {
-      setProducts(await fetchProducts());
+      setProducts(await fetchProducts({ page_size: 200 }));
     } catch (err) {
       setError(apiError(err, 'Could not load products.'));
     } finally {
@@ -90,10 +92,21 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
     setQuery('');
   };
 
-  const changeQty = (id: number, delta: number) => {
+  const addScanned = (code: string) => {
+    setScanner(false);
+    const match = findProductByCode(products, code);
+    if (!match) {
+      Alert.alert('Not in this shop', `${code} is not on a product. Create or scan a barcode from More → Barcodes.`);
+      setQuery(code);
+      return;
+    }
+    add(match.product, match.variantId);
+  };
+
+  const changeQty = (id: number, delta: number, variantId?: number) => {
     setLines((prev) =>
       prev
-        .map((line) => (line.product.id === id ? { ...line, quantity: line.quantity + delta } : line))
+        .map((line) => (line.product.id === id && line.variantId === variantId ? { ...line, quantity: line.quantity + delta } : line))
         .filter((line) => line.quantity > 0),
     );
   };
@@ -157,6 +170,11 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
         title="Local bill"
         subtitle={mode === 'offline_grace' ? 'Saved on this phone, syncs in 3 days' : 'Walk-in cash bill'}
         onBack={() => navigation.goBack()}
+        action={{
+          icon: 'scan-outline',
+          accessibilityLabel: 'Scan a product barcode',
+          onPress: () => setScanner(true),
+        }}
       />
       <View style={styles.content}>
         {loading ? <LoadingState message="Loading products…" /> : null}
@@ -189,6 +207,7 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
           </>
         ) : null}
         <Input label="Add product" value={query} onChangeText={setQuery} placeholder="Name, SKU, or barcode" />
+        <Button label="Scan barcode" variant="secondary" icon="scan-outline" onPress={() => setScanner(true)} />
         {matches.flatMap((product) => {
           const variants = product.variants || [];
           if (variants.length === 0) {
@@ -212,16 +231,16 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
         ) : (
           <Card>
             {lines.map((line) => (
-              <View key={line.product.id} style={styles.line}>
+              <View key={`${line.product.id}-${line.variantId || 0}`} style={styles.line}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.suggestName}>{line.product.name}</Text>
                   <Text style={styles.suggestMeta}>{formatInr(Number(line.product.price) * line.quantity)}</Text>
                 </View>
-                <TouchableOpacity onPress={() => changeQty(line.product.id, -1)} style={styles.step}>
+                <TouchableOpacity onPress={() => changeQty(line.product.id, -1, line.variantId)} style={styles.step}>
                   <Text style={styles.stepText}>−</Text>
                 </TouchableOpacity>
                 <Text style={styles.qty}>{line.quantity}</Text>
-                <TouchableOpacity onPress={() => changeQty(line.product.id, 1)} style={styles.step}>
+                <TouchableOpacity onPress={() => changeQty(line.product.id, 1, line.variantId)} style={styles.step}>
                   <Text style={styles.stepText}>+</Text>
                 </TouchableOpacity>
               </View>
@@ -237,6 +256,12 @@ export default function BillingScreen({ navigation }: MainStackScreenProps<'Bill
           disabled={saving || lines.length === 0}
         />
       </View>
+      <BarcodeScannerModal
+        visible={scanner}
+        title="Scan to add to bill"
+        onClose={() => setScanner(false)}
+        onScan={addScanned}
+      />
     </Screen>
   );
 }

@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
-import { Button, Chip, Header, Input, LoadingState, Screen } from '../../components';
+import { Button, Chip, Header, Input, LoadingState, Screen, BarcodeMark, BarcodeScannerModal } from '../../components';
 import { COLORS, FONT_SCALE, SPACING, TYPOGRAPHY } from '../../theme';
 import { fetchCategories, fetchProduct, fetchSellingStatus, saveProduct, type Category } from '../../api/seller';
 import { apiError } from '../../lib/format';
+import { generateShopBarcode, sanitizeBarcode } from '../../lib/barcode';
 import { uploadImage } from '../../lib/cloudinary';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import type { MainStackScreenProps } from '../../navigation/types';
@@ -39,6 +40,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
   const [hsnCode, setHsnCode] = useState('');
   const [gstRate, setGstRate] = useState('');
   const [showOnHomepage, setShowOnHomepage] = useState(true);
+  const [scanner, setScanner] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,7 +173,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
           main_image_url: imageUrl || undefined,
           weight_kg: weightNum,
           sku: sku.trim(),
-          barcode: barcode.trim(),
+          barcode: sanitizeBarcode(barcode),
           cost_price: costPrice.trim() === '' ? null : Number(costPrice),
           hsn_code: hsnCode.trim(),
           gst_rate: gstRate.trim() === '' ? null : Number(gstRate),
@@ -225,7 +227,16 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
           placeholder="0.25"
         />
         <Input label="SKU" value={sku} onChangeText={setSku} placeholder="Optional" />
-        <Input label="Barcode" value={barcode} onChangeText={setBarcode} placeholder="Scan or type" />
+        <Input label="Barcode" value={barcode} onChangeText={setBarcode} placeholder="Scan, type, or create" />
+        <View style={styles.row}>
+          <Chip label="Scan" selected={false} onPress={() => setScanner(true)} />
+          <Chip
+            label="Create"
+            selected={false}
+            onPress={() => setBarcode(generateShopBarcode([barcode, sku]))}
+          />
+        </View>
+        {sanitizeBarcode(barcode) ? <BarcodeMark value={barcode} /> : null}
         <Input label="Cost price (private)" value={costPrice} onChangeText={setCostPrice} keyboardType="decimal-pad" prefix="₹" placeholder="Optional" />
         <Input label="HSN (optional)" value={hsnCode} onChangeText={setHsnCode} placeholder="For GST invoice" />
         <Input label="GST % (optional)" value={gstRate} onChangeText={setGstRate} keyboardType="decimal-pad" placeholder="18" />
@@ -274,6 +285,15 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
         <Button label={imageUrl ? 'Change photo' : 'Add photo'} variant="secondary" onPress={pickImage} disabled={saving} />
         <Button label={productId ? 'Save changes' : 'Add product'} onPress={onSave} loading={saving} disabled={saving} />
       </View>
+      <BarcodeScannerModal
+        visible={scanner}
+        title="Scan product barcode"
+        onClose={() => setScanner(false)}
+        onScan={(code) => {
+          setScanner(false);
+          setBarcode(sanitizeBarcode(code) || code);
+        }}
+      />
     </Screen>
   );
 }
