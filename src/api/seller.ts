@@ -502,17 +502,28 @@ export async function fetchStockHistory(): Promise<StockHistoryItem[]> {
   return asList<StockHistoryItem>(response.data);
 }
 
+export type PlanFeature = {
+  code: string;
+  name: string;
+  description?: string | null;
+  is_implemented?: boolean;
+};
+
 export type SubscriptionPlan = {
   id: number;
   name: string;
   price: number | string;
   product_limit?: number | null;
+  max_staff?: number | null;
+  max_branches?: number | null;
   duration_days?: number;
   yearly_price?: number;
   yearly_savings?: number;
   is_popular?: boolean;
   allows_custom_subdomain?: boolean;
   description?: string;
+  features?: PlanFeature[];
+  feature_codes?: string[];
 };
 
 export type CurrentSubscription = {
@@ -523,6 +534,18 @@ export type CurrentSubscription = {
   product_limit?: number | null;
   plan?: SubscriptionPlan | null;
   seller?: { name?: string; email?: string };
+  entitlements?: {
+    plan_name?: string;
+    features?: string[];
+    limits?: {
+      max_products?: number | null;
+      max_staff?: number | null;
+      max_branches?: number | null;
+    };
+    official_url?: string | null;
+    path_url?: string | null;
+    can_use_custom_subdomain?: boolean;
+  };
 };
 
 export type SubscriptionOrder = {

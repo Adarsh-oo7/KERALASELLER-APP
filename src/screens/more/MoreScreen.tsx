@@ -30,7 +30,7 @@ const ITEMS: Item[] = [
   { label: 'Notifications', hint: 'New orders and alerts', icon: 'notifications-outline', route: 'Notifications' },
   { label: 'Stock history', hint: 'What changed, when', icon: 'time-outline', route: 'History' },
   { label: 'Staff', hint: 'Cashier and inventory logins', icon: 'people-circle-outline', route: 'Staff', permission: 'staff.view' },
-  { label: 'Subscription', hint: 'Plan and add-ons on the web if needed', icon: 'sparkles-outline', route: 'Subscription' },
+  { label: 'Subscription', hint: 'Plan details and payment', icon: 'sparkles-outline', route: 'Subscription' },
 ];
 
 export default function MoreScreen({ navigation }: MainTabScreenProps<'More'>) {

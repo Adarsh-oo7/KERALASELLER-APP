@@ -8,7 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-strip-types --test src/lib/phoneAuth.test.ts src/lib/userApi.test.ts src/lib/sellingStatus.test.ts src/lib/offlineWindow.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/phoneAuth.test.ts src/lib/userApi.test.ts src/lib/sellingStatus.test.ts src/lib/offlineWindow.test.ts src/lib/planDetails.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

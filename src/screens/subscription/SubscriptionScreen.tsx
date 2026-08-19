@@ -15,6 +15,12 @@ import {
   type SubscriptionPlan,
 } from '../../api/seller';
 import { apiError, formatInr } from '../../lib/format';
+import {
+  catalogPlanFor,
+  namedFeaturesFor,
+  planDetailLines,
+  type PlanLimits,
+} from '../../lib/planDetails';
 import RazorpayCheckoutModal, { type RazorpayCheckoutOptions } from '../../lib/razorpayCheckout';
 import { skipSetupToDashboard } from '../../lib/setupFlow';
 import { PRODUCTION_RAZORPAY_KEY_ID } from '../../config/public';
@@ -24,6 +30,34 @@ import type { MainStackScreenProps } from '../../navigation/types';
 const RAZORPAY_KEY_ID = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || PRODUCTION_RAZORPAY_KEY_ID;
 
 type BillingCycle = 'monthly' | 'yearly';
+
+function PlanDetailList({
+  plan,
+  entitlementCodes,
+  limits,
+  officialUrl,
+  pathUrl,
+}: {
+  plan: SubscriptionPlan | null | undefined;
+  entitlementCodes?: string[] | null;
+  limits?: PlanLimits | null;
+  officialUrl?: string | null;
+  pathUrl?: string | null;
+}) {
+  const lines = planDetailLines(plan, { limits, officialUrl, pathUrl });
+  const features = namedFeaturesFor(plan, entitlementCodes);
+  if (!lines.length && !features.length) return null;
+  return (
+    <View style={styles.details}>
+      {lines.map((item) => (
+        <Text key={item.key} style={styles.meta}>{item.text}</Text>
+      ))}
+      {features.map((item) => (
+        <Text key={item.code} style={styles.meta}>• {item.name}</Text>
+      ))}
+    </View>
+  );
+}
 
 function planPrice(plan: SubscriptionPlan, cycle: BillingCycle): number {
   const monthly = Number(plan.price) || 0;
@@ -153,6 +187,7 @@ export default function SubscriptionScreen({ navigation, route }: MainStackScree
   const planName = current?.plan_name || current?.plan?.name || 'No active plan';
   const status = current?.is_active ? 'Active' : current ? 'Inactive' : 'None';
   const currentPlanId = current?.plan?.id;
+  const currentPlan = catalogPlanFor(current, plans) || current?.plan || null;
 
   return (
     <Screen scroll edges={['bottom']} gradient={false} statusBarStyle="light-content">
@@ -169,6 +204,13 @@ export default function SubscriptionScreen({ navigation, route }: MainStackScree
               ? ` · ${current.days_remaining} days left`
               : ''}
           </Text>
+          <PlanDetailList
+            plan={currentPlan}
+            entitlementCodes={current?.entitlements?.features}
+            limits={current?.entitlements?.limits}
+            officialUrl={current?.entitlements?.official_url}
+            pathUrl={current?.entitlements?.path_url}
+          />
         </Card>
 
         <View style={styles.cycle}>
@@ -184,6 +226,7 @@ export default function SubscriptionScreen({ navigation, route }: MainStackScree
               <View style={styles.planHead}>
                 <Text style={styles.planName}>{plan.name}</Text>
                 {isCurrent ? <Badge label="Current" tone="success" /> : null}
+                {!isCurrent && plan.is_popular ? <Badge label="Popular" tone="info" /> : null}
               </View>
               <Text style={styles.price}>
                 {formatInr(amount)}
@@ -192,16 +235,7 @@ export default function SubscriptionScreen({ navigation, route }: MainStackScree
               {billingCycle === 'yearly' && plan.yearly_savings ? (
                 <Text style={styles.meta}>Save {formatInr(plan.yearly_savings)} vs monthly</Text>
               ) : null}
-              {plan.product_limit != null ? (
-                <Text style={styles.meta}>Up to {plan.product_limit} products</Text>
-              ) : (
-                <Text style={styles.meta}>Unlimited products</Text>
-              )}
-              <Text style={styles.meta}>
-                {plan.allows_custom_subdomain
-                  ? 'Custom URL: {slug}.keralasellers.in once active'
-                  : 'Store URL: keralasellers.in/shop/{slug}/'}
-              </Text>
+              <PlanDetailList plan={plan} />
               <Button
                 label={isCurrent ? 'Renew this plan' : `Subscribe to ${plan.name}`}
                 onPress={() => pay(plan)}
@@ -248,6 +282,7 @@ const styles = StyleSheet.create({
   kicker: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   title: { ...TYPOGRAPHY.title, color: COLORS.textPrimary, marginTop: 4 },
   meta: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, marginTop: 4 },
+  details: { marginTop: 4 },
   cycle: { flexDirection: 'row', flexWrap: 'wrap' },
   planHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm },
   planName: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary, flex: 1 },
