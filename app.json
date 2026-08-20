@@ -85,7 +85,8 @@
           }
         }
       ],
-      "./plugins/withAndroidPaymentQueries.js"
+      "./plugins/withAndroidPaymentQueries.js",
+      "expo-sharing"
     ],
     "extra": {
       "privacyPolicyUrl": "https://www.keralasellers.in/privacy-policy",

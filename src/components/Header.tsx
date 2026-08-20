@@ -12,6 +12,7 @@ type Action = {
   /** Required: icon-only controls are invisible to screen readers without it. */
   accessibilityLabel: string;
   accessibilityHint?: string;
+  showBadge?: boolean;
 };
 
 type Props = {
@@ -90,6 +91,7 @@ export default function Header({
             accessibilityHint={action.accessibilityHint}
           >
             <Ionicons name={action.icon} size={24} color={fg} />
+            {action.showBadge ? <View style={styles.badge} /> : null}
           </TouchableOpacity>
         ) : null}
       </View>
@@ -130,5 +132,15 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: COLORS.error,
   },
 });

@@ -31,7 +31,6 @@ export default function OrdersScreen({ navigation }: MainTabScreenProps<'Orders'
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       load();
     }, [load]),
   );
@@ -54,7 +53,7 @@ export default function OrdersScreen({ navigation }: MainTabScreenProps<'Orders'
             <Chip key={item} label={item === 'ALL' ? 'All' : item} selected={status === item} onPress={() => setStatus(item)} />
           ))}
         </View>
-        {loading ? <LoadingState message="Loading orders…" /> : null}
+        {loading && list.length === 0 ? <LoadingState message="Loading orders…" /> : null}
         {error ? <ErrorState message={error} onRetry={load} /> : null}
         {!loading && !error && list.length === 0 ? (
           <EmptyState icon="receipt-outline" title="No orders" message="New online orders will show up here." />

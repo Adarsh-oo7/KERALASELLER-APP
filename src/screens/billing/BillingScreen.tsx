@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Notice, Screen, BarcodeScannerModal } from '../../components';
-import { APP_DISPLAY_NAME } from '../../config/legal';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, RADIUS, SPACING, TYPOGRAPHY } from '../../theme';
 import {
@@ -12,10 +11,12 @@ import {
   fetchLocalBills,
   fetchProducts,
   lookupLoyalty,
+  readLocalProducts,
   updateLocalBill,
   type LocalBill,
   type Product,
 } from '../../api/seller';
+import { printBill, saveBillPdf, snapshotFromBill, type BillSnapshot } from '../../lib/billPrint';
 import { apiError, formatDate, formatInr, httpStatus } from '../../lib/format';
 import { findProductByCode } from '../../lib/barcode';
 import type { MainStackScreenProps } from '../../navigation/types';
@@ -61,11 +62,16 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
 
   const load = useCallback(async () => {
     setError('');
+    const cached = await readLocalProducts();
+    if (cached.length) {
+      setProducts(cached);
+      setLoading(false);
+    }
     try {
-      const list = await fetchProducts({ page_size: 200 });
+      const list = await fetchProducts({ page_size: 100 });
       setProducts(list);
     } catch (err) {
-      setError(apiError(err, 'Could not load products.'));
+      if (!cached.length) setError(apiError(err, 'Could not load products.'));
     }
     try {
       const bills = await fetchLocalBills();
@@ -225,6 +231,30 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
     loyalty_points: usePoints ? Math.min(loyaltyBalance, Math.floor(total)) : undefined,
   });
 
+  const offerBillActions = (snapshot: BillSnapshot) => {
+    Alert.alert(
+      snapshot.queued ? 'Saved on this phone' : `Bill ${snapshot.billId}`,
+      snapshot.queued
+        ? 'Print or save a PDF from this phone. It will sync when you are online.'
+        : 'Print opens the printer dialog. Save PDF lets you download or share the bill with shop details.',
+      [
+        {
+          text: 'Print',
+          onPress: () => {
+            void printBill(snapshot).catch((err) => Alert.alert('Print failed', apiError(err, 'Try Save PDF instead.')));
+          },
+        },
+        {
+          text: 'Save PDF',
+          onPress: () => {
+            void saveBillPdf(snapshot).catch((err) => Alert.alert('PDF failed', apiError(err, 'Try Print and choose Save as PDF.')));
+          },
+        },
+        { text: 'Done', style: 'cancel' },
+      ],
+    );
+  };
+
   const checkout = async () => {
     if (lines.length === 0) {
       Alert.alert('Empty bill', 'Add at least one product.');
@@ -256,15 +286,19 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
           queueIfOffline: true,
         });
       }
-      const receipt = [
-        `${APP_DISPLAY_NAME} bill ${result.bill_id}${result.queued ? ' (saved on this phone)' : ''}`,
-        customerName ? `Customer: ${customerName}` : 'Walk-in customer',
-        ...lines.map((line) => `${line.product.name} x${line.quantity} = ${formatInr(line.unitPrice * line.quantity)}`),
-        `Total: ${formatInr(result.total_amount ?? total)}`,
-      ].join('\n');
+      const snapshot = snapshotFromBill(result, lines.map((line) => ({
+        name: line.product.name,
+        quantity: line.quantity,
+        amount: line.unitPrice * line.quantity,
+      })), {
+        customerName: customerName.trim() || 'Walk-in',
+        customerPhone: customerPhone.trim(),
+        paymentMethod,
+        total: Number(result.total_amount ?? total),
+      });
       resetBill();
       await load();
-      await Share.share({ message: receipt });
+      offerBillActions(snapshot);
     } catch (err) {
       Alert.alert('Bill failed', apiError(err, 'Stock may have changed. Try again.'));
     } finally {
@@ -280,7 +314,7 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
         subtitle={
           editingBillLabel
             ? `Editing ${editingBillLabel}`
-            : mode === 'offline_grace' ? 'Saved on this phone, syncs in 3 days' : 'Scan, then edit qty or price'
+            : mode === 'offline_grace' ? 'Saved on this phone, syncs in 3 days' : 'Scan, then print or save PDF'
         }
         onBack={() => navigation.goBack()}
         action={{
@@ -290,7 +324,7 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
         }}
       />
       <View style={styles.content}>
-        {loading ? <LoadingState message="Loading products…" /> : null}
+        {loading && products.length === 0 ? <LoadingState message="Loading products…" /> : null}
         {error ? <ErrorState message={error} onRetry={load} /> : null}
         {editingBillId ? (
           <Notice
@@ -392,7 +426,7 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
           label={
             editingBillId
               ? 'Save bill changes'
-              : mode === 'offline_grace' ? 'Save bill on this phone' : 'Create bill & share'
+              : mode === 'offline_grace' ? 'Save bill on this phone' : 'Create bill'
           }
           onPress={checkout}
           loading={saving}
@@ -405,25 +439,47 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
         {recent.length > 0 ? (
           <>
             <Text style={styles.section}>Recent bills</Text>
-            <Text style={styles.meta}>Tap a bill to edit quantity, price, or items.</Text>
+            <Text style={styles.meta}>Tap a bill to edit. Print or save PDF without changing it.</Text>
             {recent.slice(0, 8).map((bill) => (
-              <TouchableOpacity
-                key={String(bill.id || bill.bill_id)}
-                onPress={() => {
-                  if (!bill.id) {
-                    Alert.alert('Not on the server yet', 'This bill is still only on this phone.');
-                    return;
-                  }
-                  loadedBill.current = bill.id;
-                  applyBill(bill, products);
-                }}
-                style={styles.recent}
-              >
-                <Text style={styles.suggestName}>{bill.bill_id || bill.bill_number}</Text>
-                <Text style={styles.suggestMeta}>
-                  {formatInr(bill.total_amount)} · {bill.customer_name || 'Walk-in'} · {formatDate(bill.created_at)}
-                </Text>
-              </TouchableOpacity>
+              <View key={String(bill.id || bill.bill_id)} style={styles.recent}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!bill.id) {
+                      Alert.alert('Not on the server yet', 'This bill is still only on this phone.');
+                      return;
+                    }
+                    loadedBill.current = bill.id;
+                    applyBill(bill, products);
+                  }}
+                >
+                  <Text style={styles.suggestName}>{bill.bill_id || bill.bill_number}</Text>
+                  <Text style={styles.suggestMeta}>
+                    {formatInr(bill.total_amount)} · {bill.customer_name || 'Walk-in'} · {formatDate(bill.created_at)}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.recentActions}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      void printBill(snapshotFromBill(bill)).catch((err) => Alert.alert('Print failed', apiError(err, 'Try Save PDF instead.')));
+                    }}
+                    style={styles.recentAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Print ${bill.bill_id || 'bill'}`}
+                  >
+                    <Text style={styles.recentActionText}>Print</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      void saveBillPdf(snapshotFromBill(bill)).catch((err) => Alert.alert('PDF failed', apiError(err, 'Try Print and choose Save as PDF.')));
+                    }}
+                    style={styles.recentAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Save PDF for ${bill.bill_id || 'bill'}`}
+                  >
+                    <Text style={styles.recentActionText}>PDF</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             ))}
           </>
         ) : null}
@@ -490,9 +546,11 @@ const styles = StyleSheet.create({
   section: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary, marginTop: SPACING.md },
   meta: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   recent: {
-    minHeight: MIN_TOUCH_TARGET,
     paddingVertical: SPACING.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.inputBorder,
   },
+  recentActions: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.xs },
+  recentAction: { minHeight: MIN_TOUCH_TARGET, justifyContent: 'center' },
+  recentActionText: { ...TYPOGRAPHY.bodyStrong, color: COLORS.primary },
 });

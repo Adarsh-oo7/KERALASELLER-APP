@@ -32,6 +32,7 @@ import PurchasesScreen from './src/screens/more/PurchasesScreen';
 import LocationsScreen from './src/screens/more/LocationsScreen';
 import LoyaltyScreen from './src/screens/more/LoyaltyScreen';
 import CustomersScreen from './src/screens/more/CustomersScreen';
+import HomeToolsScreen from './src/screens/settings/HomeToolsScreen';
 import { COLORS } from './src/theme';
 import type { AuthStackParamList, MainStackParamList } from './src/navigation/types';
 
@@ -77,6 +78,7 @@ function MainStackScreen() {
       <MainStack.Screen name="BasicSettings" component={BasicSettingsScreen} />
       <MainStack.Screen name="Payments" component={PaymentsScreen} />
       <MainStack.Screen name="Notifications" component={NotificationsScreen} />
+      <MainStack.Screen name="HomeTools" component={HomeToolsScreen} />
       <MainStack.Screen name="History" component={HistoryScreen} />
       <MainStack.Screen name="Analytics" component={AnalyticsScreen} />
       <MainStack.Screen name="Subscription" component={SubscriptionScreen} />

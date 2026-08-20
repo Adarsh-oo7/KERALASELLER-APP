@@ -5,6 +5,7 @@ import { asList } from '../lib/format';
 import { cacheProducts, enqueueLocalBill, getCachedProducts } from '../lib/offlineStore';
 import { isNetworkError } from '../lib/offlineWindow';
 import { mergeSellingStatus } from '../lib/sellingStatus';
+import { createTtlCache } from '../lib/ttlCache';
 import { isMissingRoute } from '../lib/userApiUtils';
 
 export {
@@ -166,9 +167,27 @@ export type StockHistoryItem = {
   timestamp?: string;
 };
 
+const productsCache = createTtlCache<Product[]>(45_000);
+const dashboardCache = createTtlCache<DashboardPayload>(20_000);
+const sellingCache = createTtlCache<OnboardingStatus>(60_000);
+
 export async function fetchDashboard(): Promise<DashboardPayload> {
-  const response = await api.get<DashboardPayload>('/user/dashboard/');
-  return response.data;
+  return dashboardCache.get(async () => {
+    const response = await api.get<DashboardPayload>('/user/dashboard/');
+    return response.data;
+  });
+}
+
+export async function readLocalProducts(): Promise<Product[]> {
+  const memory = productsCache.peek();
+  if (memory?.length) return memory;
+  const disk = await getCachedProducts<Product>();
+  if (disk.length) productsCache.seed(disk, 0);
+  return disk;
+}
+
+export function invalidateProductCache() {
+  productsCache.invalidate();
 }
 
 export async function fetchStoreProfile(): Promise<StoreProfile> {
@@ -368,15 +387,21 @@ export async function deleteDeliverySlab(id: number): Promise<void> {
   await api.delete(`/user/store/delivery-slabs/${id}/delete_slab/`);
 }
 
-export async function fetchProducts(params?: { page_size?: number }): Promise<Product[]> {
+export async function fetchProducts(params?: { page_size?: number; fresh?: boolean }): Promise<Product[]> {
+  const pageSize = params?.page_size ?? 50;
+  if (!params?.fresh && !productsCache.peek()) {
+    await readLocalProducts();
+  }
   try {
-    const response = await api.get('/user/store/products/', { params: { page_size: params?.page_size ?? 50 } });
-    const list = asList<Product>(response.data);
-    await cacheProducts(list);
-    return list;
+    return await productsCache.get(async () => {
+      const response = await api.get('/user/store/products/', { params: { page_size: pageSize } });
+      const list = asList<Product>(response.data);
+      await cacheProducts(list);
+      return list;
+    }, params?.fresh);
   } catch (error) {
     if (isNetworkError(error)) {
-      const cached = await getCachedProducts<Product>();
+      const cached = await readLocalProducts();
       if (cached.length > 0) return cached;
     }
     throw error;
@@ -392,11 +417,13 @@ export async function saveProduct(payload: Record<string, unknown>, id?: number)
   const response = id
     ? await api.patch<Product>(`/user/store/products/${id}/`, payload)
     : await api.post<Product>('/user/store/products/', payload);
+  invalidateProductCache();
   return response.data;
 }
 
 export async function deleteProduct(id: number): Promise<void> {
   await api.delete(`/user/store/products/${id}/`);
+  invalidateProductCache();
 }
 
 export async function updateStock(
@@ -404,6 +431,7 @@ export async function updateStock(
   payload: { total_stock?: number; online_stock?: number; note?: string },
 ): Promise<void> {
   await api.patch(`/user/store/products/${id}/update-stock/`, payload);
+  invalidateProductCache();
 }
 
 export async function fetchCategories(): Promise<Category[]> {
@@ -476,6 +504,8 @@ export type LocalBill = {
   created_at?: string | null;
   queued?: boolean;
   items?: LocalBillItem[];
+  print_url?: string;
+  pdf_url?: string;
 };
 
 type LocalBillPayload = {
@@ -510,6 +540,28 @@ export async function updateLocalBill(id: number, payload: LocalBillPayload): Pr
 export async function cancelLocalBill(id: number): Promise<LocalBill> {
   const response = await api.post<LocalBill>(`/user/orders/local-bills/${id}/cancel/`, {});
   return response.data;
+}
+
+async function ordersGet<T>(path: string, config?: { params?: Record<string, string>; responseType?: 'text' | 'arraybuffer' | 'blob'; headers?: Record<string, string>; transformResponse?: ((data: unknown) => unknown)[] }) {
+  const normalised = path.replace(/^\/+/, '');
+  try {
+    return await api.get<T>(`/user/orders/${normalised}`, config);
+  } catch (error) {
+    if (!isMissingRoute(error)) throw error;
+    return api.get<T>(`/api/orders/${normalised}`, config);
+  }
+}
+
+export async function fetchLocalBillHtml(id: number, opts?: { size?: string; layout?: string }): Promise<string> {
+  const params: Record<string, string> = { size: opts?.size || 'A4' };
+  if (opts?.layout) params.layout = opts.layout;
+  const response = await ordersGet<string>(`local-bills/${id}/print/`, {
+    params,
+    responseType: 'text',
+    headers: { Accept: 'text/html' },
+    transformResponse: [(data) => data],
+  });
+  return typeof response.data === 'string' ? response.data : String(response.data ?? '');
 }
 
 export async function createLocalBill(
@@ -762,13 +814,15 @@ export async function fetchOnboardingStatus(): Promise<OnboardingStatus> {
 }
 
 export async function fetchSellingStatus(): Promise<OnboardingStatus> {
-  const [status, profile, subscription, gateway] = await Promise.all([
-    fetchOnboardingStatus().catch(() => null),
-    fetchStoreProfile().catch(() => null),
-    fetchSubscription().catch(() => null),
-    fetchGatewayStatus().catch(() => ({}) as Record<string, unknown>),
-  ]);
-  return mergeSellingStatus({ status, profile, subscription, gateway });
+  return sellingCache.get(async () => {
+    const [status, profile, subscription, gateway] = await Promise.all([
+      fetchOnboardingStatus().catch(() => null),
+      fetchStoreProfile().catch(() => null),
+      fetchSubscription().catch(() => null),
+      fetchGatewayStatus().catch(() => ({}) as Record<string, unknown>),
+    ]);
+    return mergeSellingStatus({ status, profile, subscription, gateway });
+  });
 }
 
 export async function fetchNotificationCount(): Promise<{ orders?: number; notifications?: number } | number> {

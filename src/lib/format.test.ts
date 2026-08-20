@@ -17,6 +17,24 @@ describe('apiError', () => {
       'This feature is not on the current plan.',
     );
   });
+
+  it('does not show a lone curly brace when the API body is a JSON string', () => {
+    assert.equal(
+      apiError({ response: { status: 400, data: '{"error":"Stock changed."}' } }, 'Try Save PDF instead.'),
+      'Stock changed.',
+    );
+  });
+
+  it('uses the fallback instead of dumping HTML or an empty object', () => {
+    assert.equal(
+      apiError({ response: { status: 500, data: '<html>{broken</html>' } }, 'Try Save PDF instead.'),
+      'Try Save PDF instead.',
+    );
+    assert.equal(
+      apiError(new Error('{'), 'Try Save PDF instead.'),
+      'Try Save PDF instead.',
+    );
+  });
 });
 
 describe('asList', () => {

@@ -24,6 +24,7 @@ export type MainStackParamList = {
   BasicSettings: { setup?: boolean } | undefined;
   Payments: { setup?: boolean } | undefined;
   Notifications: undefined;
+  HomeTools: undefined;
   History: undefined;
   Analytics: undefined;
   Subscription: { setup?: boolean } | undefined;

@@ -51,6 +51,12 @@ export default function SettingsScreen({ navigation, route }: MainStackScreenPro
 
   const rows: Row[] = [
     {
+      label: 'Daily tools on Home',
+      hint: 'Choose and reorder the shortcuts on the home screen',
+      icon: 'grid-outline',
+      onPress: () => navigation.navigate('HomeTools'),
+    },
+    {
       label: 'Basic settings',
       hint: basicHint,
       icon: 'storefront-outline',

@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Header, Input, LoadingState, Screen } from '../../components';
 import { COLORS, FONT_SCALE, SPACING, TYPOGRAPHY } from '../../theme';
-import { fetchProducts, updateStock, type Product } from '../../api/seller';
+import { fetchProducts, readLocalProducts, updateStock, type Product } from '../../api/seller';
 import { apiError } from '../../lib/format';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import type { MainTabScreenProps } from '../../navigation/types';
@@ -17,10 +17,20 @@ export default function StockScreen({ navigation }: MainTabScreenProps<'Stock'>)
   const [error, setError] = useState('');
   const [drafts, setDrafts] = useState<Record<number, { total: string; online: string }>>({});
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { fresh?: boolean }) => {
     setError('');
+    const cached = await readLocalProducts();
+    if (cached.length) {
+      setProducts(cached);
+      setDrafts(
+        Object.fromEntries(
+          cached.map((p) => [p.id, { total: String(p.total_stock), online: String(p.online_stock) }]),
+        ),
+      );
+      setLoading(false);
+    }
     try {
-      const list = await fetchProducts();
+      const list = await fetchProducts({ fresh: opts?.fresh });
       setProducts(list);
       setDrafts(
         Object.fromEntries(
@@ -28,7 +38,7 @@ export default function StockScreen({ navigation }: MainTabScreenProps<'Stock'>)
         ),
       );
     } catch (err) {
-      setError(apiError(err, 'Could not load stock.'));
+      if (!cached.length) setError(apiError(err, 'Could not load stock.'));
     } finally {
       setLoading(false);
     }
@@ -97,7 +107,7 @@ export default function StockScreen({ navigation }: MainTabScreenProps<'Stock'>)
           <Chip label="Low" selected={filter === 'low'} onPress={() => setFilter('low')} />
           <Chip label="Out" selected={filter === 'out'} onPress={() => setFilter('out')} />
         </View>
-        {loading ? <LoadingState message="Loading stock…" /> : null}
+        {loading && products.length === 0 ? <LoadingState message="Loading stock…" /> : null}
         {error ? <ErrorState message={error} onRetry={load} /> : null}
         {!loading && !error && visible.length === 0 ? (
           <EmptyState title="No products" message="Add products first, then adjust stock here." />

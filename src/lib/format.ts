@@ -39,19 +39,53 @@ function looksLikeNetworkError(error: unknown): boolean {
   );
 }
 
+function looksLikeHtml(value: string): boolean {
+  const start = value.trim().slice(0, 32).toLowerCase();
+  return start.startsWith('<!doctype') || start.startsWith('<html') || start.startsWith('<?xml');
+}
+
+function messageFromPayload(data: unknown, depth = 0): string | null {
+  if (data == null || depth > 3) return null;
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed || looksLikeHtml(trimmed)) return null;
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 1) {
+      try {
+        return messageFromPayload(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return null;
+      }
+    }
+    if (trimmed.length > 280) return null;
+    return trimmed;
+  }
+  if (typeof data !== 'object') return null;
+  const record = data as Record<string, unknown>;
+  for (const key of ['error', 'message', 'detail', 'title']) {
+    const value = record[key];
+    if (typeof value !== 'string') continue;
+    const text = value.trim();
+    if (!text || text === '{' || text === '{}' || text === '[object Object]' || looksLikeHtml(text)) continue;
+    if (text.startsWith('{') && text.length < 12) continue;
+    return text;
+  }
+  return null;
+}
+
 export function apiError(error: unknown, fallback: string): string {
   if (looksLikeNetworkError(error)) return fallback;
   if (typeof error === 'object' && error && 'response' in error) {
-    const data = (error as { response?: { data?: Record<string, unknown> } }).response?.data;
-    if (!data) return fallback;
-    if (typeof data.message === 'string') return data.message;
-    if (typeof data.error === 'string') return data.error;
-    if (typeof data.detail === 'string') return data.detail;
-    const first = Object.values(data)[0];
-    if (typeof first === 'string') return first;
-    if (Array.isArray(first) && typeof first[0] === 'string') return first[0];
+    const fromBody = messageFromPayload((error as { response?: { data?: unknown } }).response?.data);
+    if (fromBody) return fromBody;
   }
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    const message = error.message.trim();
+    if (message && message !== '{}' && message !== '{' && message !== '[object Object]' && !looksLikeHtml(message)) {
+      if (!(message.startsWith('{') && message.length < 12)) return message;
+    }
+  }
+  const fromSelf = messageFromPayload(error);
+  if (fromSelf) return fromSelf;
   return fallback;
 }
 

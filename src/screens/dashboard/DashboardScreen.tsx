@@ -4,31 +4,28 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useAuth } from '../../context/AuthContext';
-import { Avatar, Badge, Card, Header, LoadingState, OnboardingChecklist, Screen } from '../../components';
+import { Avatar, Badge, Card, EmptyState, Header, LoadingState, OnboardingChecklist, Screen } from '../../components';
 import { COLORS, FONT_SCALE, MIN_TOUCH_TARGET, RADIUS, SPACING, TYPOGRAPHY } from '../../theme';
 import { fetchDashboard, fetchSellingStatus, type DashboardPayload, type OnboardingStatus } from '../../api/seller';
+import { visibleDailyTools, type DailyToolDef } from '../../lib/dailyTools';
+import { loadDailyToolIds } from '../../lib/dailyToolsStore';
 import { formatInr } from '../../lib/format';
 import { consumeOpenSetupAfterRegister } from '../../lib/setupFlow';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
-import type { MainTabScreenProps } from '../../navigation/types';
-
-type Shortcut = {
-  label: string;
-  hint: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
-};
+import { useStoreAccess } from '../../hooks/useStoreAccess';
+import type { MainStackParamList, MainTabScreenProps } from '../../navigation/types';
 
 export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home'>) {
-  const { logout } = useAuth();
   const { requireOnline } = useOnlineGuard();
+  const { can } = useStoreAccess();
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [sellerName, setSellerName] = useState('Seller');
   const [shopName, setShopName] = useState('Shop');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [tools, setTools] = useState<DailyToolDef[]>([]);
+  const [unreadAlerts, setUnreadAlerts] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     try {
@@ -37,7 +34,10 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
         const seller = JSON.parse(stored) as { name?: string; shop_name?: string };
         if (seller.name) setSellerName(seller.name);
         if (seller.shop_name) setShopName(seller.shop_name);
+        setLoading(false);
       }
+      const selectedIds = await loadDailyToolIds();
+      setTools(visibleDailyTools(selectedIds, (permission) => !permission || can(permission)));
       const [data, merged] = await Promise.all([
         fetchDashboard(),
         fetchSellingStatus().catch(() => null),
@@ -46,6 +46,7 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
       if (data.seller?.name) setSellerName(data.seller.name);
       if (data.seller?.shop_name) setShopName(data.seller.shop_name);
       setOnboarding(merged);
+      setUnreadAlerts(Number(data.analytics?.unread_notifications_count || 0) > 0);
       if (!opts?.silent) {
         const openSetup = await consumeOpenSetupAfterRegister();
         if (openSetup && !merged?.is_ready_to_sell && !merged?.requirements?.is_live) {
@@ -61,7 +62,7 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
       setLoading(false);
       setRefreshing(false);
     }
-  }, [navigation]);
+  }, [can, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -74,41 +75,22 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
     load({ silent: true });
   }, [load]);
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: () => logout() },
-    ]);
-  };
-
-  if (loading) {
-    return <LoadingState message="Loading Dashboard…" />;
-  }
-
   const analytics = payload?.analytics;
   const ready = Boolean(onboarding?.is_ready_to_sell || onboarding?.requirements?.is_live);
   const blockedMessage = 'Finish store profile, Razorpay, and subscription before adding products.';
-  const shortcuts: Shortcut[] = [
-    { label: 'New bill', hint: 'Walk-in · 3-day offline', icon: 'cash-outline', onPress: () => navigation.navigate('Billing', {}) },
-    { label: 'Scan bill', hint: 'Camera till', icon: 'scan-outline', onPress: () => navigation.navigate('Billing', { openScanner: true }) },
-    {
-      label: 'Add product',
-      hint: ready ? 'Catalogue' : 'Complete setup first',
-      icon: 'add-circle-outline',
-      onPress: () => {
-        if (!requireOnline('Adding a product')) return;
-        if (!ready) {
-          Alert.alert('Shop not live yet', blockedMessage);
-          return;
-        }
-        navigation.navigate('ProductForm', {});
-      },
-    },
-    { label: 'Payments', hint: 'Razorpay & payouts', icon: 'card-outline', onPress: () => navigation.navigate('Payments') },
-    { label: 'Store settings', hint: 'Basic, advanced, delivery', icon: 'settings-outline', onPress: () => navigation.navigate('Settings') },
-    { label: 'Alerts', hint: 'Buyer messages', icon: 'notifications-outline', onPress: () => navigation.navigate('Notifications') },
-    { label: 'Analytics', hint: 'Sales snapshot', icon: 'stats-chart-outline', onPress: () => navigation.navigate('Analytics') },
-  ];
+
+  const openTool = (tool: DailyToolDef) => {
+    if (tool.needsOnline && !requireOnline(tool.label)) return;
+    if (tool.needsLiveShop && !ready) {
+      Alert.alert('Shop not live yet', blockedMessage);
+      return;
+    }
+    navigation.navigate(tool.route as keyof MainStackParamList, tool.params as never);
+  };
+
+  if (loading && !payload) {
+    return <LoadingState message="Loading Dashboard…" />;
+  }
 
   return (
     <Screen
@@ -126,9 +108,10 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
         title={sellerName}
         subtitle={shopName}
         action={{
-          icon: 'log-out-outline',
-          onPress: handleLogout,
-          accessibilityLabel: 'Log out',
+          icon: 'notifications-outline',
+          onPress: () => navigation.navigate('Notifications'),
+          accessibilityLabel: unreadAlerts ? 'Notifications, unread' : 'Notifications',
+          showBadge: unreadAlerts,
         }}
       />
 
@@ -148,31 +131,51 @@ export default function DashboardScreen({ navigation }: MainTabScreenProps<'Home
         />
 
         <Card>
-          <Text style={styles.cardTitle} maxFontSizeMultiplier={FONT_SCALE.heading}>
-            Daily tools
-          </Text>
-          <View style={styles.grid}>
-            {shortcuts.map((item) => (
-              <TouchableOpacity
-                key={item.label}
-                onPress={item.onPress}
-                style={styles.tile}
-                accessibilityRole="button"
-                accessibilityLabel={item.label}
-                accessibilityHint={item.hint}
-              >
-                <View style={styles.tileIcon}>
-                  <Ionicons name={item.icon} size={22} color={COLORS.primary} />
-                </View>
-                <Text style={styles.tileLabel} maxFontSizeMultiplier={FONT_SCALE.body}>
-                  {item.label}
-                </Text>
-                <Text style={styles.tileHint} maxFontSizeMultiplier={FONT_SCALE.caption}>
-                  {item.hint}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.cardHead}>
+            <Text style={styles.cardTitle} maxFontSizeMultiplier={FONT_SCALE.heading}>
+              Daily tools
+            </Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('HomeTools')}
+              accessibilityRole="button"
+              accessibilityLabel="Customize daily tools"
+              style={styles.customize}
+            >
+              <Text style={styles.customizeText}>Customize</Text>
+            </TouchableOpacity>
           </View>
+          {tools.length === 0 ? (
+            <EmptyState
+              icon="grid-outline"
+              title="No tools on Home"
+              message="Choose the shortcuts you use every day."
+              actionLabel="Customize"
+              onAction={() => navigation.navigate('HomeTools')}
+            />
+          ) : (
+            <View style={styles.grid}>
+              {tools.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => openTool(item)}
+                  style={styles.tile}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                  accessibilityHint={item.hint}
+                >
+                  <View style={styles.tileIcon}>
+                    <Ionicons name={item.icon as keyof typeof Ionicons.glyphMap} size={22} color={COLORS.primary} />
+                  </View>
+                  <Text style={styles.tileLabel} maxFontSizeMultiplier={FONT_SCALE.body}>
+                    {item.label}
+                  </Text>
+                  <Text style={styles.tileHint} maxFontSizeMultiplier={FONT_SCALE.caption}>
+                    {item.needsLiveShop && !ready ? 'Complete setup first' : item.hint}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </Card>
 
         <Card glass>
@@ -236,11 +239,20 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 2,
   },
+  cardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
+  },
   cardTitle: {
     ...TYPOGRAPHY.heading,
     color: COLORS.textPrimary,
-    marginBottom: SPACING.md,
+    flex: 1,
   },
+  customize: { minHeight: MIN_TOUCH_TARGET, justifyContent: 'center' },
+  customizeText: { ...TYPOGRAPHY.bodyStrong, color: COLORS.primary },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
