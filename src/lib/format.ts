@@ -63,13 +63,45 @@ function messageFromPayload(data: unknown, depth = 0): string | null {
   const record = data as Record<string, unknown>;
   for (const key of ['error', 'message', 'detail', 'title']) {
     const value = record[key];
-    if (typeof value !== 'string') continue;
-    const text = value.trim();
-    if (!text || text === '{' || text === '{}' || text === '[object Object]' || looksLikeHtml(text)) continue;
-    if (text.startsWith('{') && text.length < 12) continue;
-    return text;
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (!text || text === '{' || text === '{}' || text === '[object Object]' || looksLikeHtml(text)) continue;
+      if (text.startsWith('{') && text.length < 12) continue;
+      return text;
+    }
+    if (Array.isArray(value)) {
+      const text = value.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean).join(' ');
+      if (text) return text;
+    }
   }
+  const fieldText = fieldErrorsFromRecord(record);
+  if (fieldText) return fieldText;
   return null;
+}
+
+function humanizeField(key: string): string {
+  return key.replace(/_/g, ' ');
+}
+
+function fieldErrorsFromRecord(record: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(record)) {
+    if (['error', 'message', 'detail', 'title', 'code', 'status'].includes(key)) continue;
+    if (Array.isArray(value)) {
+      const text = value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .join(' ');
+      if (!text) continue;
+      parts.push(key === 'non_field_errors' ? text : `${humanizeField(key)}: ${text}`);
+    } else if (typeof value === 'string') {
+      const text = value.trim();
+      if (!text || looksLikeHtml(text) || text.length > 280) continue;
+      parts.push(`${humanizeField(key)}: ${text}`);
+    }
+  }
+  return parts.length ? parts.join(' ') : null;
 }
 
 export function apiError(error: unknown, fallback: string): string {

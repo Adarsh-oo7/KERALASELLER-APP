@@ -11,7 +11,12 @@ const PRESETS = [
   ),
 ];
 
-export async function uploadImage(uri: string): Promise<string> {
+export type CloudinaryAsset = {
+  url: string;
+  public_id?: string;
+};
+
+export async function uploadImageAsset(uri: string): Promise<CloudinaryAsset> {
   let lastError: unknown;
   for (const preset of PRESETS) {
     try {
@@ -27,11 +32,21 @@ export async function uploadImage(uri: string): Promise<string> {
         body,
       });
       const data = await response.json();
-      if (data?.secure_url) return data.secure_url as string;
+      if (data?.secure_url) {
+        return {
+          url: data.secure_url as string,
+          public_id: typeof data.public_id === 'string' ? data.public_id : undefined,
+        };
+      }
       lastError = data?.error?.message || 'Upload failed';
     } catch (error) {
       lastError = error;
     }
   }
   throw new Error(typeof lastError === 'string' ? lastError : 'Could not upload image');
+}
+
+export async function uploadImage(uri: string): Promise<string> {
+  const uploaded = await uploadImageAsset(uri);
+  return uploaded.url;
 }

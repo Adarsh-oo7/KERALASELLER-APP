@@ -39,7 +39,37 @@ export type Product = {
   gst_rate?: number | string | null;
   show_on_homepage?: boolean;
   low_stock_threshold?: number;
-  variants?: { id: number; name: string; price?: number | string | null; selling_price?: number | string; total_stock: number; sku?: string; barcode?: string }[];
+  attributes?: Record<string, string | number | null> | null;
+  sub_images?: ProductSubImage[];
+  variants?: ProductVariant[];
+};
+
+export type ProductSubImage = {
+  id?: number;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
+  cloudinary_url?: string | null;
+  cloudinary_image_url?: string | null;
+  cloudinary_public_id?: string | null;
+};
+
+export type ProductVariant = {
+  id: number;
+  name: string;
+  price?: number | string | null;
+  mrp?: number | string | null;
+  selling_price?: number | string;
+  total_stock: number;
+  online_stock?: number;
+  sku?: string;
+  barcode?: string;
+  attributes?: Record<string, string | number | null> | null;
+  is_active?: boolean;
+};
+
+export type CategoryAttribute = {
+  id?: number;
+  name: string;
 };
 
 export type Category = {
@@ -47,6 +77,17 @@ export type Category = {
   name: string;
   parent?: number | null;
   children?: { id: number; name: string }[];
+  default_attributes?: CategoryAttribute[];
+};
+
+export type ProductVariantPayload = {
+  name: string;
+  price?: number | null;
+  total_stock?: number;
+  online_stock?: number;
+  sku?: string;
+  barcode?: string;
+  attributes?: Record<string, string>;
 };
 
 export type OrderItem = {
@@ -437,6 +478,38 @@ export async function updateStock(
 export async function fetchCategories(): Promise<Category[]> {
   const response = await api.get('/api/categories/');
   return asList<Category>(response.data);
+}
+
+export async function createCategory(payload: { name: string; parent?: number | null }): Promise<Category> {
+  const response = await api.post<Category>('/api/categories/', {
+    name: payload.name.trim(),
+    parent: payload.parent ?? null,
+  });
+  return response.data;
+}
+
+export async function addCategoryAttribute(categoryId: number, name: string): Promise<CategoryAttribute> {
+  const response = await api.post<CategoryAttribute>(`/api/categories/${categoryId}/attributes/`, {
+    name: name.trim(),
+  });
+  return response.data;
+}
+
+export async function saveProductVariant(
+  productId: number,
+  payload: ProductVariantPayload,
+  variantId?: number,
+): Promise<ProductVariant> {
+  const response = variantId
+    ? await api.patch<ProductVariant>(`/user/store/products/${productId}/variants/${variantId}/`, payload)
+    : await api.post<ProductVariant>(`/user/store/products/${productId}/variants/`, payload);
+  invalidateProductCache();
+  return response.data;
+}
+
+export async function deleteProductVariant(productId: number, variantId: number): Promise<void> {
+  await api.delete(`/user/store/products/${productId}/variants/${variantId}/`);
+  invalidateProductCache();
 }
 
 export async function fetchOrders(params?: Record<string, string>): Promise<Order[]> {

@@ -7,6 +7,7 @@ export { default as BrandMark } from './BrandMark';
 export { default as Button } from './Button';
 export { default as Card } from './Card';
 export { default as Chip } from './Chip';
+export { default as DescriptionEditor } from './DescriptionEditor';
 export { default as EmptyState } from './EmptyState';
 export { default as ErrorState } from './ErrorState';
 export { default as GlassSurface } from './GlassSurface';

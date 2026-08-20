@@ -25,6 +25,16 @@ describe('apiError', () => {
     );
   });
 
+  it('joins Django field errors so the seller sees what to fix', () => {
+    assert.equal(
+      apiError(
+        { response: { status: 400, data: { name: ['This field is required.'], price: ['Enter a valid number.'] } } },
+        'Could not save',
+      ),
+      'name: This field is required. price: Enter a valid number.',
+    );
+  });
+
   it('uses the fallback instead of dumping HTML or an empty object', () => {
     assert.equal(
       apiError({ response: { status: 500, data: '<html>{broken</html>' } }, 'Try Save PDF instead.'),
