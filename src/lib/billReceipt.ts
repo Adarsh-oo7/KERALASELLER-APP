@@ -3,6 +3,8 @@ export type ReceiptShop = {
   business_address?: string | null;
   phone?: string | null;
   gst_number?: string | null;
+  shop_url?: string | null;
+  store_slug?: string | null;
 };
 
 export type ReceiptLine = {
@@ -46,6 +48,13 @@ export function localBillHtml(shop: ReceiptShop, bill: ReceiptBill): string {
   const rows = bill.lines.map((line) => (
     `<tr><td>${escapeHtml(line.name)}</td><td class="qty">${line.quantity}</td><td class="amt">${money(line.amount)}</td></tr>`
   )).join('');
+
+  // Shop link for receipt footer
+  const slug = String(shop.store_slug || '').trim().replace(/^\/+|\/+$/g, '');
+  const shopUrl = slug
+    ? `https://keralasellers.in/shop/${slug}`
+    : (shop.shop_url ? escapeHtml(shop.shop_url) : '');
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -60,7 +69,9 @@ export function localBillHtml(shop: ReceiptShop, bill: ReceiptBill): string {
     th { text-align: left; border-bottom: 1px solid #111; }
     td.qty, td.amt, th.amt { text-align: right; }
     .total td { font-weight: 700; border-top: 1px solid #111; }
-    .footer { margin-top: 16px; text-align: center; font-size: 12px; }
+    .footer { margin-top: 16px; text-align: center; font-size: 12px; color: #374151; }
+    .shop-link { font-size: 12px; color: #1a4845; text-align: center; margin-top: 8px; word-break: break-all; }
+    .powered { margin-top: 12px; text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px dashed #e5e7eb; padding-top: 8px; }
   </style>
 </head>
 <body>
@@ -82,7 +93,9 @@ export function localBillHtml(shop: ReceiptShop, bill: ReceiptBill): string {
       <tr><td colspan="2">Paid (${paid})</td><td class="amt">₹ ${money(bill.total)}</td></tr>
     </tfoot>
   </table>
-  <p class="footer">Thank you. Visit again.</p>
+  <p class="footer">Thank you for shopping with us! Visit again.</p>
+  ${shopUrl ? `<p class="shop-link">🛒 Shop online: ${shopUrl}</p>` : ''}
+  <p class="powered">Powered by Kerala Sellers · keralasellers.in</p>
 </body>
 </html>`;
 }

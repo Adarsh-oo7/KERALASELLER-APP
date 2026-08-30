@@ -3,10 +3,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
-import { fetchStoreProfile, type LocalBill, type LocalBillItem } from '../api/seller';
+import { fetchLocalBillEscpos, fetchLocalBillHtml, fetchStoreProfile, type LocalBill, type LocalBillItem } from '../api/seller';
 import { API_BASE_URL } from '../config/api';
 import { localBillHtml, type ReceiptBill, type ReceiptLine, type ReceiptShop } from './billReceipt';
 import { httpStatus } from './format';
+import { loadPrinterPref, type PaperSize } from './printers';
+import { printEscposBytes } from './thermalBluetooth';
 import { isMissingRoute } from './userApiUtils';
 
 export type BillSnapshot = {
@@ -29,12 +31,16 @@ function shopFromProfile(profile: {
   seller_phone?: string | null;
   phone?: string | null;
   gst_number?: string | null;
+  store_slug?: string | null;
+  store_url?: string | null;
 }): ReceiptShop {
   return {
     name: profile.name || profile.shop_name || 'Shop',
     business_address: profile.business_address || '',
     phone: profile.whatsapp_number || profile.seller_phone || profile.phone || '',
     gst_number: profile.gst_number || '',
+    store_slug: profile.store_slug || '',
+    shop_url: profile.store_url || '',
   };
 }
 
@@ -116,7 +122,17 @@ async function sharePdfFile(uri: string, billId: string): Promise<void> {
 }
 
 export async function printBill(snapshot: BillSnapshot): Promise<void> {
-  const html = await receiptHtml(snapshot);
+  const pref = await loadPrinterPref();
+  if (pref.method === 'thermal' && snapshot.id && !snapshot.queued) {
+    const payload = await fetchLocalBillEscpos(snapshot.id, pref.paperSize);
+    await printEscposBytes(payload, pref.bluetoothAddress);
+    return;
+  }
+  let html = '';
+  if (snapshot.id && !snapshot.queued) {
+    html = await fetchLocalBillHtml(snapshot.id, { size: pref.paperSize }).catch(() => '');
+  }
+  if (!html) html = await receiptHtml(snapshot);
   try {
     await Print.printAsync({ html });
     return;
@@ -127,20 +143,20 @@ export async function printBill(snapshot: BillSnapshot): Promise<void> {
   await sharePdfFile(file.uri, snapshot.billId);
 }
 
-function pdfUrls(id: number): string[] {
-  const query = '?size=A4';
+function pdfUrls(id: number, size: PaperSize): string[] {
+  const query = `?size=${encodeURIComponent(size)}`;
   return [
     `${API_BASE_URL}/user/orders/local-bills/${id}/pdf/${query}`,
     `${API_BASE_URL}/api/orders/local-bills/${id}/pdf/${query}`,
   ];
 }
 
-async function downloadServerPdf(id: number, billId: string): Promise<string | null> {
+async function downloadServerPdf(id: number, billId: string, size: PaperSize = 'A4'): Promise<string | null> {
   const token = await AsyncStorage.getItem('accessToken');
   const filename = `${String(billId || `bill-${id}`).replace(/[^\w.-]+/g, '_')}.pdf`;
   const dest = `${FileSystem.cacheDirectory || ''}${filename}`;
   let lastStatus = 0;
-  for (const url of pdfUrls(id)) {
+  for (const url of pdfUrls(id, size)) {
     const result = await FileSystem.downloadAsync(url, dest, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -163,10 +179,11 @@ async function downloadServerPdf(id: number, billId: string): Promise<string | n
 }
 
 export async function saveBillPdf(snapshot: BillSnapshot): Promise<void> {
+  const pref = await loadPrinterPref();
   let uri: string | null = null;
   if (snapshot.id && !snapshot.queued) {
     try {
-      uri = await downloadServerPdf(snapshot.id, snapshot.billId);
+      uri = await downloadServerPdf(snapshot.id, snapshot.billId, pref.paperSize);
     } catch (error) {
       if (!isMissingRoute(error) && httpStatus(error) && httpStatus(error) !== 404) {
         // Keep going with a local PDF so the bill can still be saved.
