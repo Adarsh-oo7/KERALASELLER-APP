@@ -10,6 +10,7 @@ import {
   fetchAddons,
   fetchEntitlements,
   fetchSubscription,
+  cancelAddon,
   verifyAddonPayment,
   type CatalogAddon,
   type EntitlementsPayload,
@@ -116,6 +117,7 @@ export default function AddonsScreen({ navigation }: MainStackScreenProps<'Addon
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [buyingId, setBuyingId] = useState<number | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
   const [checkout, setCheckout] = useState<{ options: RazorpayCheckoutOptions; addonId: number } | null>(null);
 
   const load = useCallback(async () => {
@@ -232,8 +234,53 @@ export default function AddonsScreen({ navigation }: MainStackScreenProps<'Addon
           <Text style={styles.kicker}>{data?.plan_name || 'Current plan'}</Text>
           <Text style={styles.total}>{formatInr(Number(billing?.monthly_total || 0))}</Text>
           <Text style={styles.meta}>
-            Plan {formatInr(Number(billing?.base_plan_price || 0))} + add-ons {formatInr(Number(billing?.addons_price || 0))} this month
+            Plan {formatInr(Number(billing?.base_plan_price || 0))} + add-ons {formatInr(Number(billing?.addons_price || 0))} this month. Pay this one total each month.
           </Text>
+          {data?.official_url || data?.path_url ? (
+            <Text style={styles.meta}>
+              Shop URL: {data.official_url || data.path_url}
+              {data.can_use_custom_subdomain ? '' : ' (path link until a subdomain add-on or plan is active)'}
+            </Text>
+          ) : null}
+          {(billing?.active_addons || []).length ? (
+            <View style={{ gap: 8, marginTop: 8 }}>
+              {(billing?.active_addons || []).map((row) => (
+                <View key={String(row.purchase_id || row.id)} style={styles.head}>
+                  <Text style={styles.meta}>{row.name} · {formatInr(Number(row.price || 0))}/mo</Text>
+                  <Button
+                    label={removingId === (row.purchase_id || row.id) ? 'Removing…' : 'Remove'}
+                    variant="ghost"
+                    onPress={() => {
+                      Alert.alert(
+                        'Remove add-on',
+                        `Stop ${row.name}? This month’s total will drop and a custom subdomain will be removed if it came from this extra.`,
+                        [
+                          { text: 'Keep', style: 'cancel' },
+                          {
+                            text: 'Remove',
+                            style: 'destructive',
+                            onPress: () => {
+                              void (async () => {
+                                setRemovingId(row.purchase_id || row.id || null);
+                                try {
+                                  await cancelAddon({ purchase_id: row.purchase_id, addon_id: row.id });
+                                  await load();
+                                } catch (err) {
+                                  Alert.alert('Could not remove', apiError(err, 'Try again.'));
+                                } finally {
+                                  setRemovingId(null);
+                                }
+                              })();
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
           {!canPurchase && !loading ? (
             <Button label="View plans" onPress={() => navigation.navigate('Subscription')} />
           ) : null}

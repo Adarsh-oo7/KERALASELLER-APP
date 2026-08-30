@@ -74,7 +74,20 @@ export function encodeCode39(value: string): BarModule[] {
 }
 
 export function storedBarcode(value: string): string {
-  return value.trim();
+  return value.trim().replace(/^\*+|\*+$/g, '').replace(/\s+/g, '');
+}
+
+export function normalizeBarcode(value: string): string {
+  return storedBarcode(value).toLowerCase();
+}
+
+export function barcodeKeys(raw: string): string[] {
+  const code = normalizeBarcode(raw);
+  if (!code) return [];
+  const keys = [code];
+  if (/^\d{12}$/.test(code)) keys.push(`0${code}`);
+  if (/^\d{13}$/.test(code) && code.startsWith('0')) keys.push(code.slice(1));
+  return keys;
 }
 
 export function generateShopBarcode(taken: Iterable<string> = []): string {
@@ -99,7 +112,15 @@ export function codesFromProduct(product: {
     ...(product.variants || []).flatMap((variant) => [variant.barcode, variant.sku]),
   ]
     .filter((value): value is string => Boolean(value && value.trim()))
-    .map((value) => value.trim().toLowerCase());
+    .map((value) => normalizeBarcode(value));
+}
+
+export function barcodeIsLocked(hasBarcode: boolean, unlocked: boolean): boolean {
+  return Boolean(hasBarcode) && !unlocked;
+}
+
+export function barcodeDraftReady(code: string): boolean {
+  return Boolean(storedBarcode(code));
 }
 
 export function findProductByCode<T extends {
@@ -108,15 +129,15 @@ export function findProductByCode<T extends {
   barcode?: string | null;
   variants?: Array<{ id: number; sku?: string | null; barcode?: string | null }>;
 }>(products: T[], raw: string): { product: T; variantId?: number } | null {
-  const code = raw.trim().toLowerCase();
-  if (!code) return null;
+  const keys = new Set(barcodeKeys(raw));
+  if (!keys.size) return null;
   for (const product of products) {
     for (const variant of product.variants || []) {
-      if ((variant.barcode || '').toLowerCase() === code || (variant.sku || '').toLowerCase() === code) {
+      if (keys.has(normalizeBarcode(variant.barcode || '')) || keys.has(normalizeBarcode(variant.sku || ''))) {
         return { product, variantId: variant.id };
       }
     }
-    if ((product.barcode || '').toLowerCase() === code || (product.sku || '').toLowerCase() === code) {
+    if (keys.has(normalizeBarcode(product.barcode || '')) || keys.has(normalizeBarcode(product.sku || ''))) {
       return { product };
     }
   }

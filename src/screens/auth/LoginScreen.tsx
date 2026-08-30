@@ -8,6 +8,8 @@ import { APP_DISPLAY_NAME, PRIVACY_POLICY_URL, TERMS_URL } from '../../config/le
 import { useAuth } from '../../context/AuthContext';
 import { persistSellerSession, type SellerAuthResponse } from '../../lib/session';
 import { postUser } from '../../lib/userApi';
+import { fieldErrorsFromApi, loginFailureMessage } from '../../lib/format';
+import { isNetworkError } from '../../lib/offlineWindow';
 import { COLORS, FONT_SCALE, SPACING, TYPOGRAPHY } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -17,18 +19,21 @@ export default function LoginScreen({ navigation }: Props) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ phone?: string; password?: string }>({});
 
   const handleLogin = async () => {
-    if (!phone.trim() || !password.trim()) {
-      Alert.alert('Required Fields', 'Please enter both phone number and password');
-      return;
-    }
-
+    const nextErrors: { phone?: string; password?: string } = {};
+    if (!phone.trim()) nextErrors.phone = 'Enter your 10-digit seller phone.';
+    if (!password.trim()) nextErrors.password = 'Enter your password.';
     const phoneClean = phone.replace(/\D/g, '');
-    if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
-      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number starting with 6-9');
+    if (phone.trim() && (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/))) {
+      nextErrors.phone = 'Use a valid 10-digit Indian mobile starting with 6–9.';
+    }
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors);
       return;
     }
+    setFieldErrors({});
 
     setLoading(true);
 
@@ -47,16 +52,22 @@ export default function LoginScreen({ navigation }: Props) {
         throw new Error('Login failed');
       }
     } catch (error: unknown) {
-      const response = (error as { response?: { data?: { error?: string; detail?: string } }; message?: string })
-        ?.response?.data;
-      const errorMessage =
-        response?.error ||
-        response?.detail ||
-        ((error as { message?: string })?.message?.includes('Network')
-          ? 'Sign in needs the internet. After login, walk-in billing still works offline for 3 days.'
-          : 'Login failed. Please try again.');
-
-      Alert.alert('Login Error', errorMessage);
+      const fields = fieldErrorsFromApi(error);
+      if (fields.phone || fields.password) {
+        setFieldErrors({
+          phone: fields.phone || fields.phone_number,
+          password: fields.password,
+        });
+      }
+      Alert.alert(
+        'Could not sign in',
+        loginFailureMessage(
+          error,
+          isNetworkError(error)
+            ? 'Sign in needs the internet. Check your connection and try again.'
+            : 'Check the phone number and password, then try again.',
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -82,11 +93,11 @@ export default function LoginScreen({ navigation }: Props) {
 
           <Input
             label="Phone Number"
-            helper="10-digit mobile number starting with 6–9"
+            error={fieldErrors.phone}
             prefix="+91"
             placeholder="9876543210"
             value={phone}
-            onChangeText={formatPhoneNumber}
+            onChangeText={(text) => { formatPhoneNumber(text); setFieldErrors((prev) => ({ ...prev, phone: undefined })); }}
             keyboardType="phone-pad"
             maxLength={10}
             editable={!loading}
@@ -95,9 +106,11 @@ export default function LoginScreen({ navigation }: Props) {
 
           <Input
             label="Password"
+            helper="At least 8 characters. Mix letters and numbers. Avoid common passwords."
             placeholder="Enter your password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(text) => { setPassword(text); setFieldErrors((prev) => ({ ...prev, password: undefined })); }}
+            error={fieldErrors.password}
             secure
             autoCapitalize="none"
             editable={!loading}
@@ -110,6 +123,18 @@ export default function LoginScreen({ navigation }: Props) {
             loading={loading}
             disabled={loading}
           />
+
+          <TouchableOpacity
+            onPress={() => Linking.openURL('https://www.keralasellers.in/forgot-password/seller')}
+            disabled={loading}
+            style={styles.linkWrap}
+            accessibilityRole="link"
+            accessibilityLabel="Forgot password"
+          >
+            <Text style={styles.signUpText} maxFontSizeMultiplier={FONT_SCALE.body}>
+              Forgot password?
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => navigation.navigate('Register')}

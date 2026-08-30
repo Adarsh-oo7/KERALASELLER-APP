@@ -113,12 +113,38 @@ export function apiError(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
     const message = error.message.trim();
     if (message && message !== '{}' && message !== '{' && message !== '[object Object]' && !looksLikeHtml(message)) {
+      if (/^request failed with status code \d+$/i.test(message)) return fallback;
       if (!(message.startsWith('{') && message.length < 12)) return message;
     }
   }
   const fromSelf = messageFromPayload(error);
   if (fromSelf) return fromSelf;
   return fallback;
+}
+
+export function loginFailureMessage(error: unknown, fallback: string): string {
+  const status = httpStatus(error);
+  if (status === 429) return 'Too many failed attempts. Wait 15 minutes and try again.';
+  if (status === 403) return 'This seller account is closed. Register a new shop, or email keralasellers.in@gmail.com.';
+  if (status === 404) return 'No seller shop exists for this phone. Register your shop first.';
+  if (status === 401) return 'Wrong phone number or password.';
+  return apiError(error, fallback);
+}
+
+export function fieldErrorsFromApi(error: unknown): Record<string, string> {
+  const data = (error as { response?: { data?: unknown } })?.response?.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (['error', 'message', 'detail', 'non_field_errors'].includes(key)) continue;
+    if (Array.isArray(value)) {
+      const text = value.filter((item): item is string => typeof item === 'string').join(' ').trim();
+      if (text) out[key] = text;
+    } else if (typeof value === 'string' && value.trim()) {
+      out[key] = value.trim();
+    }
+  }
+  return out;
 }
 
 export function formatDate(value?: string | null): string {

@@ -107,6 +107,7 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<Category[]>([]);
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [name, setName] = useState('');
@@ -346,6 +347,19 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
   const onSave = async () => {
     if (!requireOnline('Saving a product')) return;
     setFormError('');
+    const nextFields: Record<string, string> = {};
+    if (!name.trim()) nextFields.name = 'Enter the product name.';
+    if (!price.trim() || Number.isNaN(Number(price)) || Number(price) <= 0) nextFields.price = 'Enter a valid selling price.';
+    if (descriptionIsEmpty(description)) nextFields.description = 'Add a product description.';
+    if (!categoryId) nextFields.category = 'Pick a category.';
+    if (!productId && !mainImage?.url) nextFields.image = 'Add a main photo.';
+    if (mrp && Number(mrp) < Number(price)) nextFields.mrp = 'MRP cannot be lower than selling price.';
+    if (Object.keys(nextFields).length) {
+      setFieldErrors(nextFields);
+      setFormError('Fix the highlighted fields, then save.');
+      return;
+    }
+    setFieldErrors({});
     if (!name.trim() || !price.trim()) {
       setFormError('Name and selling price are required.');
       return;
@@ -493,9 +507,12 @@ export default function ProductFormScreen({ navigation, route }: MainStackScreen
       <View style={styles.content}>
         {formError ? <Notice title="Fix this to save" message={formError} tone="warning" /> : null}
 
-        <Input label="Product name *" value={name} onChangeText={setName} placeholder="Cotton shorts" />
-        <DescriptionEditor value={description} onChange={setDescription} />
-        <Input label="Selling price *" value={price} onChangeText={setPrice} keyboardType="decimal-pad" prefix="₹" />
+        <Input label="Product name *" value={name} onChangeText={(text) => { setName(text); setFieldErrors((p) => ({ ...p, name: '' })); }} error={fieldErrors.name} placeholder="Cotton shorts" />
+        <DescriptionEditor value={description} onChange={(html) => { setDescription(html); setFieldErrors((p) => ({ ...p, description: '' })); }} />
+        {fieldErrors.description ? <Text style={styles.error}>{fieldErrors.description}</Text> : null}
+        <Input label="Selling price *" value={price} onChangeText={(text) => { setPrice(text); setFieldErrors((p) => ({ ...p, price: '' })); }} error={fieldErrors.price} keyboardType="decimal-pad" prefix="₹" />
+        {fieldErrors.category ? <Text style={styles.error}>{fieldErrors.category}</Text> : null}
+        {fieldErrors.image ? <Text style={styles.error}>{fieldErrors.image}</Text> : null}
 
         <Text style={styles.label} maxFontSizeMultiplier={FONT_SCALE.body}>Where can it sell? *</Text>
         <View style={styles.row}>
@@ -749,6 +766,10 @@ const styles = StyleSheet.create({
   helper: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
+  },
+  error: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.error,
   },
   warn: {
     ...TYPOGRAPHY.caption,

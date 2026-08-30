@@ -17,6 +17,8 @@ import {
 import { persistSellerSession, type SellerAuthResponse } from '../../lib/session';
 import { markOpenSetupAfterRegister } from '../../lib/setupFlow';
 import { postUser } from '../../lib/userApi';
+import { apiError, fieldErrorsFromApi } from '../../lib/format';
+import { isNetworkError } from '../../lib/offlineWindow';
 import { COLORS, FONT_SCALE, SPACING, TYPOGRAPHY } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
@@ -34,7 +36,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
 
   const [formData, setFormData] = useState({
@@ -51,42 +53,40 @@ export default function RegisterScreen({ navigation }: Props) {
   const updateField = useCallback((field: keyof typeof formData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setError('');
+    setFieldErrors((prev) => ({ ...prev, [field]: '' }));
   }, []);
 
   const formatPhoneNumber = useCallback((text: string) => {
     const cleaned = text.replace(/\D/g, '').slice(0, 10);
     setFormData((prev) => ({ ...prev, phone: cleaned }));
     setError('');
+    setFieldErrors((prev) => ({ ...prev, phone: '' }));
   }, []);
 
-  const validateForm = (): string | null => {
+  const validateForm = (): Record<string, string> => {
     const { phone, name, shopName, email, password, confirmPassword } = formData;
-
-    if (!phone.trim() || !name.trim() || !shopName.trim() || !email.trim() || !password.trim()) {
-      return 'Please fill in all required fields';
-    }
-    if (name.trim().length < 2) return 'Name must be at least 2 characters';
-    if (shopName.trim().length < 2) return 'Shop name must be at least 2 characters';
-
+    const errors: Record<string, string> = {};
+    if (!name.trim() || name.trim().length < 2) errors.name = 'Enter your full name (at least 2 characters).';
+    if (!shopName.trim() || shopName.trim().length < 2) errors.shopName = 'Enter a shop name (at least 2 characters).';
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.';
     const phoneClean = phone.replace(/\D/g, '');
     if (phoneClean.length !== 10 || !phoneClean.match(/^[6-9]/)) {
-      return 'Please enter a valid 10-digit phone number starting with 6-9';
+      errors.phone = 'Enter a valid 10-digit mobile starting with 6–9.';
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) return 'Please enter a valid email address';
-    if (password.length < 8) return 'Password must be at least 8 characters long';
-    if (password !== confirmPassword) return 'Passwords do not match';
-
-    return null;
+    if (!password.trim() || password.length < 8) errors.password = 'Password must be at least 8 characters.';
+    else if (/^\d+$/.test(password)) errors.password = 'Password cannot be only numbers. Add letters too.';
+    if (password !== confirmPassword) errors.confirmPassword = 'Passwords do not match.';
+    return errors;
   };
 
   const handleSendOtp = async () => {
-    const validationError = validateForm();
-    if (validationError) {
-      setError(validationError);
+    const fieldMap = validateForm();
+    if (Object.keys(fieldMap).length) {
+      setFieldErrors(fieldMap);
+      setError('Fix the highlighted fields, then continue.');
       return;
     }
+    setFieldErrors({});
 
     const verifier = recaptchaRef.current;
     if (!verifier) {
@@ -104,7 +104,10 @@ export default function RegisterScreen({ navigation }: Props) {
       });
 
       if (check.data.exists) {
-        setError(check.data.message || 'This phone or email is already registered. Please sign in.');
+        const message = check.data.message || 'This phone or email is already registered. Please sign in.';
+        if (check.data.field === 'email') setFieldErrors((prev) => ({ ...prev, email: message }));
+        else setFieldErrors((prev) => ({ ...prev, phone: message }));
+        setError(message);
         return;
       }
 
@@ -113,7 +116,12 @@ export default function RegisterScreen({ navigation }: Props) {
       setStep(2);
     } catch (err: unknown) {
       setError(
-        axiosMessage(err) || firebaseAuthMessage(err, 'Failed to send OTP. Please try again.'),
+        firebaseAuthMessage(
+          err,
+          apiError(err, isNetworkError(err)
+            ? 'Check your internet and try again.'
+            : 'Failed to send OTP. Please try again.'),
+        ),
       );
     } finally {
       setLoading(false);
@@ -122,7 +130,8 @@ export default function RegisterScreen({ navigation }: Props) {
 
   const handleVerifyAndRegister = async () => {
     if (!formData.otp || formData.otp.trim().length !== 6) {
-      setError('Please enter the 6-digit OTP sent to your phone');
+      setFieldErrors((prev) => ({ ...prev, otp: 'Enter the 6-digit OTP sent to your phone.' }));
+      setError('Enter the 6-digit OTP sent to your phone.');
       return;
     }
     if (!confirmation) {
@@ -157,8 +166,21 @@ export default function RegisterScreen({ navigation }: Props) {
       await markOpenSetupAfterRegister();
       await login(data.access_token);
     } catch (err: unknown) {
+      const fields = fieldErrorsFromApi(err);
+      if (Object.keys(fields).length) {
+        setFieldErrors({
+          ...fields,
+          shopName: fields.shop_name || fields.shopName,
+          confirmPassword: fields.confirmPassword || fields.confirm_password,
+        });
+      }
       setError(
-        axiosMessage(err) || firebaseAuthMessage(err, 'Registration failed. Please try again.'),
+        firebaseAuthMessage(
+          err,
+          apiError(err, isNetworkError(err)
+            ? 'Check your internet and try again.'
+            : 'Registration failed. Please try again.'),
+        ),
       );
     } finally {
       setLoading(false);
@@ -180,7 +202,12 @@ export default function RegisterScreen({ navigation }: Props) {
       Alert.alert('OTP sent', 'A new verification code was sent to your phone.');
     } catch (err: unknown) {
       setError(
-        axiosMessage(err) || firebaseAuthMessage(err, 'Failed to resend OTP. Please try again.'),
+        firebaseAuthMessage(
+          err,
+          apiError(err, isNetworkError(err)
+            ? 'Check your internet and try again.'
+            : 'Failed to resend OTP. Please try again.'),
+        ),
       );
     } finally {
       setLoading(false);
@@ -221,7 +248,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
               <Input
                 label="Full Name"
-                placeholder="Enter your full name"
+                error={fieldErrors.name}
                 value={formData.name}
                 onChangeText={(text) => updateField('name', text)}
                 autoCapitalize="words"
@@ -231,7 +258,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
               <Input
                 label="Shop Name"
-                placeholder="Enter your shop/business name"
+                error={fieldErrors.shopName}
                 value={formData.shopName}
                 onChangeText={(text) => updateField('shopName', text)}
                 autoCapitalize="words"
@@ -240,7 +267,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
               <Input
                 label="Email Address"
-                placeholder="your@email.com"
+                error={fieldErrors.email}
                 value={formData.email}
                 onChangeText={(text) => updateField('email', text)}
                 keyboardType="email-address"
@@ -252,7 +279,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
               <Input
                 label="Phone Number"
-                helper="10-digit mobile number for OTP verification"
+                error={fieldErrors.phone}
                 prefix="+91"
                 placeholder="9876543210"
                 value={formData.phone}
@@ -265,7 +292,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
               <Input
                 label="Password"
-                helper="Minimum 8 characters"
+                error={fieldErrors.password}
                 placeholder="Create a strong password"
                 value={formData.password}
                 onChangeText={(text) => updateField('password', text)}
@@ -276,7 +303,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
               <Input
                 label="Confirm Password"
-                placeholder="Re-enter your password"
+                error={fieldErrors.confirmPassword}
                 value={formData.confirmPassword}
                 onChangeText={(text) => updateField('confirmPassword', text)}
                 secure
@@ -324,6 +351,7 @@ export default function RegisterScreen({ navigation }: Props) {
               <Input
                 label="6-digit code"
                 placeholder="123456"
+                error={fieldErrors.otp}
                 value={formData.otp}
                 onChangeText={(text) => updateField('otp', text.replace(/\D/g, '').slice(0, 6))}
                 keyboardType="number-pad"
@@ -381,12 +409,6 @@ export default function RegisterScreen({ navigation }: Props) {
       </View>
     </Screen>
   );
-}
-
-function axiosMessage(error: unknown): string {
-  const response = (error as { response?: { data?: { error?: string; detail?: string; message?: string } } })
-    ?.response?.data;
-  return response?.error || response?.detail || response?.message || '';
 }
 
 const styles = StyleSheet.create({

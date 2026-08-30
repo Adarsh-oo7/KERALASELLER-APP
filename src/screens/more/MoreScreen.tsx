@@ -26,6 +26,7 @@ const GROUPS: Group[] = [
     items: [
       { label: 'Local billing', hint: 'Scan, edit qty, cash or UPI', icon: 'cash-outline', route: 'Billing', permission: 'billing.access_pos' },
       { label: 'Barcodes', hint: 'Create or attach a packet barcode', icon: 'barcode-outline', route: 'Barcodes', permission: ['products.view', 'billing.access_pos'] },
+      { label: 'Printers', hint: 'Bluetooth, thermal, Wi‑Fi, USB', icon: 'print-outline', route: 'Printers', permission: 'billing.access_pos' },
       { label: 'Customers', hint: 'From bills and orders', icon: 'people-outline', route: 'Customers', permission: 'customers.view' },
       { label: 'Reports', hint: 'Today, best sellers, profit', icon: 'stats-chart-outline', route: 'Analytics', permission: 'reports.view_basic' },
       { label: 'Expenses', hint: 'Rent, petrol, other costs', icon: 'wallet-outline', route: 'Expenses', permission: 'expenses.view' },

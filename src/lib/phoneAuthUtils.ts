@@ -24,8 +24,7 @@ export function firebaseAuthMessage(error: unknown, fallback: string): string {
     return 'Security check failed. Complete the reCAPTCHA and try again.';
   }
   if (code === 'auth/network-request-failed') {
-    return 'Network error. Check your connection and try again.';
+    return 'Check your internet and try again.';
   }
-  const message = (error as { message?: string })?.message;
-  return message || fallback;
+  return fallback;
 }

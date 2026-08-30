@@ -16,7 +16,7 @@ import {
   type PredefinedBanner,
   type StoreProfile,
 } from '../../api/seller';
-import { apiError } from '../../lib/format';
+import { apiError, fieldErrorsFromApi } from '../../lib/format';
 import { uploadImage } from '../../lib/cloudinary';
 import { useOnlineGuard } from '../../hooks/useOnlineGuard';
 import { skipSetupToDashboard } from '../../lib/setupFlow';
@@ -46,6 +46,7 @@ export default function BasicSettingsScreen({ navigation, route }: MainStackScre
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState('');
   const [profileComplete, setProfileComplete] = useState(false);
 
@@ -153,6 +154,17 @@ export default function BasicSettingsScreen({ navigation, route }: MainStackScre
 
   const save = async () => {
     if (!requireOnline('Saving store settings')) return;
+    const nextErrors: Record<string, string> = {};
+    if (!(profile.name || '').trim()) nextErrors.name = 'Enter the shop name.';
+    const whatsapp = (profile.whatsapp_number || '').replace(/\D/g, '');
+    if (whatsapp && (whatsapp.length !== 10 || !/^[6-9]/.test(whatsapp))) {
+      nextErrors.whatsapp_number = 'Use a valid 10-digit WhatsApp number.';
+    }
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors);
+      return;
+    }
+    setFieldErrors({});
     setSaving(true);
     try {
       const saved = await patchStoreProfile({
@@ -173,12 +185,15 @@ export default function BasicSettingsScreen({ navigation, route }: MainStackScre
       setProfile(saved);
       setSelectedIds(selectedPredefinedBannerIds(saved));
       setProfileComplete(storeProfileIsReady(saved));
-      Alert.alert('Saved', 'Store settings updated.');
+      const nextUrl = saved.official_url || (saved.store_slug ? `https://www.keralasellers.in/shop/${saved.store_slug}/` : '');
+      Alert.alert('Saved', nextUrl ? `Store settings updated.\n${nextUrl}` : 'Store settings updated.');
       if (setup) {
         await continueSetup();
       }
     } catch (err) {
-      Alert.alert('Could not save', apiError(err, 'Try again.'));
+      const fields = fieldErrorsFromApi(err);
+      if (fields.name || fields.whatsapp_number) setFieldErrors(fields);
+      Alert.alert('Could not save', fields.name || apiError(err, 'Try again.'));
     } finally {
       setSaving(false);
     }
@@ -267,10 +282,31 @@ export default function BasicSettingsScreen({ navigation, route }: MainStackScre
           disabled={Boolean(uploading)}
         />
 
-        <Input label="Shop name" value={profile.name || ''} onChangeText={(v) => setField('name', v)} />
+        <Input
+          label="Shop name"
+          value={profile.name || ''}
+          onChangeText={(v) => { setField('name', v); setFieldErrors((p) => ({ ...p, name: '' })); }}
+          error={fieldErrors.name}
+          editable={profile.shop_name_policy?.can_change !== false}
+          helper={
+            profile.shop_name_policy?.message
+            || 'You can change the shop name twice every 60 days. The shop URL updates to match.'
+          }
+        />
+        {(profile.official_url || profile.store_slug) ? (
+          <View style={styles.urlCard}>
+            <Text style={styles.urlLabel} maxFontSizeMultiplier={FONT_SCALE.caption}>Shop URL</Text>
+            <Text style={styles.urlValue} maxFontSizeMultiplier={FONT_SCALE.body}>
+              {profile.official_url || `https://www.keralasellers.in/shop/${profile.store_slug}/`}
+            </Text>
+            <Text style={styles.help} maxFontSizeMultiplier={FONT_SCALE.caption}>
+              This link changes when you rename the shop. Share the new URL after you save.
+            </Text>
+          </View>
+        ) : null}
         <Input label="Tagline" value={profile.tagline || ''} onChangeText={(v) => setField('tagline', v)} />
         <Input label="Description" value={profile.description || ''} onChangeText={(v) => setField('description', v)} multiline />
-        <Input label="WhatsApp number" value={profile.whatsapp_number || ''} onChangeText={(v) => setField('whatsapp_number', v)} keyboardType="phone-pad" />
+        <Input label="WhatsApp number" value={profile.whatsapp_number || ''} onChangeText={(v) => { setField('whatsapp_number', v); setFieldErrors((p) => ({ ...p, whatsapp_number: '' })); }} error={fieldErrors.whatsapp_number} keyboardType="phone-pad" />
         <Input
           label="Business address"
           value={profile.business_address || ''}
@@ -334,6 +370,16 @@ export default function BasicSettingsScreen({ navigation, route }: MainStackScre
 
 const styles = StyleSheet.create({
   content: { padding: SPACING.lg },
+  urlCard: {
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+  },
+  urlLabel: { ...TYPOGRAPHY.label, color: COLORS.textSecondary, marginBottom: 6 },
+  urlValue: { ...TYPOGRAPHY.body, color: COLORS.textPrimary },
   section: { ...TYPOGRAPHY.bodyStrong, color: COLORS.textPrimary, marginTop: SPACING.md, marginBottom: SPACING.sm },
   help: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary, marginBottom: SPACING.sm },
   logo: { width: 96, height: 96, borderRadius: RADIUS.md, marginBottom: SPACING.sm, backgroundColor: COLORS.surfaceSecondary },

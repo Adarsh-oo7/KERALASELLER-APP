@@ -11,6 +11,7 @@ import {
   fetchLocalBills,
   fetchProducts,
   lookupLoyalty,
+  lookupProductByCode,
   readLocalProducts,
   updateLocalBill,
   type LocalBill,
@@ -56,6 +57,13 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
   const [loyaltyBalance, setLoyaltyBalance] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
   const [scanner, setScanner] = useState(Boolean(route.params?.openScanner));
+  const [pendingScan, setPendingScan] = useState<{
+    code: string;
+    product: Product;
+    variantId?: number;
+    unitPrice: number;
+    alreadyOnBill: boolean;
+  } | null>(null);
   const [editingBillId, setEditingBillId] = useState<number | null>(route.params?.billId ?? null);
   const [editingBillLabel, setEditingBillLabel] = useState('');
   const loadedBill = useRef<number | null>(null);
@@ -68,7 +76,7 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
       setLoading(false);
     }
     try {
-      const list = await fetchProducts({ page_size: 100 });
+      const list = await fetchProducts({ page_size: 200, fresh: true });
       setProducts(list);
     } catch (err) {
       if (!cached.length) setError(apiError(err, 'Could not load products.'));
@@ -168,14 +176,53 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
     setQuery('');
   };
 
-  const addScanned = (code: string) => {
-    const match = findProductByCode(products, code);
-    if (!match) {
-      Alert.alert('Not in this shop', `${code} is not on a product. Create or attach a barcode from More → Barcodes.`);
+  const previewScan = (product: Product, variantId: number | undefined, code: string) => {
+    const unitPrice = unitPriceOf(product, variantId);
+    setLines((current) => {
+      const alreadyOnBill = current.some((line) => line.product.id === product.id && line.variantId === variantId);
+      setPendingScan({ code, product, variantId, unitPrice, alreadyOnBill });
+      return current;
+    });
+  };
+
+  const addScanned = async (code: string) => {
+    const local = findProductByCode(products, code);
+    if (local) {
+      previewScan(local.product, local.variantId, code);
+      return;
+    }
+    try {
+      const remote = await lookupProductByCode(code);
+      if (remote) {
+        setProducts((prev) => (
+          prev.some((row) => row.id === remote.product.id)
+            ? prev.map((row) => (row.id === remote.product.id ? { ...row, ...remote.product } : row))
+            : [remote.product, ...prev]
+        ));
+        previewScan(remote.product, remote.variantId, code);
+        return;
+      }
+    } catch (err) {
+      Alert.alert(
+        'Could not check barcode',
+        apiError(err, 'Check your internet and try again.'),
+      );
       setQuery(code);
       return;
     }
-    add(match.product, match.variantId);
+    Alert.alert('Not in this shop', `${code} is not saved on a product yet. Open Barcodes, tap Save, then scan again.`);
+    setQuery(code);
+  };
+
+  const confirmPendingScan = () => {
+    if (!pendingScan) return;
+    if (pendingScan.alreadyOnBill) {
+      Alert.alert('Already on this bill', 'Use + on the line to increase quantity. Scan does not add quantity.');
+      setPendingScan(null);
+      return;
+    }
+    add(pendingScan.product, pendingScan.variantId, pendingScan.unitPrice);
+    setPendingScan(null);
   };
 
   const changeQty = (id: number, delta: number, variantId?: number) => {
@@ -236,7 +283,7 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
       snapshot.queued ? 'Saved on this phone' : `Bill ${snapshot.billId}`,
       snapshot.queued
         ? 'Print or save a PDF from this phone. It will sync when you are online.'
-        : 'Print opens the printer dialog. Save PDF lets you download or share the bill with shop details.',
+        : 'Print opens the printer you set in More → Printers. Save PDF lets you download or share the bill.',
       [
         {
           text: 'Print',
@@ -362,6 +409,27 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
         ) : null}
         <Input label="Add product" value={query} onChangeText={setQuery} placeholder="Name, SKU, or barcode" />
         <Button label="Scan with camera" variant="secondary" icon="scan-outline" onPress={() => setScanner(true)} />
+        {pendingScan ? (
+          <Card>
+            <Text style={styles.suggestName}>{pendingScan.product.name}</Text>
+            <Text style={styles.suggestMeta}>
+              Scanned {pendingScan.code} · {formatInr(pendingScan.unitPrice)}
+              {pendingScan.alreadyOnBill ? ' · already on this bill' : ''}
+            </Text>
+            <Text style={styles.suggestMeta}>
+              {pendingScan.alreadyOnBill
+                ? 'Tap + on the bill line to add quantity. Scan does not increase count.'
+                : 'Tap Add to put this on the bill. Scan the next packet after that.'}
+            </Text>
+            <View style={styles.payRow}>
+              <Button
+                label={pendingScan.alreadyOnBill ? 'Got it' : 'Add to bill'}
+                onPress={confirmPendingScan}
+              />
+              <Button label="Skip" variant="ghost" onPress={() => setPendingScan(null)} />
+            </View>
+          </Card>
+        ) : null}
         {matches.flatMap((product) => {
           const variants = product.variants || [];
           if (variants.length === 0) {
@@ -486,7 +554,7 @@ export default function BillingScreen({ navigation, route }: MainStackScreenProp
       </View>
       <BarcodeScannerModal
         visible={scanner}
-        title="Scan to add to bill"
+        title="Scan a packet, then tap Add"
         continuous
         onClose={() => setScanner(false)}
         onScan={addScanned}

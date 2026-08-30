@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { apiError, asList } from './format.ts';
+import { apiError, asList, fieldErrorsFromApi, loginFailureMessage } from './format.ts';
 
 describe('apiError', () => {
   it('does not show the raw Axios Network Error string', () => {
@@ -43,6 +43,29 @@ describe('apiError', () => {
     assert.equal(
       apiError(new Error('{'), 'Try Save PDF instead.'),
       'Try Save PDF instead.',
+    );
+  });
+
+  it('does not show Axios status text when the server returned a blank or HTML page', () => {
+    assert.equal(
+      apiError(new Error('Request failed with status code 404'), 'Check your internet and try again.'),
+      'Check your internet and try again.',
+    );
+  });
+});
+
+describe('loginFailureMessage', () => {
+  it('explains lockout, closed accounts, missing shops, and wrong passwords', () => {
+    assert.match(loginFailureMessage({ response: { status: 429 } }, 'Fallback'), /15 minutes/);
+    assert.match(loginFailureMessage({ response: { status: 403 } }, 'Fallback'), /closed/);
+    assert.match(loginFailureMessage({ response: { status: 404 } }, 'Fallback'), /Register your shop/);
+    assert.match(loginFailureMessage({ response: { status: 401 } }, 'Fallback'), /Wrong phone/);
+  });
+
+  it('maps Django field errors onto the same form fields', () => {
+    assert.equal(
+      fieldErrorsFromApi({ response: { data: { phone: ['This phone is already registered.'], password: ['This password is too common.'] } } }).phone,
+      'This phone is already registered.',
     );
   });
 });

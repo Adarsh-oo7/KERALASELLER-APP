@@ -66,7 +66,7 @@ export default function BarcodeScannerModal({
               const value = String(data || '').trim();
               if (!value || locked) return;
               const now = Date.now();
-              if (now - lastAt.current < 800) return;
+              if (now - lastAt.current < 1600) return;
               lastAt.current = now;
               setLastCode(value);
               if (!continuous) setLocked(true);

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import api from './api';
 import { asList } from '../lib/format';
+import { findProductByCode, storedBarcode } from '../lib/barcode';
 import { cacheProducts, enqueueLocalBill, getCachedProducts } from '../lib/offlineStore';
 import { isNetworkError } from '../lib/offlineWindow';
 import { mergeSellingStatus } from '../lib/sellingStatus';
@@ -158,6 +159,23 @@ export type StoreProfile = {
   privacy_policy?: string | null;
   cancellation_refund_policy?: string | null;
   shipping_delivery_policy?: string | null;
+  print_paper_size?: string | null;
+  print_footer_message?: string | null;
+  print_copies?: number | null;
+  official_url?: string | null;
+  shop_name_policy?: {
+    max_changes?: number;
+    window_days?: number;
+    changes_used?: number;
+    changes_remaining?: number;
+    can_change?: boolean;
+    next_change_at?: string | null;
+    current_slug?: string;
+    preview_slug?: string;
+    preview_path_url?: string | null;
+    preview_subdomain_url?: string | null;
+    message?: string;
+  };
 };
 
 export type PredefinedBanner = {
@@ -229,6 +247,19 @@ export async function readLocalProducts(): Promise<Product[]> {
 
 export function invalidateProductCache() {
   productsCache.invalidate();
+}
+
+async function rememberProduct(product: Product) {
+  const disk = await getCachedProducts<Product>();
+  if (!disk.length) {
+    productsCache.invalidate();
+    return;
+  }
+  const next = disk.some((row) => row.id === product.id)
+    ? disk.map((row) => (row.id === product.id ? { ...row, ...product } : row))
+    : [product, ...disk];
+  productsCache.seed(next);
+  await cacheProducts(next);
 }
 
 export async function fetchStoreProfile(): Promise<StoreProfile> {
@@ -429,7 +460,7 @@ export async function deleteDeliverySlab(id: number): Promise<void> {
 }
 
 export async function fetchProducts(params?: { page_size?: number; fresh?: boolean }): Promise<Product[]> {
-  const pageSize = params?.page_size ?? 50;
+  const pageSize = params?.page_size ?? 200;
   if (!params?.fresh && !productsCache.peek()) {
     await readLocalProducts();
   }
@@ -459,7 +490,16 @@ export async function saveProduct(payload: Record<string, unknown>, id?: number)
     ? await api.patch<Product>(`/user/store/products/${id}/`, payload)
     : await api.post<Product>('/user/store/products/', payload);
   invalidateProductCache();
-  return response.data;
+  const saved = response.data;
+  if (saved?.id) await rememberProduct(saved);
+  return saved;
+}
+
+export async function lookupProductByCode(raw: string): Promise<{ product: Product; variantId?: number } | null> {
+  const code = storedBarcode(raw);
+  if (!code) return null;
+  const response = await api.get('/user/store/products/', { params: { barcode: code, page_size: 20 } });
+  return findProductByCode(asList<Product>(response.data), code);
 }
 
 export async function deleteProduct(id: number): Promise<void> {
@@ -637,6 +677,13 @@ export async function fetchLocalBillHtml(id: number, opts?: { size?: string; lay
   return typeof response.data === 'string' ? response.data : String(response.data ?? '');
 }
 
+export async function fetchLocalBillEscpos(id: number, size?: string): Promise<string> {
+  const response = await ordersGet<{ escpos_base64?: string; data?: string }>(`local-bills/${id}/escpos/`, {
+    params: { size: size || '80mm' },
+  });
+  return String(response.data?.escpos_base64 || response.data?.data || '');
+}
+
 export async function createLocalBill(
   payload: LocalBillPayload,
   opts?: { queueIfOffline?: boolean; forceQueue?: boolean },
@@ -768,6 +815,7 @@ export async function fetchPlans(): Promise<SubscriptionPlan[]> {
 export async function createSubscriptionOrder(payload: {
   plan_id: number;
   billing_cycle: 'monthly' | 'yearly';
+  addon_ids?: number[];
 }): Promise<SubscriptionOrder> {
   const response = await api.post<SubscriptionOrder>('/api/subscriptions/create-order/', payload);
   return response.data;
@@ -800,6 +848,10 @@ export type CatalogAddon = {
 
 export type EntitlementsPayload = {
   commercially_active?: boolean;
+  official_url?: string | null;
+  path_url?: string | null;
+  can_use_custom_subdomain?: boolean;
+  subdomain_provisioning_status?: string | null;
   features?: string[];
   plan_id?: number | null;
   plan_name?: string | null;
@@ -837,6 +889,14 @@ export async function verifyAddonPayment(payload: {
   addon_id: number;
 }): Promise<void> {
   await api.post('/api/subscriptions/addons/verify-payment/', payload);
+}
+
+export async function cancelAddon(payload: { purchase_id?: number; addon_id?: number }): Promise<EntitlementsPayload> {
+  const response = await api.post<EntitlementsPayload & { entitlements?: EntitlementsPayload }>(
+    '/api/subscriptions/addons/cancel/',
+    payload,
+  );
+  return response.data.entitlements || response.data;
 }
 
 export async function fetchGatewayStatus(): Promise<Record<string, unknown>> {

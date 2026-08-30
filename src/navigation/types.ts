@@ -30,6 +30,7 @@ export type MainStackParamList = {
   Subscription: { setup?: boolean } | undefined;
   Addons: undefined;
   Barcodes: undefined;
+  Printers: undefined;
   HomepageListing: undefined;
   DeliveryCharges: undefined;
   DeleteAccount: undefined;
