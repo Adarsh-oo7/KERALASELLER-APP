@@ -94,8 +94,13 @@ export function localBillHtml(shop: ReceiptShop, bill: ReceiptBill): string {
     </tfoot>
   </table>
   <p class="footer">Thank you for shopping with us! Visit again.</p>
-  ${shopUrl ? `<p class="shop-link">🛒 Shop online: ${shopUrl}</p>` : ''}
-  <p class="powered">Powered by Kerala Sellers · keralasellers.in</p>
+  ${shopUrl ? `
+    <div style="text-align:center;margin-top:12px;">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(shopUrl)}" alt="Shop QR Code" style="width:110px;height:110px;margin:0 auto 4px;display:block;">
+      <p class="shop-link" style="margin:2px 0;">🛒 Scan to shop online: ${shopUrl}</p>
+    </div>
+  ` : ''}
+  <p class="powered">Software by Kerala Sellers · keralasellers.in</p>
 </body>
 </html>`;
 }
